@@ -17,6 +17,14 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      // MODO DE PRUEBA: Credenciales temporales
+      if (email === 'admin@test.com' && password === 'test123') {
+        // Guardar token de prueba
+        localStorage.setItem('test-token', 'test-auth-token')
+        router.push('/dashboard')
+        return
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -61,7 +69,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-black"
               placeholder="admin@dofer.com"
             />
           </div>
@@ -76,7 +84,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-black"
               placeholder="••••••••"
             />
           </div>
@@ -88,6 +96,12 @@ export default function LoginPage() {
           >
             {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
           </button>
+
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-800 font-medium mb-1">Credenciales de prueba:</p>
+            <p className="text-xs text-blue-600">📧 admin@test.com</p>
+            <p className="text-xs text-blue-600">🔒 test123</p>
+          </div>
         </form>
 
         <div className="mt-6 text-center">

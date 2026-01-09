@@ -15,6 +15,8 @@ type OrderHandler struct {
 	listHandler         *app.ListOrdersHandler
 	updateStatusHandler *app.UpdateOrderStatusHandler
 	assignHandler       *app.AssignOrderHandler
+	historyHandler      *app.GetOrderHistoryHandler
+	statsHandler        *app.GetOrderStatsHandler
 }
 
 func NewOrderHandler(
@@ -23,6 +25,8 @@ func NewOrderHandler(
 	listHandler *app.ListOrdersHandler,
 	updateStatusHandler *app.UpdateOrderStatusHandler,
 	assignHandler *app.AssignOrderHandler,
+	historyHandler *app.GetOrderHistoryHandler,
+	statsHandler *app.GetOrderStatsHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:       createHandler,
@@ -30,16 +34,20 @@ func NewOrderHandler(
 		listHandler:         listHandler,
 		updateStatusHandler: updateStatusHandler,
 		assignHandler:       assignHandler,
+		historyHandler:      historyHandler,
+		statsHandler:        statsHandler,
 	}
 }
 
 type CreateOrderRequest struct {
-	OrderNumber   string `json:"order_number"`
 	Platform      string `json:"platform"`
 	CustomerName  string `json:"customer_name"`
 	CustomerEmail string `json:"customer_email"`
 	CustomerPhone string `json:"customer_phone"`
 	ProductName   string `json:"product_name"`
+	ProductImage  string `json:"product_image"`
+	PrintFile     string `json:"print_file"`
+	PrintFileName string `json:"print_file_name"`
 	Quantity      int    `json:"quantity"`
 	Priority      string `json:"priority"`
 	Notes         string `json:"notes"`
@@ -56,6 +64,9 @@ type OrderResponse struct {
 	CustomerEmail string     `json:"customer_email"`
 	CustomerPhone string     `json:"customer_phone"`
 	ProductName   string     `json:"product_name"`
+	ProductImage  string     `json:"product_image"`
+	PrintFile     string     `json:"print_file,omitempty"`
+	PrintFileName string     `json:"print_file_name,omitempty"`
 	Quantity      int        `json:"quantity"`
 	Notes         string     `json:"notes"`
 	AssignedTo    string     `json:"assigned_to,omitempty"`
@@ -73,12 +84,14 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	order, err := h.createHandler.Handle(r.Context(), app.CreateOrderCommand{
-		OrderNumber:   req.OrderNumber,
 		Platform:      req.Platform,
 		CustomerName:  req.CustomerName,
 		CustomerEmail: req.CustomerEmail,
 		CustomerPhone: req.CustomerPhone,
 		ProductName:   req.ProductName,
+		ProductImage:  req.ProductImage,
+		PrintFile:     req.PrintFile,
+		PrintFileName: req.PrintFileName,
 		Quantity:      req.Quantity,
 		Priority:      req.Priority,
 		Notes:         req.Notes,
@@ -100,6 +113,9 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		CustomerEmail: order.CustomerEmail,
 		CustomerPhone: order.CustomerPhone,
 		ProductName:   order.ProductName,
+		ProductImage:  order.ProductImage,
+		PrintFile:     order.PrintFile,
+		PrintFileName: order.PrintFileName,
 		Quantity:      order.Quantity,
 		Notes:         order.Notes,
 		CreatedAt:     order.CreatedAt,
@@ -134,6 +150,9 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 		CustomerEmail: order.CustomerEmail,
 		CustomerPhone: order.CustomerPhone,
 		ProductName:   order.ProductName,
+		ProductImage:  order.ProductImage,
+		PrintFile:     order.PrintFile,
+		PrintFileName: order.PrintFileName,
 		Quantity:      order.Quantity,
 		Notes:         order.Notes,
 		AssignedTo:    order.AssignedTo,
@@ -178,6 +197,9 @@ func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 			CustomerEmail: order.CustomerEmail,
 			CustomerPhone: order.CustomerPhone,
 			ProductName:   order.ProductName,
+			ProductImage:  order.ProductImage,
+			PrintFile:     order.PrintFile,
+			PrintFileName: order.PrintFileName,
 			Quantity:      order.Quantity,
 			Notes:         order.Notes,
 			AssignedTo:    order.AssignedTo,
@@ -211,6 +233,7 @@ func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request)
 	order, err := h.updateStatusHandler.Handle(r.Context(), app.UpdateOrderStatusCommand{
 		OrderID:   orderID,
 		NewStatus: req.Status,
+		ChangedBy: "admin",
 	})
 
 	if err != nil {
@@ -244,8 +267,9 @@ func (h *OrderHandler) AssignOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	order, err := h.assignHandler.Handle(r.Context(), app.AssignOrderCommand{
-		OrderID: orderID,
-		UserID:  req.UserID,
+		OrderID:   orderID,
+		UserID:    req.UserID,
+		ChangedBy: "admin",
 	})
 
 	if err != nil {
@@ -262,4 +286,59 @@ func (h *OrderHandler) AssignOrder(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+type HistoryEntryResponse struct {
+	ID         string    `json:"id"`
+	OrderID    string    `json:"order_id"`
+	ChangedBy  string    `json:"changed_by"`
+	ChangeType string    `json:"change_type"`
+	FieldName  string    `json:"field_name"`
+	OldValue   string    `json:"old_value"`
+	NewValue   string    `json:"new_value"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func (h *OrderHandler) GetOrderHistory(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	entries, err := h.historyHandler.Handle(r.Context(), app.GetOrderHistoryQuery{
+		OrderID: orderID,
+	})
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var responses []HistoryEntryResponse
+	for _, entry := range entries {
+		responses = append(responses, HistoryEntryResponse{
+			ID:         entry.ID,
+			OrderID:    entry.OrderID,
+			ChangedBy:  entry.ChangedBy,
+			ChangeType: entry.ChangeType,
+			FieldName:  entry.FieldName,
+			OldValue:   entry.OldValue,
+			NewValue:   entry.NewValue,
+			CreatedAt:  entry.CreatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"history": responses,
+		"total":   len(responses),
+	})
+}
+
+func (h *OrderHandler) GetOrderStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.statsHandler.Handle(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }

@@ -31,6 +31,9 @@ export default function DashboardLayout({
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
     { name: 'Órdenes', href: '/dashboard/orders', icon: '📦' },
+    { name: 'Cotizaciones', href: '/dashboard/quotes', icon: '💼' },
+    { name: 'Kanban', href: '/dashboard/kanban', icon: '📋' },
+    { name: 'Calculadora', href: '/dashboard/calculadora', icon: '🧮' },
     { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
     { name: 'Configuración', href: '/dashboard/settings', icon: '⚙️' },
   ]

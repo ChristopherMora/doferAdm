@@ -32,8 +32,22 @@ async function apiRequest<T>(
   })
 
   if (!response.ok) {
-    const error = await response.text()
-    throw new Error(error || 'API request failed')
+    let errorMessage = `Error ${response.status}`
+    try {
+      // Leer como texto primero
+      const responseText = await response.text()
+      // Intentar parsear como JSON
+      try {
+        const errorData = JSON.parse(responseText)
+        errorMessage = errorData.error || errorData.message || responseText
+      } catch {
+        // Si no es JSON, usar el texto directamente
+        errorMessage = responseText || errorMessage
+      }
+    } catch (e) {
+      console.error('Error reading response:', e)
+    }
+    throw new Error(errorMessage)
   }
 
   return response.json()

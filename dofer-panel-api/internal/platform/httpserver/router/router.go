@@ -7,11 +7,18 @@ import (
 	"github.com/dofer/panel-api/internal/modules/auth/app"
 	authInfra "github.com/dofer/panel-api/internal/modules/auth/infra"
 	authTransport "github.com/dofer/panel-api/internal/modules/auth/transport"
+	costsApp "github.com/dofer/panel-api/internal/modules/costs/app"
+	costsInfra "github.com/dofer/panel-api/internal/modules/costs/infra"
+	costsTransport "github.com/dofer/panel-api/internal/modules/costs/transport"
 	ordersApp "github.com/dofer/panel-api/internal/modules/orders/app"
 	ordersInfra "github.com/dofer/panel-api/internal/modules/orders/infra"
 	ordersTransport "github.com/dofer/panel-api/internal/modules/orders/transport"
+	quotesApp "github.com/dofer/panel-api/internal/modules/quotes/app"
+	quotesInfra "github.com/dofer/panel-api/internal/modules/quotes/infra"
+	quotesTransport "github.com/dofer/panel-api/internal/modules/quotes/transport"
 	"github.com/dofer/panel-api/internal/modules/tracking"
 	"github.com/dofer/panel-api/internal/platform/config"
+	"github.com/dofer/panel-api/internal/platform/email"
 	"github.com/dofer/panel-api/internal/platform/httpserver/middleware"
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
@@ -51,6 +58,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	// Setup repositories
 	userRepo := authInfra.NewPostgresUserRepository(db)
 	orderRepo := ordersInfra.NewPostgresOrderRepository(db)
+	historyRepo := ordersInfra.NewPostgresOrderHistoryRepository(db)
+
+	// Setup email service (usando ConsoleMailer para desarrollo)
+	mailer := email.NewConsoleMailer()
 
 	// Setup auth handlers
 	getUserHandler := app.NewGetUserByIDHandler(userRepo)
@@ -60,14 +71,44 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	createOrderHandler := ordersApp.NewCreateOrderHandler(orderRepo)
 	getOrderHandler := ordersApp.NewGetOrderHandler(orderRepo)
 	listOrdersHandler := ordersApp.NewListOrdersHandler(orderRepo)
-	updateStatusHandler := ordersApp.NewUpdateOrderStatusHandler(orderRepo)
-	assignOrderHandler := ordersApp.NewAssignOrderHandler(orderRepo)
+	updateStatusHandler := ordersApp.NewUpdateOrderStatusHandler(orderRepo, historyRepo, mailer)
+	assignOrderHandler := ordersApp.NewAssignOrderHandler(orderRepo, historyRepo)
+	getHistoryHandler := ordersApp.NewGetOrderHistoryHandler(historyRepo)
+	getStatsHandler := ordersApp.NewGetOrderStatsHandler(orderRepo)
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
 		getOrderHandler,
 		listOrdersHandler,
 		updateStatusHandler,
 		assignOrderHandler,
+		getHistoryHandler,
+		getStatsHandler,
+	)
+
+	// Setup cost handlers
+	costRepo := costsInfra.NewPostgresCostSettingsRepository(db)
+	getCostSettingsHandler := costsApp.NewGetCostSettingsHandler(costRepo)
+	updateCostSettingsHandler := costsApp.NewUpdateCostSettingsHandler(costRepo)
+	calculateCostHandler := costsApp.NewCalculateCostHandler(costRepo)
+	costHandler := costsTransport.NewCostHandler(
+		getCostSettingsHandler,
+		updateCostSettingsHandler,
+		calculateCostHandler,
+	)
+
+	// Setup quote handlers
+	quoteRepo := quotesInfra.NewPostgresQuoteRepository(db)
+	createQuoteHandler := quotesApp.NewCreateQuoteHandler(quoteRepo)
+	getQuoteHandler := quotesApp.NewGetQuoteHandler(quoteRepo)
+	listQuotesHandler := quotesApp.NewListQuotesHandler(quoteRepo)
+	addQuoteItemHandler := quotesApp.NewAddQuoteItemHandler(quoteRepo, calculateCostHandler)
+	updateQuoteStatusHandler := quotesApp.NewUpdateQuoteStatusHandler(quoteRepo)
+	quoteHandler := quotesTransport.NewQuoteHandler(
+		createQuoteHandler,
+		getQuoteHandler,
+		listQuotesHandler,
+		addQuoteItemHandler,
+		updateQuoteStatusHandler,
 	)
 
 	// Setup tracking handler
@@ -84,6 +125,8 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		// Register module routes
 		authTransport.RegisterRoutes(r, authHandler)
 		ordersTransport.RegisterRoutes(r, orderHandler)
+		costsTransport.RegisterRoutes(r, costHandler)
+		quotesTransport.RegisterRoutes(r, quoteHandler)
 		tracking.RegisterRoutes(r, trackingHandler)
 	})
 

@@ -26,10 +26,22 @@ interface Order {
   completed_at: string | null
 }
 
+interface HistoryEntry {
+  id: string
+  order_id: string
+  changed_by: string
+  change_type: string
+  field_name: string
+  old_value: string
+  new_value: string
+  created_at: string
+}
+
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
   const [order, setOrder] = useState<Order | null>(null)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
@@ -42,10 +54,16 @@ export default function OrderDetailPage() {
   const loadOrder = async () => {
     try {
       setLoading(true)
-      const response = await apiClient.get<Order>(`/orders/${params.id}`)
-      setOrder(response)
+      setError(null)
+      const [orderData, historyData] = await Promise.all([
+        apiClient.get<Order>(`/orders/${params.id}`),
+        apiClient.get<{ history: HistoryEntry[] }>(`/orders/${params.id}/history`)
+      ])
+      setOrder(orderData)
+      setHistory(historyData.history || [])
     } catch (err: any) {
-      setError(err.message || 'Error al cargar la orden')
+      console.error('Error loading order:', err)
+      setError(err.response?.data?.error || err.message || 'Error al cargar la orden')
     } finally {
       setLoading(false)
     }
@@ -168,6 +186,23 @@ export default function OrderDetailPage() {
               <p className="text-sm text-gray-500">Cantidad</p>
               <p className="text-base text-gray-900">{order.quantity} unidades</p>
             </div>
+            {order.print_file_name && (
+              <div>
+                <p className="text-sm text-gray-500">Archivo de Impresión</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <a 
+                    href={order.print_file} 
+                    download={order.print_file_name}
+                    className="text-base text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    {order.print_file_name}
+                  </a>
+                </div>
+              </div>
+            )}
             <div>
               <p className="text-sm text-gray-500">ID Público (Tracking)</p>
               <p className="text-xs font-mono text-gray-600">{order.public_id}</p>
@@ -277,6 +312,51 @@ export default function OrderDetailPage() {
             Ver Tracking Público →
           </a>
         </div>
+      </div>
+
+      {/* Historial de Cambios */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Historial de Cambios
+        </h2>
+        {history.length === 0 ? (
+          <p className="text-gray-500 italic">No hay cambios registrados</p>
+        ) : (
+          <div className="space-y-4">
+            {history.map((entry) => (
+              <div key={entry.id} className="flex gap-4 pb-4 border-b last:border-b-0">
+                <div className="flex-shrink-0">
+                  <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                    {entry.change_type === 'status_change' ? '📊' : '👤'}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-gray-900">
+                      {entry.change_type === 'status_change' ? 'Cambio de estado' : 'Asignación'}
+                    </p>
+                    <span className="text-sm text-gray-500">
+                      {new Date(entry.created_at).toLocaleString('es-MX', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    <span className="font-semibold">{entry.changed_by}</span> cambió{' '}
+                    <span className="text-gray-900">{entry.field_name}</span> de{' '}
+                    <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{entry.old_value || 'vacío'}</span>
+                    {' a '}
+                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded text-xs">{entry.new_value}</span>
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Modals */}

@@ -46,6 +46,9 @@ type Order struct {
 	CustomerPhone string
 	ProductID     string
 	ProductName   string
+	ProductImage  string
+	PrintFile     string
+	PrintFileName string
 	Quantity      int
 	Notes         string
 	InternalNotes string

@@ -4,46 +4,36 @@ import { useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
 
 interface OrderStats {
-  total: number
-  new: number
-  printing: number
-  ready: number
-  delivered: number
+  total_orders: number
+  orders_by_status: Record<string, number>
+  urgent_orders: number
+  today_orders: number
+  completed_today: number
+  average_per_day: number
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<OrderStats>({
-    total: 0,
-    new: 0,
-    printing: 0,
-    ready: 0,
-    delivered: 0,
-  })
+  const [stats, setStats] = useState<OrderStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [recentOrders, setRecentOrders] = useState<any[]>([])
 
   useEffect(() => {
     loadDashboardData()
+    // Auto-refresh cada 30 segundos
+    const interval = setInterval(loadDashboardData, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const loadDashboardData = async () => {
     try {
       setLoading(true)
-      // Get all orders
-      const response = await apiClient.get<{ orders: any[], total: number }>('/orders')
-      const orders = response.orders || []
+      // Get statistics from backend
+      const statsData = await apiClient.get<OrderStats>('/orders/stats')
+      setStats(statsData)
 
-      // Calculate stats
-      const newStats: OrderStats = {
-        total: orders.length,
-        new: orders.filter((o: any) => o.status === 'new').length,
-        printing: orders.filter((o: any) => o.status === 'printing').length,
-        ready: orders.filter((o: any) => o.status === 'ready').length,
-        delivered: orders.filter((o: any) => o.status === 'delivered').length,
-      }
-
-      setStats(newStats)
-      setRecentOrders(orders.slice(0, 5)) // Last 5 orders
+      // Get recent orders
+      const response = await apiClient.get<{ orders: any[], total: number }>('/orders?limit=5')
+      setRecentOrders(response.orders || [])
     } catch (error) {
       console.error('Error loading dashboard:', error)
     } finally {
@@ -51,13 +41,35 @@ export default function DashboardPage() {
     }
   }
 
+  if (loading || !stats) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Cargando dashboard...</div>
+      </div>
+    )
+  }
+
   const statCards = [
-    { label: 'Total Órdenes', value: stats.total, color: 'bg-blue-500', icon: '📦' },
-    { label: 'Nuevas', value: stats.new, color: 'bg-yellow-500', icon: '🆕' },
-    { label: 'En Impresión', value: stats.printing, color: 'bg-purple-500', icon: '🖨️' },
-    { label: 'Listas', value: stats.ready, color: 'bg-green-500', icon: '✅' },
-    { label: 'Entregadas', value: stats.delivered, color: 'bg-gray-500', icon: '🚚' },
+    { label: 'Total Órdenes', value: stats.total_orders, color: 'bg-blue-500', icon: '📦' },
+    { label: 'Hoy', value: stats.today_orders, color: 'bg-green-500', icon: '📅' },
+    { label: 'Urgentes', value: stats.urgent_orders, color: 'bg-red-500', icon: '🔥' },
+    { label: 'Completadas Hoy', value: stats.completed_today, color: 'bg-emerald-500', icon: '✅' },
+    { label: 'Promedio/Día', value: stats.average_per_day.toFixed(1), color: 'bg-purple-500', icon: '📊' },
   ]
+
+  const statusCards = Object.entries(stats.orders_by_status).map(([status, count]) => {
+    const statusLabels: Record<string, { label: string; color: string; icon: string }> = {
+      new: { label: 'Nuevas', color: 'bg-yellow-500', icon: '🆕' },
+      printing: { label: 'Imprimiendo', color: 'bg-purple-500', icon: '🖨️' },
+      post: { label: 'Post-Proceso', color: 'bg-blue-500', icon: '🔧' },
+      packed: { label: 'Empacadas', color: 'bg-indigo-500', icon: '📦' },
+      ready: { label: 'Listas', color: 'bg-green-500', icon: '✔️' },
+      delivered: { label: 'Entregadas', color: 'bg-gray-500', icon: '🚚' },
+      cancelled: { label: 'Canceladas', color: 'bg-red-500', icon: '❌' },
+    }
+    const info = statusLabels[status] || { label: status, color: 'bg-gray-500', icon: '📋' }
+    return { ...info, value: count, status }
+  })
 
   const getStatusBadge = (status: string) => {
     const badges: Record<string, string> = {
@@ -72,17 +84,9 @@ export default function DashboardPage() {
     return badges[status] || 'bg-gray-100 text-gray-800'
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Cargando dashboard...</div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-8">
-      {/* Stats Grid */}
+      {/* Main Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {statCards.map((card) => (
           <div key={card.label} className="bg-white rounded-lg shadow p-6">
@@ -97,6 +101,22 @@ export default function DashboardPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Status Breakdown */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Órdenes por Estado</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          {statusCards.map((card) => (
+            <div key={card.status} className="text-center">
+              <div className={`${card.color} w-16 h-16 rounded-lg flex items-center justify-center text-3xl mx-auto mb-2`}>
+                {card.icon}
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              <p className="text-xs text-gray-600">{card.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Recent Orders */}

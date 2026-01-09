@@ -25,9 +25,10 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 		INSERT INTO orders (
 			id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
-			product_name, quantity, notes, internal_notes, metadata,
+			product_name, product_image, print_file, print_file_name,
+			quantity, notes, internal_notes, metadata,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 	`
 
 	metadata, _ := json.Marshal(order.Metadata)
@@ -45,6 +46,9 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 		order.CustomerEmail,
 		order.CustomerPhone,
 		order.ProductName,
+		order.ProductImage,
+		order.PrintFile,
+		order.PrintFileName,
 		order.Quantity,
 		order.Notes,
 		order.InternalNotes,
@@ -60,7 +64,8 @@ func (r *PostgresOrderRepository) FindByID(id string) (*domain.Order, error) {
 	query := `
 		SELECT id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
-			product_id, product_name, quantity, notes, internal_notes, metadata,
+			product_name, product_image, print_file, print_file_name,
+			quantity, notes, internal_notes, metadata,
 			assigned_to, assigned_at, created_at, updated_at, completed_at
 		FROM orders
 		WHERE id = $1
@@ -73,7 +78,8 @@ func (r *PostgresOrderRepository) FindByPublicID(publicID string) (*domain.Order
 	query := `
 		SELECT id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
-			product_id, product_name, quantity, notes, internal_notes, metadata,
+			product_name, product_image, print_file, print_file_name,
+			quantity, notes, internal_notes, metadata,
 			assigned_to, assigned_at, created_at, updated_at, completed_at
 		FROM orders
 		WHERE public_id = $1
@@ -86,7 +92,8 @@ func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domai
 	query := `
 		SELECT id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
-			product_id, product_name, quantity, notes, internal_notes, metadata,
+			product_name, product_image, print_file, print_file_name,
+			quantity, notes, internal_notes, metadata,
 			assigned_to, assigned_at, created_at, updated_at, completed_at
 		FROM orders
 		WHERE 1=1
@@ -194,7 +201,7 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) {
 	var order domain.Order
 	var metadataJSON []byte
-	var productID, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
+	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
 	var assignedAt, completedAt sql.NullTime
 
 	err := row.Scan(
@@ -207,8 +214,10 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 		&order.CustomerName,
 		&customerEmail,
 		&customerPhone,
-		&productID,
 		&order.ProductName,
+		&productImage,
+		&printFile,
+		&printFileName,
 		&order.Quantity,
 		&notes,
 		&internalNotes,
@@ -227,8 +236,14 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 		return nil, err
 	}
 
-	if productID.Valid {
-		order.ProductID = productID.String
+	if productImage.Valid {
+		order.ProductImage = productImage.String
+	}
+	if printFile.Valid {
+		order.PrintFile = printFile.String
+	}
+	if printFileName.Valid {
+		order.PrintFileName = printFileName.String
 	}
 	if customerEmail.Valid {
 		order.CustomerEmail = customerEmail.String
@@ -264,7 +279,7 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Order, error) {
 	var order domain.Order
 	var metadataJSON []byte
-	var productID, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
+	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
 	var assignedAt, completedAt sql.NullTime
 
 	err := rows.Scan(
@@ -277,8 +292,10 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 		&order.CustomerName,
 		&customerEmail,
 		&customerPhone,
-		&productID,
 		&order.ProductName,
+		&productImage,
+		&printFile,
+		&printFileName,
 		&order.Quantity,
 		&notes,
 		&internalNotes,
@@ -294,8 +311,14 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 		return nil, err
 	}
 
-	if productID.Valid {
-		order.ProductID = productID.String
+	if productImage.Valid {
+		order.ProductImage = productImage.String
+	}
+	if printFile.Valid {
+		order.PrintFile = printFile.String
+	}
+	if printFileName.Valid {
+		order.PrintFileName = printFileName.String
 	}
 	if customerEmail.Valid {
 		order.CustomerEmail = customerEmail.String
