@@ -58,11 +58,13 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// Setup order handlers
 	createOrderHandler := ordersApp.NewCreateOrderHandler(orderRepo)
+	getOrderHandler := ordersApp.NewGetOrderHandler(orderRepo)
 	listOrdersHandler := ordersApp.NewListOrdersHandler(orderRepo)
 	updateStatusHandler := ordersApp.NewUpdateOrderStatusHandler(orderRepo)
 	assignOrderHandler := ordersApp.NewAssignOrderHandler(orderRepo)
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
+		getOrderHandler,
 		listOrdersHandler,
 		updateStatusHandler,
 		assignOrderHandler,

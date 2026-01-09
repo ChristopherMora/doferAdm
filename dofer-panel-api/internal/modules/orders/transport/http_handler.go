@@ -11,6 +11,7 @@ import (
 
 type OrderHandler struct {
 	createHandler       *app.CreateOrderHandler
+	getHandler          *app.GetOrderHandler
 	listHandler         *app.ListOrdersHandler
 	updateStatusHandler *app.UpdateOrderStatusHandler
 	assignHandler       *app.AssignOrderHandler
@@ -18,12 +19,14 @@ type OrderHandler struct {
 
 func NewOrderHandler(
 	createHandler *app.CreateOrderHandler,
+	getHandler *app.GetOrderHandler,
 	listHandler *app.ListOrdersHandler,
 	updateStatusHandler *app.UpdateOrderStatusHandler,
 	assignHandler *app.AssignOrderHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:       createHandler,
+		getHandler:          getHandler,
 		listHandler:         listHandler,
 		updateStatusHandler: updateStatusHandler,
 		assignHandler:       assignHandler,
@@ -105,6 +108,42 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	order, err := h.getHandler.Handle(r.Context(), app.GetOrderQuery{
+		OrderID: orderID,
+	})
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	response := OrderResponse{
+		ID:            order.ID,
+		PublicID:      order.PublicID,
+		OrderNumber:   order.OrderNumber,
+		Platform:      string(order.Platform),
+		Status:        string(order.Status),
+		Priority:      string(order.Priority),
+		CustomerName:  order.CustomerName,
+		CustomerEmail: order.CustomerEmail,
+		CustomerPhone: order.CustomerPhone,
+		ProductName:   order.ProductName,
+		Quantity:      order.Quantity,
+		Notes:         order.Notes,
+		AssignedTo:    order.AssignedTo,
+		AssignedAt:    order.AssignedAt,
+		CreatedAt:     order.CreatedAt,
+		UpdatedAt:     order.UpdatedAt,
+		CompletedAt:   order.CompletedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 

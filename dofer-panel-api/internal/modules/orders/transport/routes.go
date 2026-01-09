@@ -11,6 +11,7 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 
 		r.Post("/", handler.CreateOrder)
 		r.Get("/", handler.ListOrders)
+		r.Get("/{id}", handler.GetOrder)
 		r.Patch("/{id}/status", handler.UpdateOrderStatus)
 		r.Patch("/{id}/assign", handler.AssignOrder)
 	})

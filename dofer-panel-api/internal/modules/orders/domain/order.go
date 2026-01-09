@@ -28,10 +28,10 @@ const (
 )
 
 const (
-	PlatformTikTok   OrderPlatform = "tiktok"
-	PlatformShopify  OrderPlatform = "shopify"
-	PlatformLocal    OrderPlatform = "local"
-	PlatformOther    OrderPlatform = "other"
+	PlatformTikTok  OrderPlatform = "tiktok"
+	PlatformShopify OrderPlatform = "shopify"
+	PlatformLocal   OrderPlatform = "local"
+	PlatformOther   OrderPlatform = "other"
 )
 
 type Order struct {
