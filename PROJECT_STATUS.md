@@ -109,18 +109,18 @@
   - [x] Todos los endpoints probados y funcionando
   - [ ] Tests unitarios (próximo)
 
-### Día 5-6: Frontend 🔄
-- [ ] **Panel Admin (Frontend)**
-  - [ ] Setup auth con Supabase
-  - [ ] Layout principal + navegación
-  - [ ] Página de login
-  - [ ] Dashboard principal
-  - [ ] Listado de órdenes
-    - [ ] Tabla con filtros (estado, fecha)
-    - [ ] Crear orden manual
-    - [ ] Ver detalle de orden
-    - [ ] Cambiar estado
-    - [ ] Asignar operador
+### Día 5-6: Frontend ✅
+- [x] **Panel Admin (Frontend)** - Completado
+  - [x] Setup auth con Supabase
+  - [x] Layout principal + navegación
+  - [x] Página de login
+  - [x] Dashboard principal
+  - [x] Listado de órdenes
+    - [x] Tabla con filtros (estado, fecha)
+    - [x] Crear orden manual
+    - [x] Ver detalle de orden
+    - [x] Cambiar estado
+    - [x] Asignar operador
 - [ ] **Vista Pública (Frontend)**
   - [ ] Página de tracking `/track/:public_id`
   - [ ] Timeline de estados
@@ -142,8 +142,8 @@
 - [ ] Sistema desplegado y accesible
 
 **Estado Backend:** ✅ Completado al 100%  
-**Estado Frontend:** 🔄 10% (estructura base)  
-**Estado General MVP:** 60% completado
+**Estado Frontend:** ✅ 85% (panel admin completo, falta tracking público)  
+**Estado General MVP:** 92% completado
 
 ---
 
