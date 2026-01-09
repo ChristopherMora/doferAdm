@@ -28,10 +28,10 @@ const (
 )
 
 const (
-	PlatformTikTok   OrderPlatform = "tiktok"
-	PlatformShopify  OrderPlatform = "shopify"
-	PlatformLocal    OrderPlatform = "local"
-	PlatformOther    OrderPlatform = "other"
+	PlatformTikTok  OrderPlatform = "tiktok"
+	PlatformShopify OrderPlatform = "shopify"
+	PlatformLocal   OrderPlatform = "local"
+	PlatformOther   OrderPlatform = "other"
 )
 
 type Order struct {
@@ -46,6 +46,9 @@ type Order struct {
 	CustomerPhone string
 	ProductID     string
 	ProductName   string
+	ProductImage  string
+	PrintFile     string
+	PrintFileName string
 	Quantity      int
 	Notes         string
 	InternalNotes string

@@ -9,6 +9,9 @@ export interface Order {
   customer_email?: string
   customer_phone?: string
   product_name: string
+  product_image?: string
+  print_file?: string
+  print_file_name?: string
   quantity: number
   notes?: string
   internal_notes?: string
@@ -39,3 +42,41 @@ export interface User {
   role: 'admin' | 'operator' | 'viewer'
   created_at: string
 }
+
+export interface Quote {
+  id: string
+  quote_number: string
+  customer_name: string
+  customer_email: string
+  customer_phone?: string
+  status: 'pending' | 'approved' | 'rejected' | 'expired'
+  subtotal: number
+  discount: number
+  tax: number
+  total: number
+  notes?: string
+  valid_until: string
+  created_by: string
+  created_at: string
+  updated_at: string
+  converted_to_order_id?: string
+}
+
+export interface QuoteItem {
+  id: string
+  quote_id: string
+  product_name: string
+  description?: string
+  weight_grams: number
+  print_time_hours: number
+  material_cost: number
+  labor_cost: number
+  electricity_cost: number
+  other_costs: number
+  subtotal: number
+  quantity: number
+  unit_price: number
+  total: number
+  created_at: string
+}
+

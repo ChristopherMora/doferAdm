@@ -11,7 +11,11 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 
 		r.Post("/", handler.CreateOrder)
 		r.Get("/", handler.ListOrders)
+		// Rutas específicas antes de rutas genéricas con parámetros
+		r.Get("/stats", handler.GetOrderStats)
+		r.Get("/{id}/history", handler.GetOrderHistory)
 		r.Patch("/{id}/status", handler.UpdateOrderStatus)
 		r.Patch("/{id}/assign", handler.AssignOrder)
+		r.Get("/{id}", handler.GetOrder)
 	})
 }
