@@ -15,6 +15,8 @@ type QuoteHandler struct {
 	listHandler         *app.ListQuotesHandler
 	addItemHandler      *app.AddQuoteItemHandler
 	updateStatusHandler *app.UpdateQuoteStatusHandler
+	deleteItemHandler   *app.DeleteQuoteItemHandler
+	deleteQuoteHandler  *app.DeleteQuoteHandler
 }
 
 func NewQuoteHandler(
@@ -23,6 +25,8 @@ func NewQuoteHandler(
 	listHandler *app.ListQuotesHandler,
 	addItemHandler *app.AddQuoteItemHandler,
 	updateStatusHandler *app.UpdateQuoteStatusHandler,
+	deleteItemHandler *app.DeleteQuoteItemHandler,
+	deleteQuoteHandler *app.DeleteQuoteHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
 		createHandler:       createHandler,
@@ -30,6 +34,8 @@ func NewQuoteHandler(
 		listHandler:         listHandler,
 		addItemHandler:      addItemHandler,
 		updateStatusHandler: updateStatusHandler,
+		deleteItemHandler:   deleteItemHandler,
+		deleteQuoteHandler:  deleteQuoteHandler,
 	}
 }
 
@@ -48,6 +54,7 @@ type AddQuoteItemRequest struct {
 	PrintTimeHours float64 `json:"print_time_hours"`
 	Quantity       int     `json:"quantity"`
 	OtherCosts     float64 `json:"other_costs"`
+	UnitPrice      *float64 `json:"unit_price"`  // Precio personalizado (opcional)
 }
 
 type UpdateQuoteStatusRequest struct {
@@ -137,6 +144,7 @@ func (h *QuoteHandler) AddQuoteItem(w http.ResponseWriter, r *http.Request) {
 		PrintTimeHours: req.PrintTimeHours,
 		Quantity:       req.Quantity,
 		OtherCosts:     req.OtherCosts,
+		CustomPrice:    req.UnitPrice,  // Pasar precio personalizado si existe
 	}
 
 	if err := h.addItemHandler.Handle(r.Context(), cmd); err != nil {
@@ -170,3 +178,42 @@ func (h *QuoteHandler) UpdateQuoteStatus(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Status updated successfully"})
 }
+func (h *QuoteHandler) DeleteQuoteItem(w http.ResponseWriter, r *http.Request) {
+	quoteID := chi.URLParam(r, "id")
+	itemID := chi.URLParam(r, "itemId")
+
+	if quoteID == "" || itemID == "" {
+		http.Error(w, "Invalid quote ID or item ID", http.StatusBadRequest)
+		return
+	}
+
+	cmd := app.DeleteQuoteItemCommand{
+		QuoteID: quoteID,
+		ItemID:  itemID,
+	}
+
+	if err := h.deleteItemHandler.Handle(r.Context(), cmd); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Item deleted successfully"})
+}
+
+func (h *QuoteHandler) DeleteQuote(w http.ResponseWriter, r *http.Request) {
+	quoteID := chi.URLParam(r, "id")
+
+	cmd := app.DeleteQuoteCommand{
+		QuoteID: quoteID,
+	}
+
+	if err := h.deleteQuoteHandler.Handle(r.Context(), cmd); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Quote deleted successfully"})
+}
+

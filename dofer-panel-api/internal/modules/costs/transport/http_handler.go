@@ -47,6 +47,9 @@ func (h *CostHandler) GetCostSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convertir costo por gramo a costo por kilo (multiplicar por 1000) para mostrar al usuario
+	settings.MaterialCostPerGram = settings.MaterialCostPerGram * 1000
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(settings)
 }
@@ -59,8 +62,9 @@ func (h *CostHandler) UpdateCostSettings(w http.ResponseWriter, r *http.Request)
 	}
 
 	// TODO: Obtener usuario del contexto
+	// Convertir costo por kilo a costo por gramo (dividir entre 1000)
 	cmd := app.UpdateCostSettingsCommand{
-		MaterialCostPerGram:    req.MaterialCostPerGram,
+		MaterialCostPerGram:    req.MaterialCostPerGram / 1000,
 		ElectricityCostPerHour: req.ElectricityCostPerHour,
 		LaborCostPerHour:       req.LaborCostPerHour,
 		ProfitMarginPercentage: req.ProfitMarginPercentage,

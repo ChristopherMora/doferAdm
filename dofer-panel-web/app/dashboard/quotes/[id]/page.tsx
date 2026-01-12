@@ -86,6 +86,36 @@ export default function QuoteDetailPage() {
     generateQuotePDF(quote)
   }
 
+  const deleteQuoteItem = async (itemId: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este item?')) {
+      return
+    }
+    
+    try {
+      await apiClient.delete(`/quotes/${quoteId}/items/${itemId}`)
+      alert('✅ Item eliminado')
+      await loadQuote()
+    } catch (error) {
+      console.error('Error deleting item:', error)
+      alert('Error al eliminar item')
+    }
+  }
+
+  const deleteQuote = async () => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta cotización? Esta acción no se puede deshacer.')) {
+      return
+    }
+    
+    try {
+      await apiClient.delete(`/quotes/${quoteId}`)
+      alert('✅ Cotización eliminada')
+      router.push('/dashboard/quotes')
+    } catch (error) {
+      console.error('Error deleting quote:', error)
+      alert('Error al eliminar cotización')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -178,6 +208,9 @@ export default function QuoteDetailPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Total
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -206,6 +239,14 @@ export default function QuoteDetailPage() {
                     </td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">
                       {formatCurrency(item.total)}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <button
+                        onClick={() => deleteQuoteItem(item.id)}
+                        className="text-red-600 hover:text-red-800 font-medium"
+                      >
+                        🗑️ Eliminar
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -282,6 +323,13 @@ export default function QuoteDetailPage() {
             className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700"
           >
             🖨️ Imprimir
+          </button>
+
+          <button
+            onClick={deleteQuote}
+            className="bg-black text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-800"
+          >
+            🗑️ Eliminar Cotización
           </button>
 
           <button

@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type Quote struct {
 	ID                 string    `json:"id"`
@@ -51,4 +54,5 @@ type QuoteRepository interface {
 	GetItems(quoteID string) ([]*QuoteItem, error)
 	UpdateItem(item *QuoteItem) error
 	DeleteItem(itemID string) error
+	DeleteQuoteItem(ctx context.Context, quoteID, itemID string) error
 }

@@ -31,6 +31,8 @@ export default function NewQuotePage() {
 
   // Step 2: Items
   const [items, setItems] = useState<QuoteItem[]>([])
+  const [pricingMode, setPricingMode] = useState<'auto' | 'manual'>('auto')
+  const [customPrice, setCustomPrice] = useState<number>(0)
   const [currentItem, setCurrentItem] = useState({
     product_name: '',
     description: '',
@@ -41,8 +43,8 @@ export default function NewQuotePage() {
   })
 
   const createQuote = async () => {
-    if (!customerName || !customerEmail) {
-      alert('Por favor completa nombre y email del cliente')
+    if (!customerName) {
+      alert('Por favor completa el nombre del cliente')
       return
     }
 
@@ -50,7 +52,7 @@ export default function NewQuotePage() {
       setLoading(true)
       const response = await apiClient.post<any>('/quotes', {
         customer_name: customerName,
-        customer_email: customerEmail,
+        customer_email: customerEmail || '',
         customer_phone: customerPhone,
         notes: notes,
         valid_days: validDays,
@@ -72,25 +74,63 @@ export default function NewQuotePage() {
     }
   }
 
-  const addItemToQuote = async (breakdown: any) => {
-    if (!quoteId) return
+  const addItemToQuote = async (breakdown?: any) => {
+    if (!quoteId) {
+      alert('Por favor crea la cotización primero (Paso 1)')
+      return
+    }
+    if (!currentItem.product_name) {
+      alert('Por favor completa el nombre del producto')
+      return
+    }
 
     try {
       setLoading(true)
-      await apiClient.post(`/quotes/${quoteId}/items`, {
+      
+      // Determinar precio basado en modo
+      let finalUnitPrice = 0
+      let finalTotal = 0
+
+      if (pricingMode === 'manual') {
+        // Precio personalizado
+        if (customPrice <= 0) {
+          alert('Por favor ingresa un precio válido mayor a 0')
+          return
+        }
+        finalUnitPrice = customPrice
+        finalTotal = customPrice * currentItem.quantity
+      } else {
+        // Cálculo automático
+        if (!breakdown) {
+          alert('Calcula el precio primero con el botón azul')
+          return
+        }
+        finalUnitPrice = breakdown.unit_price
+        finalTotal = breakdown.total
+      }
+
+      // Enviar con precio personalizado si aplica
+      const itemData: any = {
         product_name: currentItem.product_name,
         description: currentItem.description,
         weight_grams: currentItem.weight_grams,
         print_time_hours: currentItem.print_time_hours,
         quantity: currentItem.quantity,
         other_costs: currentItem.other_costs,
-      })
+      }
+
+      // Si es precio manual, enviar el precio personalizado
+      if (pricingMode === 'manual') {
+        itemData.unit_price = finalUnitPrice
+      }
+
+      await apiClient.post(`/quotes/${quoteId}/items`, itemData)
 
       // Add to local list
       const newItem: QuoteItem = {
         ...currentItem,
-        unit_price: breakdown.unit_price,
-        total: breakdown.total,
+        unit_price: finalUnitPrice,
+        total: finalTotal,
       }
       setItems([...items, newItem])
 
@@ -103,14 +143,37 @@ export default function NewQuotePage() {
         quantity: 1,
         other_costs: 0,
       })
+      setCustomPrice(0)
 
       alert('✅ Item agregado exitosamente')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding item:', error)
-      alert('Error al agregar item')
+      alert(`Error al agregar item: ${error.message || 'Error desconocido'}`)
     } finally {
       setLoading(false)
     }
+  }
+
+  const removeItem = (index: number) => {
+    setItems(items.filter((_, i) => i !== index))
+    alert('✅ Item eliminado')
+  }
+
+  const editItem = (index: number) => {
+    const itemToEdit = items[index]
+    setCurrentItem({
+      product_name: itemToEdit.product_name,
+      description: itemToEdit.description,
+      weight_grams: itemToEdit.weight_grams,
+      print_time_hours: itemToEdit.print_time_hours,
+      quantity: itemToEdit.quantity,
+      other_costs: itemToEdit.other_costs,
+    })
+    setCustomPrice(itemToEdit.unit_price)
+    setPricingMode('manual')
+    removeItem(index)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    alert('Item cargado para editar. Actualiza y haz clic en Agregar.')
   }
 
   const finishQuote = () => {
@@ -186,7 +249,7 @@ export default function NewQuotePage() {
 
             <div>
               <label className="block text-sm font-bold text-black mb-2">
-                Email *
+                Email (opcional)
               </label>
               <input
                 type="email"
@@ -263,9 +326,25 @@ export default function NewQuotePage() {
                         {item.weight_grams}g • {item.print_time_hours}h • Cantidad: {item.quantity}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600">{formatCurrency(item.unit_price)}/u</p>
-                      <p className="font-bold text-gray-900">{formatCurrency(item.total)}</p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">{formatCurrency(item.unit_price)}/u</p>
+                        <p className="font-bold text-gray-900">{formatCurrency(item.total)}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => editItem(index)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm font-medium"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => removeItem(index)}
+                          className="bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded text-sm font-medium"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -362,17 +441,80 @@ export default function NewQuotePage() {
               </div>
             </div>
 
-            {/* Inline Calculator */}
+            {/* Pricing Mode Toggle */}
+            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg p-4 border border-indigo-200">
+              <label className="block text-sm font-bold text-black mb-3">💰 Modo de Precio</label>
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setPricingMode('auto')
+                    setCustomPrice(0)
+                  }}
+                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
+                    pricingMode === 'auto'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  📊 Cálculo Automático
+                </button>
+                <button
+                  onClick={() => setPricingMode('manual')}
+                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
+                    pricingMode === 'manual'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  💵 Precio Personalizado
+                </button>
+              </div>
+            </div>
+
+            {/* Inline Calculator or Custom Price */}
             <div className="border-t pt-6">
-              <CalculadoraCostos 
-                onCalculated={(breakdown) => {
-                  if (currentItem.product_name && currentItem.weight_grams && currentItem.print_time_hours) {
-                    addItemToQuote(breakdown)
-                  } else {
-                    alert('Completa nombre, peso y tiempo de impresión')
-                  }
-                }}
-              />
+              {pricingMode === 'auto' ? (
+                <CalculadoraCostos 
+                  onCalculated={(breakdown) => {
+                    if (currentItem.product_name && currentItem.weight_grams && currentItem.print_time_hours) {
+                      addItemToQuote(breakdown)
+                    } else {
+                      alert('Completa nombre, peso y tiempo de impresión')
+                    }
+                  }}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-black mb-2">
+                      Precio Unitario (MXN) *
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={customPrice || ''}
+                        onChange={(e) => setCustomPrice(parseFloat(e.target.value) || 0)}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                        placeholder="0.00"
+                      />
+                      <button
+                        onClick={() => addItemToQuote()}
+                        disabled={loading || !customPrice}
+                        className="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        ➕ Agregar
+                      </button>
+                    </div>
+                    {customPrice > 0 && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        Total: {formatCurrency(customPrice * currentItem.quantity)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

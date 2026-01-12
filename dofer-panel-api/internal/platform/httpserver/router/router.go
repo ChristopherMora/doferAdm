@@ -103,12 +103,16 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	listQuotesHandler := quotesApp.NewListQuotesHandler(quoteRepo)
 	addQuoteItemHandler := quotesApp.NewAddQuoteItemHandler(quoteRepo, calculateCostHandler)
 	updateQuoteStatusHandler := quotesApp.NewUpdateQuoteStatusHandler(quoteRepo)
+	deleteQuoteItemHandler := quotesApp.NewDeleteQuoteItemHandler(quoteRepo)
+	deleteQuoteHandler := quotesApp.NewDeleteQuoteHandler(quoteRepo)
 	quoteHandler := quotesTransport.NewQuoteHandler(
 		createQuoteHandler,
 		getQuoteHandler,
 		listQuotesHandler,
 		addQuoteItemHandler,
 		updateQuoteStatusHandler,
+		deleteQuoteItemHandler,
+		deleteQuoteHandler,
 	)
 
 	// Setup tracking handler

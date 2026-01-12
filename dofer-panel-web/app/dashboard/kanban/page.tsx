@@ -70,7 +70,7 @@ export default function KanbanPage() {
       
       // Actualizar localmente
       setOrders(orders.map(o => 
-        o.id === orderId ? { ...o, status: newStatus } : o
+        o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o
       ))
     } catch (error) {
       console.error('Error updating order status:', error)

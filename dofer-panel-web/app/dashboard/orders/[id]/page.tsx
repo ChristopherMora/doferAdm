@@ -186,7 +186,7 @@ export default function OrderDetailPage() {
               <p className="text-sm text-gray-500">Cantidad</p>
               <p className="text-base text-gray-900">{order.quantity} unidades</p>
             </div>
-            {order.print_file_name && (
+            {(order as any).print_file && (
               <div>
                 <p className="text-sm text-gray-500">Archivo de Impresión</p>
                 <div className="flex items-center gap-2 mt-1">
@@ -194,11 +194,11 @@ export default function OrderDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <a 
-                    href={order.print_file} 
-                    download={order.print_file_name}
+                    href={(order as any).print_file} 
+                    download={(order as any).print_file_name || 'archivo'}
                     className="text-base text-indigo-600 hover:text-indigo-800 font-medium"
                   >
-                    {order.print_file_name}
+                    {(order as any).print_file_name}
                   </a>
                 </div>
               </div>

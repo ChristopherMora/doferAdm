@@ -113,15 +113,15 @@ func (o *Order) ChangeStatus(newStatus OrderStatus) error {
 }
 
 func (o *Order) canTransitionTo(newStatus OrderStatus) bool {
-	// Simplificado - puedes agregar lógica más compleja
+	// Permitir transiciones hacia adelante y hacia atrás, excepto desde estados terminales
 	validTransitions := map[OrderStatus][]OrderStatus{
 		StatusNew:       {StatusPrinting, StatusCancelled},
-		StatusPrinting:  {StatusPost, StatusCancelled},
-		StatusPost:      {StatusPacked, StatusCancelled},
-		StatusPacked:    {StatusReady, StatusCancelled},
-		StatusReady:     {StatusDelivered, StatusCancelled},
-		StatusDelivered: {},
-		StatusCancelled: {},
+		StatusPrinting:  {StatusNew, StatusPost, StatusCancelled},
+		StatusPost:      {StatusPrinting, StatusPacked, StatusCancelled},
+		StatusPacked:    {StatusPost, StatusReady, StatusCancelled},
+		StatusReady:     {StatusPacked, StatusDelivered, StatusCancelled},
+		StatusDelivered: {StatusReady},
+		StatusCancelled: {StatusNew},
 	}
 
 	allowed, ok := validTransitions[o.Status]

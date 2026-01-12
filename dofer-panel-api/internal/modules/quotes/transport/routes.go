@@ -11,8 +11,16 @@ func RegisterRoutes(r chi.Router, handler *QuoteHandler) {
 
 		r.Post("/", handler.CreateQuote)
 		r.Get("/", handler.ListQuotes)
-		r.Get("/{id}", handler.GetQuote)
-		r.Post("/{id}/items", handler.AddQuoteItem)
-		r.Patch("/{id}/status", handler.UpdateQuoteStatus)
+		
+		// Rutas anidadas con {id}
+		r.Route("/{id}", func(r chi.Router) {
+			r.Get("/", handler.GetQuote)
+			r.Delete("/", handler.DeleteQuote)
+			r.Patch("/status", handler.UpdateQuoteStatus)
+			
+			// Items dentro de quote
+			r.Post("/items", handler.AddQuoteItem)
+			r.Delete("/items/{itemId}", handler.DeleteQuoteItem)
+		})
 	})
 }

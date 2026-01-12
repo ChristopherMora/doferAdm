@@ -64,6 +64,13 @@ export const apiClient = {
       token,
     }),
   
+  put: <T>(endpoint: string, data?: unknown, token?: string) =>
+    apiRequest<T>(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      token,
+    }),
+  
   patch: <T>(endpoint: string, data?: unknown, token?: string) =>
     apiRequest<T>(endpoint, {
       method: 'PATCH',

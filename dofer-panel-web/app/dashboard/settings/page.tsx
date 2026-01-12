@@ -127,7 +127,7 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-900 mb-2">
-                💎 Costo de material por gramo (MXN)
+                💎 Costo de material por kilo (MXN)
               </label>
               <input
                 type="number"
@@ -138,7 +138,7 @@ export default function SettingsPage() {
                 }
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
               />
-              <p className="text-xs text-gray-500 mt-1">Costo promedio del filamento por gramo</p>
+              <p className="text-xs text-gray-500 mt-1">Costo del filamento por kilo (se divide automáticamente por gramo)</p>
             </div>
 
             <div>

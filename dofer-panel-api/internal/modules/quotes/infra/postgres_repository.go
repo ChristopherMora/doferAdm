@@ -321,6 +321,20 @@ func (r *PostgresQuoteRepository) DeleteItem(itemID string) error {
 	return err
 }
 
+func (r *PostgresQuoteRepository) DeleteQuoteItem(ctx context.Context, quoteID, itemID string) error {
+	// Use a new context with background to avoid deadline issues
+	bgCtx := context.Background()
+	query := `DELETE FROM quote_items WHERE id = $1 AND quote_id = $2`
+	println("DEBUG REPO: About to execute DELETE with itemID:", itemID, "quoteID:", quoteID)
+	result, err := r.db.Exec(bgCtx, query, itemID, quoteID)
+	if err != nil {
+		println("DEBUG REPO: Exec error:", err.Error())
+		return err
+	}
+	println("DEBUG REPO: Exec completed, rows affected:", result.RowsAffected())
+	return nil
+}
+
 // GenerateQuoteNumber genera un número de cotización único
 func GenerateQuoteNumber() string {
 	return fmt.Sprintf("COT-%s", time.Now().Format("20060102150405"))

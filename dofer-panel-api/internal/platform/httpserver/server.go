@@ -23,9 +23,9 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%s", cfg.Port),
 			Handler:      r,
-			ReadTimeout:  15 * time.Second,
-			WriteTimeout: 15 * time.Second,
-			IdleTimeout:  60 * time.Second,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  120 * time.Second,
 		},
 		cfg: cfg,
 	}
