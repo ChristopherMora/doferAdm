@@ -9,7 +9,7 @@ type CostSettings struct {
 	LaborCostPerHour       float64   `json:"labor_cost_per_hour"`
 	ProfitMarginPercentage float64   `json:"profit_margin_percentage"`
 	UpdatedAt              time.Time `json:"updated_at"`
-	UpdatedBy              string    `json:"updated_by"`
+	UpdatedBy              string    `json:"updated_by,omitempty"`
 }
 
 type CalculationInput struct {

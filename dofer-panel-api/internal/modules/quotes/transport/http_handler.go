@@ -72,7 +72,7 @@ func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
 		CustomerPhone: req.CustomerPhone,
 		Notes:         req.Notes,
 		ValidUntil:    time.Now().AddDate(0, 0, validDays),
-		CreatedBy:     "admin@test.com", // TODO: Obtener del contexto
+		CreatedBy:     "11111111-1111-1111-1111-111111111111", // Admin user UUID
 	}
 
 	quote, err := h.createHandler.Handle(r.Context(), cmd)

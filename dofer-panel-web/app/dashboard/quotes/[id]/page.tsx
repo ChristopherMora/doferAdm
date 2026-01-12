@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { Quote, QuoteItem } from '@/types'
+import { generateQuotePDF } from '@/lib/pdfGenerator'
 
 export default function QuoteDetailPage() {
   const router = useRouter()
@@ -21,8 +22,8 @@ export default function QuoteDetailPage() {
   const loadQuote = async () => {
     try {
       setLoading(true)
-      const data = await apiClient.get<Quote>(`/quotes/${quoteId}`)
-      setQuote(data)
+      const response = await apiClient.get<{ quote: Quote; items: QuoteItem[] | null }>(`/quotes/${quoteId}`)
+      setQuote({ ...response.quote, items: response.items || [] })
     } catch (error) {
       console.error('Error loading quote:', error)
       alert('Error al cargar cotización')
@@ -78,6 +79,11 @@ export default function QuoteDetailPage() {
         {labels[status as keyof typeof labels]}
       </span>
     )
+  }
+
+  const handleGeneratePDF = () => {
+    if (!quote) return
+    generateQuotePDF(quote)
   }
 
   if (loading) {
@@ -235,7 +241,7 @@ export default function QuoteDetailPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">⚡ Acciones</h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {quote.status === 'pending' && (
             <>
               <button
@@ -263,6 +269,13 @@ export default function QuoteDetailPage() {
               📦 Convertir a Pedido
             </button>
           )}
+
+          <button
+            onClick={handleGeneratePDF}
+            className="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700"
+          >
+            📄 Descargar PDF
+          </button>
 
           <button
             onClick={() => window.print()}

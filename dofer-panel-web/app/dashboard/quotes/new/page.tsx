@@ -58,9 +58,15 @@ export default function NewQuotePage() {
       
       setQuoteId(response.id)
       setStep(2)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating quote:', error)
-      alert('Error al crear cotización')
+      
+      // Mensaje más específico dependiendo del error
+      if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+        alert('❌ No se puede conectar al servidor.\n\nEl backend API no está corriendo.\n\nPara crear cotizaciones necesitas:\n1. Configurar la base de datos (Supabase o Docker)\n2. Iniciar el backend: cd dofer-panel-api && go run cmd/api/main.go')
+      } else {
+        alert(`Error al crear cotización: ${error.message || 'Error desconocido'}`)
+      }
     } finally {
       setLoading(false)
     }

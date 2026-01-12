@@ -60,6 +60,7 @@ export interface Quote {
   created_at: string
   updated_at: string
   converted_to_order_id?: string
+  items?: QuoteItem[]  // Array de items incluido en el detalle
 }
 
 export interface QuoteItem {

@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<OrderStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [recentOrders, setRecentOrders] = useState<any[]>([])
+  const [backendConnected, setBackendConnected] = useState(true)
 
   useEffect(() => {
     loadDashboardData()
@@ -34,8 +35,24 @@ export default function DashboardPage() {
       // Get recent orders
       const response = await apiClient.get<{ orders: any[], total: number }>('/orders?limit=5')
       setRecentOrders(response.orders || [])
+      setBackendConnected(true)
     } catch (error) {
       console.error('Error loading dashboard:', error)
+      setBackendConnected(false)
+      // Si el backend no está disponible, usar datos de ejemplo
+      setStats({
+        total_orders: 0,
+        orders_by_status: {
+          'Pendiente': 0,
+          'En Producción': 0,
+          'Completado': 0
+        },
+        urgent_orders: 0,
+        today_orders: 0,
+        completed_today: 0,
+        average_per_day: 0
+      })
+      setRecentOrders([])
     } finally {
       setLoading(false)
     }
@@ -86,6 +103,32 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Alerta si no hay conexión con el backend */}
+      {!backendConnected && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">
+                Backend no conectado
+              </h3>
+              <div className="mt-2 text-sm text-yellow-700">
+                <p>
+                  El servidor API no está respondiendo. Mostrando datos de ejemplo.
+                </p>
+                <p className="mt-1">
+                  Para iniciar el backend: <code className="bg-yellow-100 px-2 py-1 rounded">cd dofer-panel-api && go run cmd/api/main.go</code>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {statCards.map((card) => (

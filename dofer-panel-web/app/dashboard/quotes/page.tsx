@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { Quote } from '@/types'
+import BackendAlert from '@/components/BackendAlert'
 
 export default function QuotesPage() {
   const router = useRouter()
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [backendError, setBackendError] = useState(false)
 
   useEffect(() => {
     loadQuotes()
@@ -18,10 +20,14 @@ export default function QuotesPage() {
   const loadQuotes = async () => {
     try {
       setLoading(true)
+      setBackendError(false)
       const response = await apiClient.get<{ quotes: Quote[], total: number }>('/quotes')
       setQuotes(response.quotes || [])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading quotes:', error)
+      if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+        setBackendError(true)
+      }
     } finally {
       setLoading(false)
     }
@@ -73,6 +79,9 @@ export default function QuotesPage() {
           ➕ Nueva Cotización
         </button>
       </div>
+
+      {/* Alerta de backend no conectado */}
+      {backendError && <BackendAlert />}
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow p-4">

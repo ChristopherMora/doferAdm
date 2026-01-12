@@ -2,7 +2,6 @@ package infra
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/dofer/panel-api/internal/modules/costs/domain"
@@ -20,13 +19,12 @@ func NewPostgresCostSettingsRepository(db *pgxpool.Pool) *PostgresCostSettingsRe
 func (r *PostgresCostSettingsRepository) Get() (*domain.CostSettings, error) {
 	query := `
 		SELECT id, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
-		       profit_margin_percentage, updated_at, COALESCE(updated_by, '') as updated_by
+		       profit_margin_percentage, updated_at
 		FROM cost_settings
 		LIMIT 1
 	`
 
 	var settings domain.CostSettings
-	var updatedBy sql.NullString
 
 	err := r.db.QueryRow(context.Background(), query).Scan(
 		&settings.ID,
@@ -35,15 +33,10 @@ func (r *PostgresCostSettingsRepository) Get() (*domain.CostSettings, error) {
 		&settings.LaborCostPerHour,
 		&settings.ProfitMarginPercentage,
 		&settings.UpdatedAt,
-		&updatedBy,
 	)
 
 	if err != nil {
 		return nil, err
-	}
-
-	if updatedBy.Valid {
-		settings.UpdatedBy = updatedBy.String
 	}
 
 	return &settings, nil
@@ -56,9 +49,8 @@ func (r *PostgresCostSettingsRepository) Update(settings *domain.CostSettings) e
 		    electricity_cost_per_hour = $2,
 		    labor_cost_per_hour = $3,
 		    profit_margin_percentage = $4,
-		    updated_at = $5,
-		    updated_by = $6
-		WHERE id = $7
+		    updated_at = $5
+		WHERE id = $6
 	`
 
 	_, err := r.db.Exec(context.Background(), query,
@@ -67,7 +59,6 @@ func (r *PostgresCostSettingsRepository) Update(settings *domain.CostSettings) e
 		settings.LaborCostPerHour,
 		settings.ProfitMarginPercentage,
 		time.Now(),
-		settings.UpdatedBy,
 		settings.ID,
 	)
 
