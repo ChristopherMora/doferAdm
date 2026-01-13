@@ -2,6 +2,7 @@ package transport
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -17,6 +18,7 @@ type QuoteHandler struct {
 	updateStatusHandler *app.UpdateQuoteStatusHandler
 	deleteItemHandler   *app.DeleteQuoteItemHandler
 	deleteQuoteHandler  *app.DeleteQuoteHandler
+	searchHandler       *app.SearchQuotesHandler
 }
 
 func NewQuoteHandler(
@@ -27,6 +29,7 @@ func NewQuoteHandler(
 	updateStatusHandler *app.UpdateQuoteStatusHandler,
 	deleteItemHandler *app.DeleteQuoteItemHandler,
 	deleteQuoteHandler *app.DeleteQuoteHandler,
+	searchHandler *app.SearchQuotesHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
 		createHandler:       createHandler,
@@ -36,6 +39,7 @@ func NewQuoteHandler(
 		updateStatusHandler: updateStatusHandler,
 		deleteItemHandler:   deleteItemHandler,
 		deleteQuoteHandler:  deleteQuoteHandler,
+		searchHandler:       searchHandler,
 	}
 }
 
@@ -215,5 +219,38 @@ func (h *QuoteHandler) DeleteQuote(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Quote deleted successfully"})
+}
+
+func (h *QuoteHandler) SearchQuotes(w http.ResponseWriter, r *http.Request) {
+	// Parse min/max total from query params
+	var minTotal, maxTotal float64
+	if minStr := r.URL.Query().Get("min_total"); minStr != "" {
+		fmt.Sscanf(minStr, "%f", &minTotal)
+	}
+	if maxStr := r.URL.Query().Get("max_total"); maxStr != "" {
+		fmt.Sscanf(maxStr, "%f", &maxTotal)
+	}
+
+	params := app.SearchQuotesParams{
+		Query:    r.URL.Query().Get("query"),
+		Status:   r.URL.Query().Get("status"),
+		Customer: r.URL.Query().Get("customer"),
+		DateFrom: r.URL.Query().Get("date_from"),
+		DateTo:   r.URL.Query().Get("date_to"),
+		MinTotal: minTotal,
+		MaxTotal: maxTotal,
+	}
+
+	quotes, err := h.searchHandler.Handle(r.Context(), params)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"quotes": quotes,
+		"total":  len(quotes),
+	})
 }
 

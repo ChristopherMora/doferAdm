@@ -75,6 +75,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	assignOrderHandler := ordersApp.NewAssignOrderHandler(orderRepo, historyRepo)
 	getHistoryHandler := ordersApp.NewGetOrderHistoryHandler(historyRepo)
 	getStatsHandler := ordersApp.NewGetOrderStatsHandler(orderRepo)
+	searchOrdersHandler := ordersApp.NewSearchOrdersHandler(orderRepo)
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
 		getOrderHandler,
@@ -83,6 +84,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		assignOrderHandler,
 		getHistoryHandler,
 		getStatsHandler,
+		searchOrdersHandler,
 	)
 
 	// Setup cost handlers
@@ -105,6 +107,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	updateQuoteStatusHandler := quotesApp.NewUpdateQuoteStatusHandler(quoteRepo)
 	deleteQuoteItemHandler := quotesApp.NewDeleteQuoteItemHandler(quoteRepo)
 	deleteQuoteHandler := quotesApp.NewDeleteQuoteHandler(quoteRepo)
+	searchQuotesHandler := quotesApp.NewSearchQuotesHandler(quoteRepo)
 	quoteHandler := quotesTransport.NewQuoteHandler(
 		createQuoteHandler,
 		getQuoteHandler,
@@ -113,6 +116,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		updateQuoteStatusHandler,
 		deleteQuoteItemHandler,
 		deleteQuoteHandler,
+		searchQuotesHandler,
 	)
 
 	// Setup tracking handler

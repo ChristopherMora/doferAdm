@@ -11,6 +11,7 @@ func RegisterRoutes(r chi.Router, handler *QuoteHandler) {
 
 		r.Post("/", handler.CreateQuote)
 		r.Get("/", handler.ListQuotes)
+		r.Get("/search", handler.SearchQuotes)
 		
 		// Rutas anidadas con {id}
 		r.Route("/{id}", func(r chi.Router) {

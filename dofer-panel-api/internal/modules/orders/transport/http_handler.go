@@ -17,6 +17,7 @@ type OrderHandler struct {
 	assignHandler       *app.AssignOrderHandler
 	historyHandler      *app.GetOrderHistoryHandler
 	statsHandler        *app.GetOrderStatsHandler
+	searchHandler       *app.SearchOrdersHandler
 }
 
 func NewOrderHandler(
@@ -27,6 +28,7 @@ func NewOrderHandler(
 	assignHandler *app.AssignOrderHandler,
 	historyHandler *app.GetOrderHistoryHandler,
 	statsHandler *app.GetOrderStatsHandler,
+	searchHandler *app.SearchOrdersHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:       createHandler,
@@ -36,6 +38,7 @@ func NewOrderHandler(
 		assignHandler:       assignHandler,
 		historyHandler:      historyHandler,
 		statsHandler:        statsHandler,
+		searchHandler:       searchHandler,
 	}
 }
 
@@ -341,4 +344,27 @@ func (h *OrderHandler) GetOrderStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func (h *OrderHandler) SearchOrders(w http.ResponseWriter, r *http.Request) {
+	params := app.SearchOrdersParams{
+		Query:    r.URL.Query().Get("query"),
+		Status:   r.URL.Query().Get("status"),
+		Customer: r.URL.Query().Get("customer"),
+		Operator: r.URL.Query().Get("operator"),
+		DateFrom: r.URL.Query().Get("date_from"),
+		DateTo:   r.URL.Query().Get("date_to"),
+	}
+
+	orders, err := h.searchHandler.Handle(r.Context(), params)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"orders": orders,
+		"total":  len(orders),
+	})
 }
