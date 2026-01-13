@@ -26,6 +26,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
     quantity: 1,
     priority: 'normal',
     notes: '',
+    delivery_deadline: '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,6 +53,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
         quantity: 1,
         priority: 'normal',
         notes: '',
+        delivery_deadline: '',
       })
       setImagePreview(null)
       setPrintFilePreview(null)
@@ -284,6 +286,20 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 <option value="normal">Normal</option>
                 <option value="urgent">Urgente</option>
               </select>
+            </div>
+
+            {/* Delivery Deadline */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                📅 Fecha de Entrega Máxima
+              </label>
+              <input
+                type="datetime-local"
+                name="delivery_deadline"
+                value={formData.delivery_deadline}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+              />
             </div>
           </div>
 

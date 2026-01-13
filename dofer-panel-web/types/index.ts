@@ -19,6 +19,7 @@ export interface Order {
   created_at: string
   updated_at: string
   completed_at?: string
+  delivery_deadline?: string
   // Timer fields
   estimated_time_minutes?: number
   actual_time_minutes?: number

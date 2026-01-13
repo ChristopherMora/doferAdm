@@ -58,6 +58,7 @@ type Order struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	CompletedAt   *time.Time
+	DeliveryDeadline *time.Time
 	// Timer fields
 	EstimatedTimeMins    int        `json:"estimated_time_minutes"`
 	ActualTimeMins       int        `json:"actual_time_minutes"`

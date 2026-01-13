@@ -255,6 +255,79 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
+        {/* Delivery Deadline */}
+        {(order as any).delivery_deadline && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              📅 Fecha de Entrega
+            </h2>
+            <div className="space-y-3">
+              {(() => {
+                const deadline = new Date((order as any).delivery_deadline)
+                const now = new Date()
+                const diffTime = deadline.getTime() - now.getTime()
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                const diffHours = Math.ceil(diffTime / (1000 * 60 * 60))
+                
+                let statusColor = 'bg-green-50 text-green-800 border-green-200'
+                let statusIcon = '✅'
+                let statusText = 'A tiempo'
+                
+                if (diffDays < 0) {
+                  statusColor = 'bg-red-50 text-red-800 border-red-200'
+                  statusIcon = '❌'
+                  statusText = 'Vencida'
+                } else if (diffDays === 0) {
+                  statusColor = 'bg-orange-50 text-orange-800 border-orange-200'
+                  statusIcon = '⚠️'
+                  statusText = 'Vence hoy'
+                } else if (diffDays === 1) {
+                  statusColor = 'bg-yellow-50 text-yellow-800 border-yellow-200'
+                  statusIcon = '⏰'
+                  statusText = 'Vence mañana'
+                } else if (diffDays <= 3) {
+                  statusColor = 'bg-yellow-50 text-yellow-800 border-yellow-200'
+                  statusIcon = '⏳'
+                  statusText = 'Próxima a vencer'
+                }
+                
+                return (
+                  <>
+                    <div>
+                      <p className="text-sm text-gray-500">Fecha límite</p>
+                      <p className="text-xl font-semibold text-gray-900">
+                        {deadline.toLocaleString('es-MX', {
+                          dateStyle: 'full',
+                          timeStyle: 'short'
+                        })}
+                      </p>
+                    </div>
+                    <div className={`border-2 rounded-lg p-4 ${statusColor}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium mb-1">Estado de entrega</p>
+                          <p className="text-2xl font-bold">{statusIcon} {statusText}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium mb-1">Tiempo restante</p>
+                          <p className="text-2xl font-bold">
+                            {diffDays < 0 
+                              ? `${Math.abs(diffDays)} días vencidos`
+                              : diffDays === 0
+                              ? `${diffHours} horas`
+                              : `${diffDays} días`
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+        )}
+
         {/* Assignment */}
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">

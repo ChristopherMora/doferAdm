@@ -17,6 +17,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [recentOrders, setRecentOrders] = useState<any[]>([])
   const [backendConnected, setBackendConnected] = useState(true)
+  const [dueSoonCount, setDueSoonCount] = useState(0)
+  const [overdueCount, setOverdueCount] = useState(0)
 
   useEffect(() => {
     loadDashboardData()
@@ -35,6 +37,31 @@ export default function DashboardPage() {
       // Get recent orders
       const response = await apiClient.get<{ orders: any[], total: number }>('/orders?limit=5')
       setRecentOrders(response.orders || [])
+      
+      // Calculate due soon and overdue
+      const allOrdersResponse = await apiClient.get<{ orders: any[] }>('/orders?limit=1000')
+      const allOrders = allOrdersResponse.orders || []
+      const now = new Date()
+      
+      let dueSoon = 0
+      let overdue = 0
+      
+      allOrders.forEach((order: any) => {
+        if (order.delivery_deadline && order.status !== 'delivered' && order.status !== 'cancelled') {
+          const deadline = new Date(order.delivery_deadline)
+          const diffTime = deadline.getTime() - now.getTime()
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+          
+          if (diffDays < 0) {
+            overdue++
+          } else if (diffDays <= 2) {
+            dueSoon++
+          }
+        }
+      })
+      
+      setDueSoonCount(dueSoon)
+      setOverdueCount(overdue)
       setBackendConnected(true)
     } catch (error) {
       console.error('Error loading dashboard:', error)
@@ -71,6 +98,8 @@ export default function DashboardPage() {
     { label: 'Hoy', value: stats.today_orders, color: 'bg-green-500', icon: '📅' },
     { label: 'Urgentes', value: stats.urgent_orders, color: 'bg-red-500', icon: '🔥' },
     { label: 'Completadas Hoy', value: stats.completed_today, color: 'bg-emerald-500', icon: '✅' },
+    { label: 'Vencen Pronto', value: dueSoonCount, color: 'bg-orange-500', icon: '⏰' },
+    { label: 'Vencidas', value: overdueCount, color: 'bg-red-600', icon: '❌' },
     { label: 'Promedio/Día', value: stats.average_per_day.toFixed(1), color: 'bg-purple-500', icon: '📊' },
   ]
 
@@ -130,7 +159,7 @@ export default function DashboardPage() {
       )}
       
       {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-6">
         {statCards.map((card) => (
           <div key={card.label} className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between">
