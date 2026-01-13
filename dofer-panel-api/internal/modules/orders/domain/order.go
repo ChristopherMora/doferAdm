@@ -35,29 +35,29 @@ const (
 )
 
 type Order struct {
-	ID            string
-	PublicID      string
-	OrderNumber   string
-	Platform      OrderPlatform
-	Status        OrderStatus
-	Priority      OrderPriority
-	CustomerName  string
-	CustomerEmail string
-	CustomerPhone string
-	ProductID     string
-	ProductName   string
-	ProductImage  string
-	PrintFile     string
-	PrintFileName string
-	Quantity      int
-	Notes         string
-	InternalNotes string
-	Metadata      map[string]interface{}
-	AssignedTo    string
-	AssignedAt    *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	CompletedAt   *time.Time
+	ID               string
+	PublicID         string
+	OrderNumber      string
+	Platform         OrderPlatform
+	Status           OrderStatus
+	Priority         OrderPriority
+	CustomerName     string
+	CustomerEmail    string
+	CustomerPhone    string
+	ProductID        string
+	ProductName      string
+	ProductImage     string
+	PrintFile        string
+	PrintFileName    string
+	Quantity         int
+	Notes            string
+	InternalNotes    string
+	Metadata         map[string]interface{}
+	AssignedTo       string
+	AssignedAt       *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CompletedAt      *time.Time
 	DeliveryDeadline *time.Time
 	// Timer fields
 	EstimatedTimeMins    int        `json:"estimated_time_minutes"`

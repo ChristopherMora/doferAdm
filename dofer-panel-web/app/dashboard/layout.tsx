@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import ThemeToggle from '@/components/ThemeToggle'
 
 export default function DashboardLayout({
   children,
@@ -46,18 +47,18 @@ export default function DashboardLayout({
   ]
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-lg">
+      <div className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 shadow-lg transition-colors duration-200">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-6 border-b">
-            <h1 className="text-2xl font-bold text-indigo-600">DOFER Panel</h1>
-            <p className="text-sm text-gray-500 mt-1">Sistema operativo</p>
+          <div className="p-6 border-b dark:border-gray-700">
+            <h1 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">DOFER Panel</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sistema operativo</p>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2">
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             {navigation.map((item) => {
               const isActive = pathname === item.href
               return (
@@ -66,8 +67,8 @@ export default function DashboardLayout({
                   href={item.href}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-indigo-50 text-indigo-600 font-medium'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                   }`}
                 >
                   <span className="text-xl">{item.icon}</span>
@@ -78,17 +79,20 @@ export default function DashboardLayout({
           </nav>
 
           {/* User info */}
-          <div className="p-4 border-t">
+          <div className="p-4 border-t dark:border-gray-700">
+            <div className="flex items-center justify-between mb-3">
+              <ThemeToggle />
+            </div>
             <div className="flex items-center justify-between">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {userEmail || 'Usuario'}
                 </p>
-                <p className="text-xs text-gray-500">Administrador</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Administrador</p>
               </div>
               <button
                 onClick={handleLogout}
-                className="ml-2 p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                className="ml-2 p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 title="Cerrar sesión"
               >
                 🚪
@@ -101,16 +105,16 @@ export default function DashboardLayout({
       {/* Main content */}
       <div className="ml-64">
         {/* Header */}
-        <header className="bg-white shadow-sm">
+        <header className="bg-white dark:bg-gray-800 shadow-sm transition-colors duration-200">
           <div className="px-8 py-4">
-            <h2 className="text-2xl font-semibold text-gray-800">
+            <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100 transition-colors duration-200">
               {navigation.find(item => item.href === pathname)?.name || 'Dashboard'}
             </h2>
           </div>
         </header>
 
         {/* Page content */}
-        <main className="p-8">
+        <main className="p-8 transition-colors duration-200">
           {children}
         </main>
       </div>

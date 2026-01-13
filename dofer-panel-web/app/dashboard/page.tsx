@@ -1,7 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useRef, useState } from 'react'
 import { apiClient } from '@/lib/api'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { 
+  RefreshCw, Plus, FileText, Package, Calendar, Flame, CheckCircle2, 
+  Clock, XCircle, BarChart3, AlertTriangle, Printer, Wrench, 
+  PackageCheck, Truck, FileX, Sparkles
+} from 'lucide-react'
 
 interface OrderStats {
   total_orders: number
@@ -19,245 +29,338 @@ export default function DashboardPage() {
   const [backendConnected, setBackendConnected] = useState(true)
   const [dueSoonCount, setDueSoonCount] = useState(0)
   const [overdueCount, setOverdueCount] = useState(0)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [relativeTime, setRelativeTime] = useState('')
+  const hasLoadedRef = useRef(false)
 
   useEffect(() => {
     loadDashboardData()
-    // Auto-refresh cada 30 segundos
     const interval = setInterval(loadDashboardData, 30000)
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    if (!lastUpdate) return
+
+    const updateRelativeTime = () => {
+      const diffMs = Date.now() - lastUpdate.getTime()
+      if (diffMs < 5000) return setRelativeTime('Justo ahora')
+      const diffSeconds = Math.floor(diffMs / 1000)
+      if (diffSeconds < 60) return setRelativeTime(`Hace ${diffSeconds}s`)
+      const diffMinutes = Math.floor(diffSeconds / 60)
+      if (diffMinutes < 60) return setRelativeTime(`Hace ${diffMinutes}m`)
+      const diffHours = Math.floor(diffMinutes / 60)
+      if (diffHours < 24) return setRelativeTime(`Hace ${diffHours}h`)
+      const diffDays = Math.floor(diffHours / 24)
+      setRelativeTime(`Hace ${diffDays}d`)
+    }
+
+    updateRelativeTime()
+    const timer = setInterval(updateRelativeTime, 1000)
+    return () => clearInterval(timer)
+  }, [lastUpdate])
+
   const loadDashboardData = async () => {
     try {
-      setLoading(true)
-      // Get statistics from backend
+      setIsRefreshing(true)
+      if (!hasLoadedRef.current) setLoading(true)
+      
       const statsData = await apiClient.get<OrderStats>('/orders/stats')
       setStats(statsData)
 
-      // Get recent orders
-      const response = await apiClient.get<{ orders: any[], total: number }>('/orders?limit=5')
+      const response = await apiClient.get<{ orders: any[] }>('/orders?limit=5')
       setRecentOrders(response.orders || [])
       
-      // Calculate due soon and overdue
       const allOrdersResponse = await apiClient.get<{ orders: any[] }>('/orders?limit=1000')
       const allOrders = allOrdersResponse.orders || []
+      
+      let dueSoon = 0, overdue = 0
       const now = new Date()
       
-      let dueSoon = 0
-      let overdue = 0
-      
       allOrders.forEach((order: any) => {
-        if (order.delivery_deadline && order.status !== 'delivered' && order.status !== 'cancelled') {
+        if (order.delivery_deadline && !['delivered', 'cancelled'].includes(order.status)) {
           const deadline = new Date(order.delivery_deadline)
-          const diffTime = deadline.getTime() - now.getTime()
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-          
-          if (diffDays < 0) {
-            overdue++
-          } else if (diffDays <= 2) {
-            dueSoon++
-          }
+          const diffDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+          if (diffDays < 0) overdue++
+          else if (diffDays <= 2) dueSoon++
         }
       })
       
       setDueSoonCount(dueSoon)
       setOverdueCount(overdue)
       setBackendConnected(true)
+      hasLoadedRef.current = true
+      setLastUpdate(new Date())
     } catch (error) {
       console.error('Error loading dashboard:', error)
       setBackendConnected(false)
-      // Si el backend no está disponible, usar datos de ejemplo
-      setStats({
-        total_orders: 0,
-        orders_by_status: {
-          'Pendiente': 0,
-          'En Producción': 0,
-          'Completado': 0
-        },
-        urgent_orders: 0,
-        today_orders: 0,
-        completed_today: 0,
-        average_per_day: 0
-      })
-      setRecentOrders([])
+      if (!hasLoadedRef.current) {
+        setStats({ total_orders: 0, orders_by_status: {}, urgent_orders: 0, today_orders: 0, completed_today: 0, average_per_day: 0 })
+        setRecentOrders([])
+      }
+      hasLoadedRef.current = true
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
   }
 
   if (loading || !stats) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Cargando dashboard...</div>
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-32" />
+            <Skeleton className="h-9 w-32" />
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-6 pb-5">
+                <Skeleton className="h-12 w-20 mb-2" />
+                <Skeleton className="h-4 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-6 pb-5">
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     )
   }
 
-  const statCards = [
-    { label: 'Total Órdenes', value: stats.total_orders, color: 'bg-blue-500', icon: '📦' },
-    { label: 'Hoy', value: stats.today_orders, color: 'bg-green-500', icon: '📅' },
-    { label: 'Urgentes', value: stats.urgent_orders, color: 'bg-red-500', icon: '🔥' },
-    { label: 'Completadas Hoy', value: stats.completed_today, color: 'bg-emerald-500', icon: '✅' },
-    { label: 'Vencen Pronto', value: dueSoonCount, color: 'bg-orange-500', icon: '⏰' },
-    { label: 'Vencidas', value: overdueCount, color: 'bg-red-600', icon: '❌' },
-    { label: 'Promedio/Día', value: stats.average_per_day.toFixed(1), color: 'bg-purple-500', icon: '📊' },
+  // Métricas de acción inmediata - enfocadas en operación
+  const actionMetrics = [
+    { label: 'Urgentes', value: stats.urgent_orders, sublabel: 'requieren atención' },
+    { label: 'Vencen en 48h', value: dueSoonCount, sublabel: 'próximas a vencer' },
+    { label: 'Vencidas', value: overdueCount, sublabel: 'fuera de plazo' },
   ]
 
-  const statusCards = Object.entries(stats.orders_by_status).map(([status, count]) => {
-    const statusLabels: Record<string, { label: string; color: string; icon: string }> = {
-      new: { label: 'Nuevas', color: 'bg-yellow-500', icon: '🆕' },
-      printing: { label: 'Imprimiendo', color: 'bg-purple-500', icon: '🖨️' },
-      post: { label: 'Post-Proceso', color: 'bg-blue-500', icon: '🔧' },
-      packed: { label: 'Empacadas', color: 'bg-indigo-500', icon: '📦' },
-      ready: { label: 'Listas', color: 'bg-green-500', icon: '✔️' },
-      delivered: { label: 'Entregadas', color: 'bg-gray-500', icon: '🚚' },
-      cancelled: { label: 'Canceladas', color: 'bg-red-500', icon: '❌' },
-    }
-    const info = statusLabels[status] || { label: status, color: 'bg-gray-500', icon: '📋' }
-    return { ...info, value: count, status }
-  })
+  // Métricas de contexto - estado general
+  const contextMetrics = [
+    { label: stats.total_orders, sublabel: 'total órdenes' },
+    { label: stats.today_orders, sublabel: 'hoy' },
+    { label: stats.completed_today, sublabel: 'completadas hoy' },
+  ]
 
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, string> = {
-      new: 'bg-yellow-100 text-yellow-800',
-      printing: 'bg-purple-100 text-purple-800',
-      post: 'bg-blue-100 text-blue-800',
-      packed: 'bg-indigo-100 text-indigo-800',
-      ready: 'bg-green-100 text-green-800',
-      delivered: 'bg-gray-100 text-gray-800',
-      cancelled: 'bg-red-100 text-red-800',
-    }
-    return badges[status] || 'bg-gray-100 text-gray-800'
+  const statusConfig: Record<string, { label: string; icon: any; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+    new: { label: 'Nuevas', icon: Sparkles, variant: 'default' },
+    printing: { label: 'Imprimiendo', icon: Printer, variant: 'secondary' },
+    post: { label: 'Post-Proceso', icon: Wrench, variant: 'secondary' },
+    packed: { label: 'Empacadas', icon: PackageCheck, variant: 'secondary' },
+    ready: { label: 'Listas', icon: CheckCircle2, variant: 'default' },
+    delivered: { label: 'Entregadas', icon: Truck, variant: 'outline' },
+    cancelled: { label: 'Canceladas', icon: FileX, variant: 'destructive' },
   }
 
+  const statusCards = Object.entries(stats.orders_by_status).map(([status, count]) => ({
+    ...(statusConfig[status] || { label: status, icon: Package, variant: 'outline' as const }),
+    value: count,
+    status
+  }))
+
   return (
-    <div className="space-y-8">
-      {/* Alerta si no hay conexión con el backend */}
-      {!backendConnected && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">
-                Backend no conectado
-              </h3>
-              <div className="mt-2 text-sm text-yellow-700">
-                <p>
-                  El servidor API no está respondiendo. Mostrando datos de ejemplo.
-                </p>
-                <p className="mt-1">
-                  Para iniciar el backend: <code className="bg-yellow-100 px-2 py-1 rounded">cd dofer-panel-api && go run cmd/api/main.go</code>
-                </p>
-              </div>
-            </div>
-          </div>
+    <div className="space-y-6 animate-fade-in">
+      {/* Header con acciones principales */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Centro de Control</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {lastUpdate && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${isRefreshing ? 'bg-primary animate-pulse' : 'bg-emerald-500'}`} />
+                {isRefreshing ? 'Actualizando...' : relativeTime}
+              </span>
+            )}
+          </p>
         </div>
-      )}
-      
-      {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-6">
-        {statCards.map((card) => (
-          <div key={card.label} className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">{card.label}</p>
-                <p className="text-3xl font-bold text-gray-900">{card.value}</p>
-              </div>
-              <div className={`${card.color} w-12 h-12 rounded-lg flex items-center justify-center text-2xl`}>
-                {card.icon}
-              </div>
-            </div>
-          </div>
-        ))}
+        <div className="flex gap-3">
+          <Button onClick={loadDashboardData} disabled={isRefreshing} variant="outline" size="sm" className="h-9">
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+          <Link href="/dashboard/orders/new">
+            <Button size="default" className="h-10 px-6 text-base font-semibold elevated-md hover:elevated-lg transition-all">
+              <Plus className="h-5 w-5 mr-2" />
+              Nueva Orden
+            </Button>
+          </Link>
+          <Link href="/dashboard/quotes/new">
+            <Button variant="secondary" size="default" className="h-10 px-5">
+              <FileText className="h-4 w-4 mr-2" />
+              Cotización
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      {/* Status Breakdown */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Órdenes por Estado</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          {statusCards.map((card) => (
-            <div key={card.status} className="text-center">
-              <div className={`${card.color} w-16 h-16 rounded-lg flex items-center justify-center text-3xl mx-auto mb-2`}>
-                {card.icon}
-              </div>
-              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-              <p className="text-xs text-gray-600">{card.label}</p>
+      {/* Alerta de backend desconectado */}
+      {!backendConnected && (
+        <Card className="border-2 border-destructive bg-destructive/10 elevated-lg animate-pulse">
+          <CardContent className="flex items-center gap-3 py-4">
+            <div className="p-2 bg-destructive/20 rounded-lg">
+              <AlertTriangle className="h-6 w-6 text-destructive flex-shrink-0" />
             </div>
+            <div>
+              <p className="text-base font-semibold text-destructive">Backend no conectado</p>
+              <p className="text-sm text-muted-foreground mt-0.5">El servidor API no está respondiendo</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* Métricas de acción - qué hacer ahora */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+          <h2 className="text-sm uppercase tracking-widest text-muted-foreground font-bold">Acción Requerida</h2>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {actionMetrics.map((metric, i) => {
+            const isUrgent = metric.value > 0
+            return (
+              <Card key={i} className={`${
+                isUrgent 
+                  ? 'card-glow border-2 border-primary/40 bg-gradient-to-br from-card to-primary/5' 
+                  : 'elevated-sm hover:elevated-md transition-all'
+              }`}>
+                <CardContent className="pt-6 pb-5">
+                  <div className="flex items-baseline gap-2 mb-3">
+                    <span className={`text-6xl font-black tabular-nums ${
+                      isUrgent ? 'text-primary drop-shadow-[0_0_8px_rgba(139,92,246,0.5)]' : 'text-foreground'
+                    }`}>
+                      {metric.value}
+                    </span>
+                    {isUrgent && <Flame className="h-6 w-6 text-primary mb-2 animate-pulse" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">{metric.sublabel}</p>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Métricas de contexto - estado general */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+          <h2 className="text-sm uppercase tracking-widest text-muted-foreground font-bold">Estado General</h2>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {contextMetrics.map((metric, i) => (
+            <Card key={i} className="elevated-sm hover:elevated-md transition-all hover:-translate-y-0.5">
+              <CardContent className="pt-6 pb-5">
+                <div className="text-6xl font-black tabular-nums bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
+                  {metric.label}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 uppercase tracking-wide">{metric.sublabel}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </div>
 
-      {/* Recent Orders */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Órdenes Recientes</h3>
-            <a
-              href="/dashboard/orders"
-              className="text-sm text-indigo-600 hover:text-indigo-700"
-            >
-              Ver todas →
-            </a>
+      {/* Flujo de trabajo - estados de órdenes */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+          <h2 className="text-sm uppercase tracking-widest text-muted-foreground font-bold">Flujo de Trabajo</h2>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+        </div>
+        <Card className="elevated-md">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              {statusCards.map((card) => (
+                <div 
+                  key={card.status} 
+                  className="group flex flex-col items-center text-center space-y-3 p-4 rounded-xl border-2 border-border/50 hover:border-primary/60 hover:bg-primary/5 transition-all cursor-pointer hover:scale-105 hover:-translate-y-1 elevated-sm hover:elevated-lg"
+                >
+                  <div className="p-2 rounded-lg bg-muted/50 group-hover:bg-primary/10 transition-colors">
+                    <card.icon className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                  <div className="text-4xl font-black tabular-nums group-hover:text-primary transition-colors">{card.value}</div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-widest font-medium">{card.label}</div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Órdenes recientes - tabla operativa */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm uppercase tracking-widest text-muted-foreground font-bold">Órdenes Recientes</h2>
+            <Link href="/dashboard/orders">
+              <Button variant="ghost" size="sm" className="text-xs h-8 hover:text-primary transition-colors">
+                Ver todas →
+              </Button>
+            </Link>
           </div>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  # Orden
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Cliente
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Producto
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Estado
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Fecha
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {recentOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                    No hay órdenes registradas
-                  </td>
-                </tr>
-              ) : (
-                recentOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                      {order.order_number}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {order.customer_name}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {order.product_name}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusBadge(order.status)}`}>
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {new Date(order.created_at).toLocaleDateString('es-MX')}
-                    </td>
+        <Card className="elevated-md overflow-hidden">
+          <CardContent className="p-0">
+            <div className="relative overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/30 backdrop-blur-sm">
+                  <tr className="border-b border-border/50">
+                    <th className="text-left py-4 px-5 text-xs text-muted-foreground font-bold uppercase tracking-widest"># Orden</th>
+                    <th className="text-left py-4 px-5 text-xs text-muted-foreground font-bold uppercase tracking-widest">Cliente</th>
+                    <th className="text-left py-4 px-5 text-xs text-muted-foreground font-bold uppercase tracking-widest hidden sm:table-cell">Producto</th>
+                    <th className="text-left py-4 px-5 text-xs text-muted-foreground font-bold uppercase tracking-widest">Estado</th>
+                    <th className="text-left py-4 px-5 text-xs text-muted-foreground font-bold uppercase tracking-widest hidden md:table-cell">Fecha</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {recentOrders.length === 0 ? (
+                    <tr><td colSpan={5} className="text-center py-16">
+                      <div className="flex flex-col items-center gap-2">
+                        <Package className="h-10 w-10 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">No hay órdenes registradas</p>
+                      </div>
+                    </td></tr>
+                  ) : (
+                    recentOrders.map((order) => (
+                      <tr key={order.id} className="border-b hover:bg-accent transition-colors cursor-pointer" onClick={() => window.location.href = `/dashboard/orders/${order.id}`}>
+                        <td className="py-3 px-4">
+                          <Link href={`/dashboard/orders/${order.id}`} className="font-mono text-sm hover:text-primary">{order.order_number}</Link>
+                        </td>
+                        <td className="py-3 px-4 font-medium">{order.customer_name}</td>
+                        <td className="py-3 px-4 text-muted-foreground text-sm hidden sm:table-cell">{order.product_name}</td>
+                        <td className="py-3 px-4">
+                          <Badge variant={statusConfig[order.status]?.variant || 'outline'}>{order.status}</Badge>
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground text-sm hidden md:table-cell">
+                          {new Date(order.created_at).toLocaleDateString('es-MX')}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

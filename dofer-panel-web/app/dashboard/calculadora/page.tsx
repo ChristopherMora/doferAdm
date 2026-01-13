@@ -4,10 +4,12 @@ import CalculadoraCostos from '@/components/CalculadoraCostos'
 
 export default function CalculadoraPage() {
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg shadow p-8">
-        <CalculadoraCostos />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Calculadora de Costos</h1>
+        <p className="text-sm text-muted-foreground mt-1">Calcula precios de impresión 3D</p>
       </div>
+      <CalculadoraCostos />
     </div>
   )
 }
