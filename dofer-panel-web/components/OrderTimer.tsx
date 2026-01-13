@@ -21,8 +21,7 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
   // Fetch timer state
   const fetchTimerState = useCallback(async () => {
     try {
-      const response: any = await apiClient.get(`/orders/${orderId}/timer`)
-      const state: TimerState = response.data
+      const state = await apiClient.get<TimerState>(`/orders/${orderId}/timer`)
       setTimerState(state)
       setEstimatedTime(state.estimated_time_minutes)
       setTempEstimated(state.estimated_time_minutes)
