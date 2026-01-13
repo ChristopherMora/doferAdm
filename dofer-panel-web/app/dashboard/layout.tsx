@@ -24,6 +24,11 @@ export default function DashboardLayout({
   }, [])
 
   const handleLogout = async () => {
+    // Limpiar token de prueba
+    localStorage.removeItem('test-token')
+    // Limpiar cookie de sesión
+    document.cookie = 'sb-localhost-auth-token=; path=/; max-age=0'
+    // Cerrar sesión de Supabase
     await supabase.auth.signOut()
     router.push('/login')
   }

@@ -19,8 +19,10 @@ export default function LoginPage() {
     try {
       // MODO DE PRUEBA: Credenciales temporales
       if (email === 'admin@test.com' && password === 'test123') {
-        // Guardar token de prueba
+        // Guardar token de prueba en localStorage y cookie
         localStorage.setItem('test-token', 'test-auth-token')
+        // Crear cookie de sesión para el middleware
+        document.cookie = 'sb-localhost-auth-token=test-auth-token; path=/; max-age=86400'
         router.push('/dashboard')
         return
       }
