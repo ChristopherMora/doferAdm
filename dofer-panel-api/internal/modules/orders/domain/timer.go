@@ -1,7 +1,14 @@
 package domain
 
 import (
+	"errors"
 	"time"
+)
+
+// Timer errors
+var (
+	ErrTimerAlreadyRunning = errors.New("timer is already running")
+	ErrTimerNotRunning     = errors.New("timer is not running")
 )
 
 // TimeEntry representa una sesión de trabajo en una orden

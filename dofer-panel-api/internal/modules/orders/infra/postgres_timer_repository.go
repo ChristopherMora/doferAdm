@@ -28,6 +28,18 @@ func (r *PostgresTimerRepository) StartTimer(orderID string, operatorID *string)
 
 	now := time.Now()
 
+	// Verificar que el timer no esté corriendo directamente desde la BD
+	var isRunning bool
+	checkQuery := `SELECT COALESCE(is_timer_running, false) FROM orders WHERE id = $1`
+	err = tx.QueryRow(ctx, checkQuery, orderID).Scan(&isRunning)
+	if err != nil {
+		return err
+	}
+	
+	if isRunning {
+		return domain.ErrTimerAlreadyRunning
+	}
+
 	// Actualizar la orden
 	query := `
 		UPDATE orders 
