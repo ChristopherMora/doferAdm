@@ -30,7 +30,7 @@ func (r *PostgresTimerRepository) StartTimer(orderID string, operatorID *string)
 
 	// Verificar que el timer no esté corriendo directamente desde la BD
 	var isRunning bool
-	checkQuery := `SELECT COALESCE(is_timer_running, false) FROM orders WHERE id = $1`
+	checkQuery := `SELECT COALESCE(is_timer_running, false)::boolean FROM orders WHERE id = $1::uuid`
 	err = tx.QueryRow(ctx, checkQuery, orderID).Scan(&isRunning)
 	if err != nil {
 		return err
