@@ -18,12 +18,12 @@ func NewSearchOrdersHandler(repo domain.OrderRepository) *SearchOrdersHandler {
 }
 
 type SearchOrdersParams struct {
-	Query      string
-	Status     string
-	Customer   string
-	Operator   string
-	DateFrom   string
-	DateTo     string
+	Query    string
+	Status   string
+	Customer string
+	Operator string
+	DateFrom string
+	DateTo   string
 }
 
 func (h *SearchOrdersHandler) Handle(ctx context.Context, params SearchOrdersParams) ([]domain.Order, error) {
@@ -78,7 +78,7 @@ func matchesFilters(order domain.Order, params SearchOrdersParams, dateFrom, dat
 		productName := strings.ToLower(order.ProductName)
 		orderNumber := strings.ToLower(order.OrderNumber)
 		customerName := strings.ToLower(order.CustomerName)
-		
+
 		if !strings.Contains(productName, query) &&
 			!strings.Contains(orderNumber, query) &&
 			!strings.Contains(customerName, query) {

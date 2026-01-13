@@ -59,6 +59,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	userRepo := authInfra.NewPostgresUserRepository(db)
 	orderRepo := ordersInfra.NewPostgresOrderRepository(db)
 	historyRepo := ordersInfra.NewPostgresOrderHistoryRepository(db)
+	timerRepo := ordersInfra.NewPostgresTimerRepository(db)
 
 	// Setup email service (usando ConsoleMailer para desarrollo)
 	mailer := email.NewConsoleMailer()
@@ -76,6 +77,15 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	getHistoryHandler := ordersApp.NewGetOrderHistoryHandler(historyRepo)
 	getStatsHandler := ordersApp.NewGetOrderStatsHandler(orderRepo)
 	searchOrdersHandler := ordersApp.NewSearchOrdersHandler(orderRepo)
+
+	// Setup timer handlers
+	startTimerHandler := ordersApp.NewStartTimerHandler(orderRepo, timerRepo)
+	pauseTimerHandler := ordersApp.NewPauseTimerHandler(orderRepo, timerRepo)
+	stopTimerHandler := ordersApp.NewStopTimerHandler(orderRepo, timerRepo)
+	getTimerHandler := ordersApp.NewGetTimerHandler(timerRepo)
+	updateEstimatedHandler := ordersApp.NewUpdateEstimatedTimeHandler(timerRepo)
+	operatorStatsHandler := ordersApp.NewGetOperatorStatsHandler(timerRepo)
+
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
 		getOrderHandler,
@@ -85,6 +95,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		getHistoryHandler,
 		getStatsHandler,
 		searchOrdersHandler,
+		startTimerHandler,
+		pauseTimerHandler,
+		stopTimerHandler,
+		getTimerHandler,
+		updateEstimatedHandler,
+		operatorStatsHandler,
 	)
 
 	// Setup cost handlers

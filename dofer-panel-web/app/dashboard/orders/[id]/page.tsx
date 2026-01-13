@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
+import OrderTimer from '@/components/OrderTimer'
 
 interface Order {
   id: string
@@ -284,6 +285,12 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Timer de Producción */}
+      <OrderTimer 
+        orderId={order.id} 
+        estimatedMinutes={(order as any).estimated_time_minutes || 0}
+      />
 
       {/* Actions */}
       <div className="bg-white rounded-lg shadow p-6">

@@ -39,6 +39,7 @@ export default function DashboardLayout({
     { name: 'Cotizaciones', href: '/dashboard/quotes', icon: '💼' },
     { name: 'Kanban', href: '/dashboard/kanban', icon: '📋' },
     { name: 'Búsqueda', href: '/dashboard/search', icon: '🔍' },
+    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📊' },
     { name: 'Calculadora', href: '/dashboard/calculadora', icon: '🧮' },
     { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
     { name: 'Configuración', href: '/dashboard/settings', icon: '⚙️' },

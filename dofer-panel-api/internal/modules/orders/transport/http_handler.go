@@ -10,14 +10,20 @@ import (
 )
 
 type OrderHandler struct {
-	createHandler       *app.CreateOrderHandler
-	getHandler          *app.GetOrderHandler
-	listHandler         *app.ListOrdersHandler
-	updateStatusHandler *app.UpdateOrderStatusHandler
-	assignHandler       *app.AssignOrderHandler
-	historyHandler      *app.GetOrderHistoryHandler
-	statsHandler        *app.GetOrderStatsHandler
-	searchHandler       *app.SearchOrdersHandler
+	createHandler          *app.CreateOrderHandler
+	getHandler             *app.GetOrderHandler
+	listHandler            *app.ListOrdersHandler
+	updateStatusHandler    *app.UpdateOrderStatusHandler
+	assignHandler          *app.AssignOrderHandler
+	historyHandler         *app.GetOrderHistoryHandler
+	statsHandler           *app.GetOrderStatsHandler
+	searchHandler          *app.SearchOrdersHandler
+	startTimerHandler      *app.StartTimerHandler
+	pauseTimerHandler      *app.PauseTimerHandler
+	stopTimerHandler       *app.StopTimerHandler
+	getTimerHandler        *app.GetTimerHandler
+	updateEstimatedHandler *app.UpdateEstimatedTimeHandler
+	operatorStatsHandler   *app.GetOperatorStatsHandler
 }
 
 func NewOrderHandler(
@@ -29,16 +35,28 @@ func NewOrderHandler(
 	historyHandler *app.GetOrderHistoryHandler,
 	statsHandler *app.GetOrderStatsHandler,
 	searchHandler *app.SearchOrdersHandler,
+	startTimerHandler *app.StartTimerHandler,
+	pauseTimerHandler *app.PauseTimerHandler,
+	stopTimerHandler *app.StopTimerHandler,
+	getTimerHandler *app.GetTimerHandler,
+	updateEstimatedHandler *app.UpdateEstimatedTimeHandler,
+	operatorStatsHandler *app.GetOperatorStatsHandler,
 ) *OrderHandler {
 	return &OrderHandler{
-		createHandler:       createHandler,
-		getHandler:          getHandler,
-		listHandler:         listHandler,
-		updateStatusHandler: updateStatusHandler,
-		assignHandler:       assignHandler,
-		historyHandler:      historyHandler,
-		statsHandler:        statsHandler,
-		searchHandler:       searchHandler,
+		createHandler:          createHandler,
+		getHandler:             getHandler,
+		listHandler:            listHandler,
+		updateStatusHandler:    updateStatusHandler,
+		assignHandler:          assignHandler,
+		historyHandler:         historyHandler,
+		statsHandler:           statsHandler,
+		searchHandler:          searchHandler,
+		startTimerHandler:      startTimerHandler,
+		pauseTimerHandler:      pauseTimerHandler,
+		stopTimerHandler:       stopTimerHandler,
+		getTimerHandler:        getTimerHandler,
+		updateEstimatedHandler: updateEstimatedHandler,
+		operatorStatsHandler:   operatorStatsHandler,
 	}
 }
 
@@ -367,4 +385,126 @@ func (h *OrderHandler) SearchOrders(w http.ResponseWriter, r *http.Request) {
 		"orders": orders,
 		"total":  len(orders),
 	})
+}
+
+// Timer endpoints
+
+func (h *OrderHandler) StartTimer(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	var req app.StartTimerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.OrderID = orderID
+		req.OperatorID = nil
+	} else {
+		req.OrderID = orderID
+	}
+
+	err := h.startTimerHandler.Handle(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":  "timer started",
+		"order_id": orderID,
+	})
+}
+
+func (h *OrderHandler) PauseTimer(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	err := h.pauseTimerHandler.Handle(orderID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":  "timer paused",
+		"order_id": orderID,
+	})
+}
+
+func (h *OrderHandler) StopTimer(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	err := h.stopTimerHandler.Handle(orderID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":  "timer stopped",
+		"order_id": orderID,
+	})
+}
+
+func (h *OrderHandler) GetTimer(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	state, err := h.getTimerHandler.Handle(orderID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(state)
+}
+
+func (h *OrderHandler) UpdateEstimatedTime(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	var req struct {
+		Minutes int `json:"minutes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	err := h.updateEstimatedHandler.Handle(app.UpdateEstimatedTimeRequest{
+		OrderID: orderID,
+		Minutes: req.Minutes,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "estimated time updated",
+	})
+}
+
+func (h *OrderHandler) GetOperatorStats(w http.ResponseWriter, r *http.Request) {
+	operatorID := r.URL.Query().Get("operator_id")
+
+	if operatorID != "" {
+		stats, err := h.operatorStatsHandler.HandleSingle(operatorID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+	} else {
+		stats, err := h.operatorStatsHandler.HandleAll()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"operators": stats,
+			"total":     len(stats),
+		})
+	}
 }

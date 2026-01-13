@@ -14,9 +14,16 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 		// Rutas específicas antes de rutas genéricas con parámetros
 		r.Get("/stats", handler.GetOrderStats)
 		r.Get("/search", handler.SearchOrders)
+		r.Get("/operator-stats", handler.GetOperatorStats)
 		r.Get("/{id}/history", handler.GetOrderHistory)
 		r.Patch("/{id}/status", handler.UpdateOrderStatus)
 		r.Patch("/{id}/assign", handler.AssignOrder)
+		// Timer endpoints
+		r.Get("/{id}/timer", handler.GetTimer)
+		r.Post("/{id}/timer/start", handler.StartTimer)
+		r.Post("/{id}/timer/pause", handler.PauseTimer)
+		r.Post("/{id}/timer/stop", handler.StopTimer)
+		r.Patch("/{id}/estimated-time", handler.UpdateEstimatedTime)
 		r.Get("/{id}", handler.GetOrder)
 	})
 }

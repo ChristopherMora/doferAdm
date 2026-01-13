@@ -19,6 +19,13 @@ export interface Order {
   created_at: string
   updated_at: string
   completed_at?: string
+  // Timer fields
+  estimated_time_minutes?: number
+  actual_time_minutes?: number
+  timer_started_at?: string
+  timer_paused_at?: string
+  is_timer_running?: boolean
+  timer_total_paused_minutes?: number
 }
 
 export interface Product {
@@ -79,5 +86,29 @@ export interface QuoteItem {
   unit_price: number
   total: number
   created_at: string
+}
+
+export interface TimerState {
+  order_id: string
+  estimated_time_minutes: number
+  actual_time_minutes: number
+  timer_started_at?: string
+  timer_paused_at?: string
+  is_timer_running: boolean
+  timer_total_paused_minutes: number
+  current_session_minutes: number
+  percentage_complete: number
+  estimated_time_remaining: number
+}
+
+export interface OperatorStats {
+  operator_id: string
+  operator_name: string
+  total_orders: number
+  completed_orders: number
+  total_time_minutes: number
+  avg_time_minutes: number
+  estimated_vs_actual: number
+  efficiency: 'fast' | 'average' | 'slow'
 }
 

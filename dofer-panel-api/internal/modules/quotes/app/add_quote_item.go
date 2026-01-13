@@ -17,7 +17,7 @@ type AddQuoteItemCommand struct {
 	PrintTimeHours float64
 	Quantity       int
 	OtherCosts     float64
-	CustomPrice    *float64  // Precio personalizado (opcional)
+	CustomPrice    *float64 // Precio personalizado (opcional)
 }
 
 type AddQuoteItemHandler struct {
@@ -59,16 +59,16 @@ func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemComman
 
 	// Crear item con costos calculados o precio personalizado
 	item := &quoteDomain.QuoteItem{
-		ID:              uuid.New().String(),
-		QuoteID:         cmd.QuoteID,
-		ProductName:     cmd.ProductName,
-		Description:     cmd.Description,
-		WeightGrams:     cmd.WeightGrams,
-		PrintTimeHours:  cmd.PrintTimeHours,
-		OtherCosts:      cmd.OtherCosts,
-		Quantity:        cmd.Quantity,
-		UnitPrice:       unitPrice,
-		Total:           total,
+		ID:             uuid.New().String(),
+		QuoteID:        cmd.QuoteID,
+		ProductName:    cmd.ProductName,
+		Description:    cmd.Description,
+		WeightGrams:    cmd.WeightGrams,
+		PrintTimeHours: cmd.PrintTimeHours,
+		OtherCosts:     cmd.OtherCosts,
+		Quantity:       cmd.Quantity,
+		UnitPrice:      unitPrice,
+		Total:          total,
 	}
 
 	// Si es cálculo automático, incluir detalles de costos

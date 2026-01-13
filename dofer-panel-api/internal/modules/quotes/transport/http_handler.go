@@ -52,13 +52,13 @@ type CreateQuoteRequest struct {
 }
 
 type AddQuoteItemRequest struct {
-	ProductName    string  `json:"product_name"`
-	Description    string  `json:"description"`
-	WeightGrams    float64 `json:"weight_grams"`
-	PrintTimeHours float64 `json:"print_time_hours"`
-	Quantity       int     `json:"quantity"`
-	OtherCosts     float64 `json:"other_costs"`
-	UnitPrice      *float64 `json:"unit_price"`  // Precio personalizado (opcional)
+	ProductName    string   `json:"product_name"`
+	Description    string   `json:"description"`
+	WeightGrams    float64  `json:"weight_grams"`
+	PrintTimeHours float64  `json:"print_time_hours"`
+	Quantity       int      `json:"quantity"`
+	OtherCosts     float64  `json:"other_costs"`
+	UnitPrice      *float64 `json:"unit_price"` // Precio personalizado (opcional)
 }
 
 type UpdateQuoteStatusRequest struct {
@@ -148,7 +148,7 @@ func (h *QuoteHandler) AddQuoteItem(w http.ResponseWriter, r *http.Request) {
 		PrintTimeHours: req.PrintTimeHours,
 		Quantity:       req.Quantity,
 		OtherCosts:     req.OtherCosts,
-		CustomPrice:    req.UnitPrice,  // Pasar precio personalizado si existe
+		CustomPrice:    req.UnitPrice, // Pasar precio personalizado si existe
 	}
 
 	if err := h.addItemHandler.Handle(r.Context(), cmd); err != nil {
@@ -253,4 +253,3 @@ func (h *QuoteHandler) SearchQuotes(w http.ResponseWriter, r *http.Request) {
 		"total":  len(quotes),
 	})
 }
-

@@ -18,13 +18,13 @@ func NewSearchQuotesHandler(repo domain.QuoteRepository) *SearchQuotesHandler {
 }
 
 type SearchQuotesParams struct {
-	Query      string
-	Status     string
-	Customer   string
-	DateFrom   string
-	DateTo     string
-	MinTotal   float64
-	MaxTotal   float64
+	Query    string
+	Status   string
+	Customer string
+	DateFrom string
+	DateTo   string
+	MinTotal float64
+	MaxTotal float64
 }
 
 func (h *SearchQuotesHandler) Handle(ctx context.Context, params SearchQuotesParams) ([]domain.Quote, error) {
@@ -79,7 +79,7 @@ func matchesQuoteFilters(quote domain.Quote, params SearchQuotesParams, dateFrom
 		quoteNumber := strings.ToLower(quote.QuoteNumber)
 		customerName := strings.ToLower(quote.CustomerName)
 		notes := strings.ToLower(quote.Notes)
-		
+
 		if !strings.Contains(quoteNumber, query) &&
 			!strings.Contains(customerName, query) &&
 			!strings.Contains(notes, query) {

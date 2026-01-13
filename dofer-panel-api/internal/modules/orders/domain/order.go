@@ -58,6 +58,13 @@ type Order struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	CompletedAt   *time.Time
+	// Timer fields
+	EstimatedTimeMins    int        `json:"estimated_time_minutes"`
+	ActualTimeMins       int        `json:"actual_time_minutes"`
+	TimerStartedAt       *time.Time `json:"timer_started_at"`
+	TimerPausedAt        *time.Time `json:"timer_paused_at"`
+	IsTimerRunning       bool       `json:"is_timer_running"`
+	TimerTotalPausedMins int        `json:"timer_total_paused_minutes"`
 }
 
 func NewOrder(
