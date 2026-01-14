@@ -20,10 +20,16 @@ export default function OperatorStatsPage() {
     try {
       setLoading(true)
       const response: any = await apiClient.get('/orders/operator-stats')
-      setStats(response.data.operators || [])
+      console.log('Operator stats response:', response)
+      // Handle different response structures
+      const operators = response?.data?.operators || response?.operators || []
+      setStats(operators)
+      if (operators.length === 0) {
+        setError(null) // Clear error if no data but successful request
+      }
     } catch (err: any) {
       console.error('Error fetching operator stats:', err)
-      setError('Error al cargar estadísticas de operadores')
+      setError(err.message || 'Error al cargar estadísticas de operadores')
     } finally {
       setLoading(false)
     }

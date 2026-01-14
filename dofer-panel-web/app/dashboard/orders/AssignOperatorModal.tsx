@@ -52,14 +52,14 @@ export default function AssignOperatorModal({ isOpen, onClose, onSuccess, orderI
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-        <div className="p-6 border-b">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-card rounded-lg shadow-xl max-w-md w-full border border-border">
+        <div className="p-6 border-b border-border">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Asignar Operador</h2>
+            <h2 className="text-xl font-semibold text-foreground">Asignar Operador</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              className="text-muted-foreground hover:text-foreground text-2xl"
               disabled={loading}
             >
               ×
@@ -75,7 +75,7 @@ export default function AssignOperatorModal({ isOpen, onClose, onSuccess, orderI
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-foreground mb-3">
               Selecciona el operador:
             </label>
             <div className="space-y-2">
@@ -84,8 +84,8 @@ export default function AssignOperatorModal({ isOpen, onClose, onSuccess, orderI
                   key={user.id}
                   className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-colors ${
                     selectedUser === user.id
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'
                   }`}
                 >
                   <input
@@ -97,10 +97,10 @@ export default function AssignOperatorModal({ isOpen, onClose, onSuccess, orderI
                     className="mr-3"
                   />
                   <div className="flex-1">
-                    <div className="font-medium text-gray-900">{user.name}</div>
-                    <div className="text-sm text-gray-500 capitalize">{user.role}</div>
+                    <div className="font-medium text-foreground">{user.name}</div>
+                    <div className="text-sm text-muted-foreground capitalize">{user.role}</div>
                     {user.id === currentAssignee && (
-                      <div className="text-xs text-indigo-600 mt-1">Asignación actual</div>
+                      <div className="text-xs text-primary mt-1">Asignación actual</div>
                     )}
                   </div>
                 </label>
@@ -113,14 +113,14 @@ export default function AssignOperatorModal({ isOpen, onClose, onSuccess, orderI
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 border border-input text-foreground rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={loading || !selectedUser}
-              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading || !selectedUser || selectedUser === currentAssignee}
+              className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Asignando...' : 'Asignar Operador'}
             </button>

@@ -107,14 +107,14 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b sticky top-0 bg-white">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-card rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-border">
+        <div className="p-6 border-b border-border sticky top-0 bg-card">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-gray-900">Nueva Orden</h2>
+            <h2 className="text-2xl font-semibold text-foreground">Nueva Orden</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              className="text-muted-foreground hover:text-foreground text-2xl"
               disabled={loading}
             >
               ×
@@ -132,7 +132,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Platform */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Plataforma *
               </label>
               <select
@@ -140,7 +140,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 value={formData.platform}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-background text-foreground"
               >
                 <option value="local">Local</option>
                 <option value="tiktok">TikTok</option>
@@ -151,7 +151,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
 
             {/* Customer Name */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Nombre del Cliente *
               </label>
               <input
@@ -161,13 +161,13 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 onChange={handleChange}
                 required
                 placeholder="Juan Pérez"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Customer Email */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Email del Cliente
               </label>
               <input
@@ -176,13 +176,13 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 value={formData.customer_email}
                 onChange={handleChange}
                 placeholder="cliente@example.com"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Customer Phone */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Teléfono del Cliente
               </label>
               <input
@@ -191,13 +191,13 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 value={formData.customer_phone}
                 onChange={handleChange}
                 placeholder="+52 123 456 7890"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Product Name */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Producto *
               </label>
               <input
@@ -207,27 +207,27 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 onChange={handleChange}
                 required
                 placeholder="Figura 3D Personalizada"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Product Image */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Imagen del Producto
               </label>
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleImageChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-primary file:text-primary-foreground file:cursor-pointer"
               />
               {imagePreview && (
                 <div className="mt-2">
                   <img 
                     src={imagePreview} 
                     alt="Preview" 
-                    className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                    className="h-20 w-20 object-cover rounded-lg border border-border"
                   />
                 </div>
               )}
@@ -235,17 +235,17 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
 
             {/* Print File */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Archivo de Impresión (STL/3MF/GCODE)
               </label>
               <input
                 type="file"
                 accept=".stl,.3mf,.gcode,.gco"
                 onChange={handlePrintFileChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-primary file:text-primary-foreground file:cursor-pointer"
               />
               {printFilePreview && (
-                <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+                <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -256,7 +256,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
 
             {/* Quantity */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Cantidad *
               </label>
               <input
@@ -266,13 +266,13 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 onChange={handleChange}
                 required
                 min="1"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground"
               />
             </div>
 
             {/* Priority */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 Prioridad *
               </label>
               <select
@@ -280,7 +280,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 value={formData.priority}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground"
               >
                 <option value="low">Baja</option>
                 <option value="normal">Normal</option>
@@ -290,7 +290,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
 
             {/* Delivery Deadline */}
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 📅 Fecha de Entrega Máxima
               </label>
               <input
@@ -298,14 +298,14 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 name="delivery_deadline"
                 value={formData.delivery_deadline}
                 onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 text-black"
+                className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground"
               />
             </div>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
+            <label className="block text-sm font-semibold text-foreground mb-2">
               Notas
             </label>
             <textarea
@@ -314,7 +314,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
               onChange={handleChange}
               rows={3}
               placeholder="Notas adicionales sobre la orden..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 text-black"
+              className="w-full px-4 py-2 border border-input rounded-lg focus:ring-2 focus:ring-ring bg-background text-foreground placeholder:text-muted-foreground"
             />
           </div>
 
@@ -324,14 +324,14 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 border border-input text-foreground rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               {loading ? 'Creando...' : 'Crear Orden'}
             </button>

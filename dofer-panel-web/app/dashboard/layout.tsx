@@ -47,14 +47,14 @@ export default function DashboardLayout({
   ]
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200">
+    <div className="min-h-screen bg-background transition-colors duration-200">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 shadow-lg transition-colors duration-200">
+      <div className="fixed inset-y-0 left-0 w-64 bg-card border-r border-border shadow-lg transition-colors duration-200">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-6 border-b dark:border-gray-700">
-            <h1 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">DOFER Panel</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sistema operativo</p>
+          <div className="p-6 border-b border-border">
+            <h1 className="text-2xl font-bold text-primary">DOFER Panel</h1>
+            <p className="text-sm text-muted-foreground mt-1">Sistema operativo</p>
           </div>
 
           {/* Navigation */}
@@ -67,8 +67,8 @@ export default function DashboardLayout({
                   href={item.href}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      ? 'bg-primary/10 text-primary font-medium'
+                      : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
                   }`}
                 >
                   <span className="text-xl">{item.icon}</span>
@@ -79,20 +79,20 @@ export default function DashboardLayout({
           </nav>
 
           {/* User info */}
-          <div className="p-4 border-t dark:border-gray-700">
+          <div className="p-4 border-t border-border">
             <div className="flex items-center justify-between mb-3">
               <ThemeToggle />
             </div>
             <div className="flex items-center justify-between">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                <p className="text-sm font-medium text-foreground truncate">
                   {userEmail || 'Usuario'}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Administrador</p>
+                <p className="text-xs text-muted-foreground">Administrador</p>
               </div>
               <button
                 onClick={handleLogout}
-                className="ml-2 p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="ml-2 p-2 text-muted-foreground hover:text-foreground transition-colors"
                 title="Cerrar sesión"
               >
                 🚪
@@ -105,9 +105,9 @@ export default function DashboardLayout({
       {/* Main content */}
       <div className="ml-64">
         {/* Header */}
-        <header className="bg-white dark:bg-gray-800 shadow-sm transition-colors duration-200">
+        <header className="bg-card border-b border-border shadow-sm transition-colors duration-200">
           <div className="px-8 py-4">
-            <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100 transition-colors duration-200">
+            <h2 className="text-2xl font-semibold text-foreground transition-colors duration-200">
               {navigation.find(item => item.href === pathname)?.name || 'Dashboard'}
             </h2>
           </div>
