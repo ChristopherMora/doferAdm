@@ -21,6 +21,12 @@ export interface STLMetrics {
     height: number
     depth: number
   }
+  supportAnalysis?: {
+    needsSupport: boolean
+    overhangTriangles: number
+    supportVolume: number // mm³ estimado de soportes
+    supportWeight: number // gramos estimado
+  }
 }
 
 interface Vector3 {
@@ -180,6 +186,9 @@ function calculateMetrics(triangles: Vector3[][]): STLMetrics {
   // Calcular peso asumiendo densidad de PLA (predeterminado)
   const weight = volumeCm3 * MATERIAL_DENSITIES['PLA']
 
+  // Análisis de soportes
+  const supportAnalysis = analyzeSupportNeeds(triangles)
+
   return {
     vertices: triangles.length * 3,
     triangles: triangles.length,
@@ -198,6 +207,73 @@ function calculateMetrics(triangles: Vector3[][]): STLMetrics {
       height: maxY - minY,
       depth: maxZ - minZ,
     },
+    supportAnalysis
+  }
+}
+
+/**
+ * Analiza si el modelo necesita soportes
+ */
+function analyzeSupportNeeds(triangles: Vector3[][]): {
+  needsSupport: boolean
+  overhangTriangles: number
+  supportVolume: number
+  supportWeight: number
+} {
+  let overhangCount = 0
+  let totalOverhangArea = 0
+  
+  // Ángulo crítico: 45 grados (0.785 radianes)
+  const criticalAngle = 45 * (Math.PI / 180)
+  
+  triangles.forEach((triangle) => {
+    // Calcular normal del triángulo
+    const v1 = triangle[0]
+    const v2 = triangle[1]
+    const v3 = triangle[2]
+    
+    // Vectores de los lados
+    const edge1 = { x: v2.x - v1.x, y: v2.y - v1.y, z: v2.z - v1.z }
+    const edge2 = { x: v3.x - v1.x, y: v3.y - v1.y, z: v3.z - v1.z }
+    
+    // Producto cruz para obtener normal
+    const normal = {
+      x: edge1.y * edge2.z - edge1.z * edge2.y,
+      y: edge1.z * edge2.x - edge1.x * edge2.z,
+      z: edge1.x * edge2.y - edge1.y * edge2.x
+    }
+    
+    // Normalizar
+    const length = Math.sqrt(normal.x ** 2 + normal.y ** 2 + normal.z ** 2)
+    if (length > 0) {
+      normal.x /= length
+      normal.y /= length
+      normal.z /= length
+    }
+    
+    // Ángulo con respecto a la vertical (eje Z)
+    // normal.z indica qué tan vertical está la superficie
+    // Si normal.z < cos(45°) entonces necesita soporte
+    if (normal.z < 0 && Math.abs(normal.z) > Math.cos(criticalAngle)) {
+      overhangCount++
+      // Calcular área del triángulo
+      const area = length / 2
+      totalOverhangArea += area
+    }
+  })
+  
+  const needsSupport = overhangCount > (triangles.length * 0.05) // >5% de triángulos con overhang
+  
+  // Estimar volumen de soporte (muy aproximado)
+  // Asumimos ~20% del área de overhang como volumen de soporte
+  const supportVolume = totalOverhangArea * 0.2
+  const supportWeight = (supportVolume / 1000) * MATERIAL_DENSITIES['PLA']
+  
+  return {
+    needsSupport,
+    overhangTriangles: overhangCount,
+    supportVolume,
+    supportWeight
   }
 }
 

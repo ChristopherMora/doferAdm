@@ -89,8 +89,9 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
       {/* STL Uploader Section */}
       <div className="border rounded-lg p-6 bg-gray-50">
         <STLUploader
-          onAnalyzed={(metrics: STLMetrics, weight: number) => {
+          onAnalyzed={(metrics: STLMetrics, weight: number, timeHours: number) => {
             setWeightGrams(weight)
+            setPrintTimeHours(timeHours)
           }}
         />
       </div>
@@ -241,9 +242,14 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
           </div>
 
           {/* Info */}
-          <p className="text-xs text-gray-600 italic">
-            💡 Este precio incluye costos de producción + margen de ganancia configurado
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-gray-600 italic">
+              💡 Este precio incluye costos de producción + margen de ganancia configurado
+            </p>
+            <p className="text-xs text-amber-600 font-medium bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              ⚠️ Este es un precio estimado. El costo final puede variar según la configuración de impresión, soportes, y otros factores.
+            </p>
+          </div>
         </div>
       )}
     </div>

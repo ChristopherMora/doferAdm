@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo, memo, useCallback } from 'react'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,35 @@ interface OrderStats {
   average_per_day: number
 }
 
+// Memoizar card de estadísticas
+const StatsCard = memo(({ 
+  title, 
+  value, 
+  description, 
+  icon: Icon, 
+  trend 
+}: { 
+  title: string
+  value: string | number
+  description: string
+  icon: any
+  trend?: string
+}) => (
+  <Card className="hover:shadow-md transition-shadow">
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      <Icon className="h-4 w-4 text-muted-foreground" />
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-bold">{value}</div>
+      <p className="text-xs text-muted-foreground">{description}</p>
+      {trend && <p className="text-xs text-green-600 mt-1">{trend}</p>}
+    </CardContent>
+  </Card>
+))
+
+StatsCard.displayName = 'StatsCard'
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<OrderStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,34 +63,7 @@ export default function DashboardPage() {
   const [relativeTime, setRelativeTime] = useState('')
   const hasLoadedRef = useRef(false)
 
-  useEffect(() => {
-    loadDashboardData()
-    const interval = setInterval(loadDashboardData, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (!lastUpdate) return
-
-    const updateRelativeTime = () => {
-      const diffMs = Date.now() - lastUpdate.getTime()
-      if (diffMs < 5000) return setRelativeTime('Justo ahora')
-      const diffSeconds = Math.floor(diffMs / 1000)
-      if (diffSeconds < 60) return setRelativeTime(`Hace ${diffSeconds}s`)
-      const diffMinutes = Math.floor(diffSeconds / 60)
-      if (diffMinutes < 60) return setRelativeTime(`Hace ${diffMinutes}m`)
-      const diffHours = Math.floor(diffMinutes / 60)
-      if (diffHours < 24) return setRelativeTime(`Hace ${diffHours}h`)
-      const diffDays = Math.floor(diffHours / 24)
-      setRelativeTime(`Hace ${diffDays}d`)
-    }
-
-    updateRelativeTime()
-    const timer = setInterval(updateRelativeTime, 1000)
-    return () => clearInterval(timer)
-  }, [lastUpdate])
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setIsRefreshing(true)
       if (!hasLoadedRef.current) setLoading(true)
@@ -104,47 +106,35 @@ export default function DashboardPage() {
       setLoading(false)
       setIsRefreshing(false)
     }
-  }
+  }, [])
 
-  if (loading || !stats) {
-    return (
-      <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-4 w-40" />
-          </div>
-          <div className="flex gap-2">
-            <Skeleton className="h-9 w-32" />
-            <Skeleton className="h-9 w-32" />
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          {[...Array(3)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="pt-6 pb-5">
-                <Skeleton className="h-12 w-20 mb-2" />
-                <Skeleton className="h-4 w-32" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <div className="grid gap-3 md:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="pt-6 pb-5">
-                <Skeleton className="h-8 w-16 mb-2" />
-                <Skeleton className="h-4 w-24" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  useEffect(() => {
+    loadDashboardData()
+    const interval = setInterval(loadDashboardData, 30000)
+    return () => clearInterval(interval)
+  }, [loadDashboardData])
+
+  useEffect(() => {
+    if (!lastUpdate) return
+
+    const updateRelativeTime = () => {
+      const diffMs = Date.now() - lastUpdate.getTime()
+      if (diffMs < 5000) return setRelativeTime('Justo ahora')
+      const diffSeconds = Math.floor(diffMs / 1000)
+      if (diffSeconds < 60) return setRelativeTime(`Hace ${diffSeconds}s`)
+      const diffMinutes = Math.floor(diffSeconds / 60)
+      if (diffMinutes < 60) return setRelativeTime(`Hace ${diffMinutes}m`)
+      const diffHours = Math.floor(diffMinutes / 60)
+      setRelativeTime(`Hace ${diffHours}h`)
+    }
+
+    updateRelativeTime()
+    const interval = setInterval(updateRelativeTime, 5000)
+    return () => clearInterval(interval)
+  }, [lastUpdate])
 
   // Métricas de acción inmediata - enfocadas en operación
-  const actionMetrics = [
+  const actionMetrics = useMemo(() => !stats ? [] : [
     { 
       label: 'Urgentes', 
       value: stats.urgent_orders, 
@@ -172,10 +162,10 @@ export default function DashboardPage() {
       iconBg: 'bg-rose-500/10',
       borderColor: 'border-rose-500/30'
     },
-  ]
+  ], [stats, dueSoonCount, overdueCount])
 
   // Métricas de contexto - estado general
-  const contextMetrics = [
+  const contextMetrics = useMemo(() => !stats ? [] : [
     { 
       label: stats.total_orders, 
       sublabel: 'total órdenes',
@@ -197,9 +187,9 @@ export default function DashboardPage() {
       color: 'text-green-500',
       iconBg: 'bg-green-500/10'
     },
-  ]
+  ], [stats])
 
-  const statusConfig: Record<string, { label: string; icon: any; variant: 'default' | 'secondary' | 'destructive' | 'outline'; color: string; iconBg: string }> = {
+  const statusConfig: Record<string, { label: string; icon: any; variant: 'default' | 'secondary' | 'destructive' | 'outline'; color: string; iconBg: string }> = useMemo(() => ({
     new: { 
       label: 'Nuevas', 
       icon: Sparkles, 
@@ -249,9 +239,9 @@ export default function DashboardPage() {
       color: 'text-red-500',
       iconBg: 'bg-red-500/10'
     },
-  }
+  }), [])
 
-  const statusCards = Object.entries(stats.orders_by_status).map(([status, count]) => ({
+  const statusCards = useMemo(() => !stats ? [] : Object.entries(stats.orders_by_status).map(([status, count]) => ({
     ...(statusConfig[status] || { 
       label: status, 
       icon: Package, 
@@ -261,7 +251,44 @@ export default function DashboardPage() {
     }),
     value: count,
     status
-  }))
+  })), [stats, statusConfig])
+
+  if (loading || !stats) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-32" />
+            <Skeleton className="h-9 w-32" />
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-6 pb-5">
+                <Skeleton className="h-12 w-20 mb-2" />
+                <Skeleton className="h-4 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-6 pb-5">
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">

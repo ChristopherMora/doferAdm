@@ -1,9 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import ThemeToggle from '@/components/ThemeToggle'
+
+// Memoizar la navegación para evitar re-renderizados innecesarios
+const NavigationItem = memo(({ item, isActive }: { item: { name: string; href: string; icon: string }, isActive: boolean }) => {
+  return (
+    <Link
+      href={item.href}
+      prefetch={true}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+        isActive
+          ? 'bg-primary/10 text-primary font-medium'
+          : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
+      }`}
+    >
+      <span className="text-xl">{item.icon}</span>
+      <span>{item.name}</span>
+    </Link>
+  )
+})
+
+NavigationItem.displayName = 'NavigationItem'
 
 export default function DashboardLayout({
   children,
@@ -62,18 +83,11 @@ export default function DashboardLayout({
             {navigation.map((item) => {
               const isActive = pathname === item.href
               return (
-                <a
+                <NavigationItem
                   key={item.name}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-primary/10 text-primary font-medium'
-                      : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <span className="text-xl">{item.icon}</span>
-                  <span>{item.name}</span>
-                </a>
+                  item={item}
+                  isActive={isActive}
+                />
               )
             })}
           </nav>
