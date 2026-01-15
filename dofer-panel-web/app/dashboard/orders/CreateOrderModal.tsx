@@ -122,7 +122,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-slate-850"
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-slate-850">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
               {error}
