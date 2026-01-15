@@ -14,7 +14,7 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./dofer-panel-api/internal/db/migrations:/docker-entrypoint-initdb.d
+      - ./dofer-panel-api/internal/db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dofer}"]
       interval: 10s
