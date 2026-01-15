@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: dofer-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-dofer}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dofer_secure_password_change_me}
+      POSTGRES_DB: ${DB_NAME:-dofer_panel}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./dofer-panel-api/internal/db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dofer}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - dofer-network
+
+  # Backend API (Go)
+  api:
+    build:
+      context: ./dofer-panel-api
+      dockerfile: Dockerfile
+    container_name: dofer-api
+    ports:
+      - "${API_PORT:-9000}:9000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${DB_USER:-dofer}:${DB_PASSWORD:-dofer_secure_password_change_me}@db:5432/${DB_NAME:-dofer_panel}?sslmode=disable
+      
+      # Server
+      API_PORT: 9000
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      
+      # Supabase (Auth)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      
+      # CORS
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost}
+      
+      # Email (Optional)
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dofer-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend (Next.js)
+  web:
+    build:
+      context: ./dofer-panel-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:9000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_KEY: ${NEXT_PUBLIC_SUPABASE_KEY}
+    container_name: dofer-web
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:9000}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_KEY: ${NEXT_PUBLIC_SUPABASE_KEY}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dofer-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  dofer-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
