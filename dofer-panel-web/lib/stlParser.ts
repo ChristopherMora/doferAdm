@@ -1,0 +1,226 @@
+/**
+ * STL Parser - Analiza archivos STL (ASCII y Binary)
+ * Calcula volumen, peso y dimensiones del modelo 3D
+ */
+
+export interface STLMetrics {
+  vertices: number
+  triangles: number
+  volume: number // mm³
+  weight: number // gramos (asumiendo densidad de material)
+  bounds: {
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+    minZ: number
+    maxZ: number
+  }
+  dimensions: {
+    width: number
+    height: number
+    depth: number
+  }
+}
+
+interface Vector3 {
+  x: number
+  y: number
+  z: number
+}
+
+// Densidades de materiales comunes (g/cm³)
+export const MATERIAL_DENSITIES: Record<string, number> = {
+  'PLA': 1.24,
+  'ABS': 1.04,
+  'PETG': 1.27,
+  'TPU': 1.21,
+  'NYLON': 1.14,
+  'Resin': 1.18,
+}
+
+/**
+ * Calcula el volumen de un tetraedro formado por el triángulo y el origen
+ * Usamos la fórmula de divergencia para calcular volumen total
+ */
+function tetrahedral_volume(v1: Vector3, v2: Vector3, v3: Vector3): number {
+  return (
+    v1.x * (v2.y * v3.z - v3.y * v2.z) -
+    v1.y * (v2.x * v3.z - v3.x * v2.z) +
+    v1.z * (v2.x * v3.y - v3.x * v2.y)
+  ) / 6.0
+}
+
+/**
+ * Parsea un archivo STL ASCII
+ */
+function parseASCIISTL(text: string): Vector3[][] {
+  const triangles: Vector3[][] = []
+  const vertexPattern =
+    /vertex\s+([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)\s+([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)\s+([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)/g
+
+  let match
+  let currentTriangle: Vector3[] = []
+
+  while ((match = vertexPattern.exec(text)) !== null) {
+    const vertex: Vector3 = {
+      x: parseFloat(match[1]),
+      y: parseFloat(match[3]),
+      z: parseFloat(match[5]),
+    }
+    currentTriangle.push(vertex)
+
+    if (currentTriangle.length === 3) {
+      triangles.push(currentTriangle)
+      currentTriangle = []
+    }
+  }
+
+  return triangles
+}
+
+/**
+ * Parsea un archivo STL Binary
+ */
+function parseBinarySTL(buffer: ArrayBuffer): Vector3[][] {
+  const view = new DataView(buffer)
+  const triangles: Vector3[][] = []
+
+  // Skip header (80 bytes)
+  const triangleCount = view.getUint32(80, true)
+
+  let offset = 84
+  for (let i = 0; i < triangleCount; i++) {
+    const triangle: Vector3[] = []
+
+    // Skip normal vector (3 floats, 12 bytes)
+    offset += 12
+
+    // Read 3 vertices (3 floats each)
+    for (let j = 0; j < 3; j++) {
+      const x = view.getFloat32(offset, true)
+      const y = view.getFloat32(offset + 4, true)
+      const z = view.getFloat32(offset + 8, true)
+      triangle.push({ x, y, z })
+      offset += 12
+    }
+
+    // Skip attribute byte count (2 bytes)
+    offset += 2
+
+    triangles.push(triangle)
+  }
+
+  return triangles
+}
+
+/**
+ * Parsea un archivo STL (detecta formato automáticamente)
+ */
+export async function parseSTL(file: File): Promise<STLMetrics> {
+  const buffer = await file.arrayBuffer()
+  const view = new Uint8Array(buffer)
+
+  // Detectar si es ASCII o Binary
+  // ASCII comienza con "solid"
+  const isASCII = buffer.byteLength > 5 && 
+    view[0] === 115 && // 's'
+    view[1] === 111 && // 'o'
+    view[2] === 108 && // 'l'
+    view[3] === 105 && // 'i'
+    view[4] === 100    // 'd'
+
+  let triangles: Vector3[][]
+
+  if (isASCII) {
+    const text = new TextDecoder().decode(buffer)
+    triangles = parseASCIISTL(text)
+  } else {
+    triangles = parseBinarySTL(buffer)
+  }
+
+  // Calcular métricas
+  const metrics = calculateMetrics(triangles)
+  return metrics
+}
+
+/**
+ * Calcula métricas del modelo STL
+ */
+function calculateMetrics(triangles: Vector3[][]): STLMetrics {
+  let volume = 0
+  let minX = Infinity,
+    maxX = -Infinity
+  let minY = Infinity,
+    maxY = -Infinity
+  let minZ = Infinity,
+    maxZ = -Infinity
+
+  triangles.forEach((triangle) => {
+    // Sumar volumen usando signed volume de tetraedro
+    volume += tetrahedral_volume(triangle[0], triangle[1], triangle[2])
+
+    // Actualizar bounds
+    triangle.forEach((vertex) => {
+      minX = Math.min(minX, vertex.x)
+      maxX = Math.max(maxX, vertex.x)
+      minY = Math.min(minY, vertex.y)
+      maxY = Math.max(maxY, vertex.y)
+      minZ = Math.min(minZ, vertex.z)
+      maxZ = Math.max(maxZ, vertex.z)
+    })
+  })
+
+  // El volumen debe ser positivo (en valor absoluto)
+  volume = Math.abs(volume)
+
+  // Convertir de mm³ a cm³ (dividir por 1000)
+  const volumeCm3 = volume / 1000
+
+  // Calcular peso asumiendo densidad de PLA (predeterminado)
+  const weight = volumeCm3 * MATERIAL_DENSITIES['PLA']
+
+  return {
+    vertices: triangles.length * 3,
+    triangles: triangles.length,
+    volume: volume,
+    weight: weight,
+    bounds: {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      minZ,
+      maxZ,
+    },
+    dimensions: {
+      width: maxX - minX,
+      height: maxY - minY,
+      depth: maxZ - minZ,
+    },
+  }
+}
+
+/**
+ * Calcula el peso basado en volumen y densidad del material
+ */
+export function calculateWeight(volumeCm3: number, material: string = 'PLA'): number {
+  const density = MATERIAL_DENSITIES[material] || MATERIAL_DENSITIES['PLA']
+  return volumeCm3 * density
+}
+
+/**
+ * Formatea las métricas para mostrar
+ */
+export function formatMetrics(metrics: STLMetrics): Record<string, string> {
+  return {
+    triangles: metrics.triangles.toLocaleString(),
+    vertices: metrics.vertices.toLocaleString(),
+    weight: `${metrics.weight.toFixed(2)} g`,
+    volume: `${metrics.volume.toFixed(2)} mm³`,
+    volumeCm3: `${(metrics.volume / 1000).toFixed(2)} cm³`,
+    width: `${metrics.dimensions.width.toFixed(2)} mm`,
+    height: `${metrics.dimensions.height.toFixed(2)} mm`,
+    depth: `${metrics.dimensions.depth.toFixed(2)} mm`,
+  }
+}

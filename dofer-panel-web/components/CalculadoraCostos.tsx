@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
+import STLUploader from './STLUploader'
+import type { STLMetrics } from '@/lib/stlParser'
 
 interface CostSettings {
   material_cost_per_gram: number
@@ -84,6 +86,15 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
 
   return (
     <div className="space-y-6">
+      {/* STL Uploader Section */}
+      <div className="border rounded-lg p-6 bg-gray-50">
+        <STLUploader
+          onAnalyzed={(metrics: STLMetrics, weight: number) => {
+            setWeightGrams(weight)
+          }}
+        />
+      </div>
+
       {/* Header */}
       <div className="border-b pb-4">
         <h2 className="text-xl font-bold text-gray-900">💰 Calculadora de Costos</h2>
