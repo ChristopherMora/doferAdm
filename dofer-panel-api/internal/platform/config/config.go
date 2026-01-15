@@ -17,8 +17,8 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		Port:                   getEnv("PORT", "8080"),
-		Env:                    getEnv("ENV", "development"),
+		Port:                   getEnv("API_PORT", "9000"),
+		Env:                    getEnv("ENVIRONMENT", "development"),
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
 		SupabaseURL:            os.Getenv("SUPABASE_URL"),
 		SupabaseAnonKey:        os.Getenv("SUPABASE_ANON_KEY"),
