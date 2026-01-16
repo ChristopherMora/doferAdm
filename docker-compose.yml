@@ -27,7 +27,7 @@ services:
       context: ./dofer-panel-api
       dockerfile: Dockerfile
     ports:
-      - "${API_PORT:-9000}:9000"
+      - "${API_PORT:-9001}:9000"
     environment:
       # Database
       DATABASE_URL: postgresql://${DB_USER:-dofer}:${DB_PASSWORD:-dofer_secure_password_change_me}@db:5432/${DB_NAME:-dofer_panel}?sslmode=disable
