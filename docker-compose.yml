@@ -31,6 +31,9 @@ services:
     environment:
       # Database
       DATABASE_URL: postgresql://${DB_USER:-dofer}:${DB_PASSWORD:-dofer_secure_password_change_me}@db:5432/${DB_NAME:-dofer_panel}?sslmode=disable
+      DB_USER: ${DB_USER:-dofer}
+      DB_PASSWORD: ${DB_PASSWORD:-dofer_secure_password_change_me}
+      DB_NAME: ${DB_NAME:-dofer_panel}
       
       # Server
       API_PORT: 9000
