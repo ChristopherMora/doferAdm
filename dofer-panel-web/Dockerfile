@@ -3,6 +3,15 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Set build-time environment variables FIRST
+ARG NEXT_PUBLIC_API_URL=http://31.220.55.210:9001
+ARG NEXT_PUBLIC_SUPABASE_URL=https://gbgsezsonympmnkbzww.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_KEY=sb_publishable_mLiv8zDPfforC1MH0zhsmQ_WVKIVyTp
+
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+ENV NEXT_PUBLIC_SUPABASE_KEY=${NEXT_PUBLIC_SUPABASE_KEY}
+
 # Copy package files
 COPY package*.json ./
 
@@ -11,15 +20,6 @@ RUN npm ci
 
 # Copy source code
 COPY . .
-
-# Build Next.js app
-ARG NEXT_PUBLIC_API_URL=http://31.220.55.210:9001
-ARG NEXT_PUBLIC_SUPABASE_URL=https://gbgsezsonympmnkbzww.supabase.co
-ARG NEXT_PUBLIC_SUPABASE_KEY=sb_publishable_mLiv8zDPfforC1MH0zhsmQ_WVKIVyTp
-
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-ENV NEXT_PUBLIC_SUPABASE_KEY=${NEXT_PUBLIC_SUPABASE_KEY}
 
 RUN npm run build
 
