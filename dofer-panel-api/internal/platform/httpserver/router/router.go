@@ -38,7 +38,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// CORS
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://31.220.55.210:3001", "http://31.220.55.210:9000", "https://31.220.55.210:3001", "https://31.220.55.210:9000"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:5173", "http://31.220.55.210:3001", "http://31.220.55.210:3002", "http://31.220.55.210:9000", "http://31.220.55.210:9001", "https://31.220.55.210:3001", "https://31.220.55.210:3002", "https://31.220.55.210:9000", "https://31.220.55.210:9001"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
