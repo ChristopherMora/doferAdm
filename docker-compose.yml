@@ -1,10 +1,7 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   db:
     image: postgres:16-alpine
-    container_name: dofer-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-dofer}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-dofer_secure_password_change_me}
@@ -29,7 +26,6 @@ services:
     build:
       context: ./dofer-panel-api
       dockerfile: Dockerfile
-    container_name: dofer-api
     ports:
       - "${API_PORT:-9000}:9000"
     environment:
@@ -78,7 +74,6 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:9000}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_KEY: ${NEXT_PUBLIC_SUPABASE_KEY}
-    container_name: dofer-web
     ports:
       - "${WEB_PORT:-3001}:3000"
     environment:
