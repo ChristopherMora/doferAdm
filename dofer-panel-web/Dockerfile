@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Set build-time environment variables FIRST
-ARG NEXT_PUBLIC_API_URL=http://31.220.55.210:9001
+ARG NEXT_PUBLIC_API_URL=http://31.220.55.210:9001/api/v1
 ARG NEXT_PUBLIC_SUPABASE_URL=https://gbgsezsonympmnkbzww.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_KEY=sb_publishable_mLiv8zDPfforC1MH0zhsmQ_WVKIVyTp
 
