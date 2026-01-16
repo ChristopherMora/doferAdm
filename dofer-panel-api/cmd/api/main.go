@@ -31,14 +31,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Ejecutar migraciones automáticamente
-	slog.Info("running database migrations...")
-	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
-		slog.Error("failed to run migrations", slog.Any("error", err))
-		os.Exit(1)
-	}
-	slog.Info("migrations completed successfully")
-
 	// Conectar a base de datos
 	dbPool, err := db.NewPool(cfg.DatabaseURL)
 	if err != nil {
