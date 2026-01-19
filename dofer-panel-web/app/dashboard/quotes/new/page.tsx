@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import CalculadoraCostos from '@/components/CalculadoraCostos'
@@ -16,7 +16,7 @@ interface QuoteItem {
   total: number
 }
 
-export default function NewQuotePage() {
+function NewQuotePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editMode = searchParams.get('edit')
@@ -621,5 +621,17 @@ export default function NewQuotePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function NewQuotePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-96">
+        <div className="text-gray-500">Cargando...</div>
+      </div>
+    }>
+      <NewQuotePageContent />
+    </Suspense>
   )
 }
