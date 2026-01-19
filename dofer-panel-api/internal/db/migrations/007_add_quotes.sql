@@ -22,13 +22,14 @@ CREATE TABLE IF NOT EXISTS quotes (
 );
 
 -- Índices para cotizaciones
-CREATE INDEX idx_quotes_status ON quotes(status);
-CREATE INDEX idx_quotes_customer_email ON quotes(customer_email);
-CREATE INDEX idx_quotes_created_by ON quotes(created_by);
-CREATE INDEX idx_quotes_created_at ON quotes(created_at DESC);
-CREATE INDEX idx_quotes_quote_number ON quotes(quote_number);
+CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);
+CREATE INDEX IF NOT EXISTS idx_quotes_customer_email ON quotes(customer_email);
+CREATE INDEX IF NOT EXISTS idx_quotes_customer_name ON quotes(customer_name);
+CREATE INDEX IF NOT EXISTS idx_quotes_created_by ON quotes(created_by);
+CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON quotes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quotes_quote_number ON quotes(quote_number);
 
--- Tabla de items de cotizaciones
+-- Tabla de items de cotización
 CREATE TABLE IF NOT EXISTS quote_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -47,8 +48,9 @@ CREATE TABLE IF NOT EXISTS quote_items (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Índices para items de cotizaciones
-CREATE INDEX idx_quote_items_quote_id ON quote_items(quote_id);
+-- Índices para items de cotización
+CREATE INDEX IF NOT EXISTS idx_quote_items_quote_id ON quote_items(quote_id);
+CREATE INDEX IF NOT EXISTS idx_quote_items_created_at ON quote_items(created_at DESC);
 
 -- Trigger para actualizar updated_at en quotes
 CREATE TRIGGER update_quotes_updated_at BEFORE UPDATE ON quotes

@@ -17,6 +17,7 @@ func RegisterRoutes(r chi.Router, handler *QuoteHandler) {
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", handler.GetQuote)
 			r.Delete("/", handler.DeleteQuote)
+			r.Patch("/", handler.UpdateQuote)
 			r.Patch("/status", handler.UpdateQuoteStatus)
 
 			// Items dentro de quote

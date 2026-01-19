@@ -15,6 +15,7 @@ type QuoteHandler struct {
 	getHandler          *app.GetQuoteHandler
 	listHandler         *app.ListQuotesHandler
 	addItemHandler      *app.AddQuoteItemHandler
+	updateHandler       *app.UpdateQuoteHandler
 	updateStatusHandler *app.UpdateQuoteStatusHandler
 	deleteItemHandler   *app.DeleteQuoteItemHandler
 	deleteQuoteHandler  *app.DeleteQuoteHandler
@@ -26,6 +27,7 @@ func NewQuoteHandler(
 	getHandler *app.GetQuoteHandler,
 	listHandler *app.ListQuotesHandler,
 	addItemHandler *app.AddQuoteItemHandler,
+	updateHandler *app.UpdateQuoteHandler,
 	updateStatusHandler *app.UpdateQuoteStatusHandler,
 	deleteItemHandler *app.DeleteQuoteItemHandler,
 	deleteQuoteHandler *app.DeleteQuoteHandler,
@@ -36,6 +38,7 @@ func NewQuoteHandler(
 		getHandler:          getHandler,
 		listHandler:         listHandler,
 		addItemHandler:      addItemHandler,
+		updateHandler:       updateHandler,
 		updateStatusHandler: updateStatusHandler,
 		deleteItemHandler:   deleteItemHandler,
 		deleteQuoteHandler:  deleteQuoteHandler,
@@ -63,6 +66,13 @@ type AddQuoteItemRequest struct {
 
 type UpdateQuoteStatusRequest struct {
 	Status string `json:"status"`
+}
+
+type UpdateQuoteRequest struct {
+	CustomerName  *string `json:"customer_name"`
+	CustomerEmail *string `json:"customer_email"`
+	CustomerPhone *string `json:"customer_phone"`
+	Notes         *string `json:"notes"`
 }
 
 func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +192,37 @@ func (h *QuoteHandler) UpdateQuoteStatus(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Status updated successfully"})
 }
+
+func (h *QuoteHandler) UpdateQuote(w http.ResponseWriter, r *http.Request) {
+	quoteID := chi.URLParam(r, "id")
+	
+	var req UpdateQuoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cmd := app.UpdateQuoteCommand{
+		QuoteID:       quoteID,
+		CustomerName:  req.CustomerName,
+		CustomerEmail: req.CustomerEmail,
+		CustomerPhone: req.CustomerPhone,
+		Notes:         req.Notes,
+	}
+
+	quote, err := h.updateHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Quote updated successfully",
+		"quote":   quote,
+	})
+}
+
 func (h *QuoteHandler) DeleteQuoteItem(w http.ResponseWriter, r *http.Request) {
 	quoteID := chi.URLParam(r, "id")
 	itemID := chi.URLParam(r, "itemId")

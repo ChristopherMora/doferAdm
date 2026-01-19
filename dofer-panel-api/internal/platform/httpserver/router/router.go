@@ -120,6 +120,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	getQuoteHandler := quotesApp.NewGetQuoteHandler(quoteRepo)
 	listQuotesHandler := quotesApp.NewListQuotesHandler(quoteRepo)
 	addQuoteItemHandler := quotesApp.NewAddQuoteItemHandler(quoteRepo, calculateCostHandler)
+	updateQuoteHandler := quotesApp.NewUpdateQuoteHandler(quoteRepo)
 	updateQuoteStatusHandler := quotesApp.NewUpdateQuoteStatusHandler(quoteRepo)
 	deleteQuoteItemHandler := quotesApp.NewDeleteQuoteItemHandler(quoteRepo)
 	deleteQuoteHandler := quotesApp.NewDeleteQuoteHandler(quoteRepo)
@@ -129,6 +130,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		getQuoteHandler,
 		listQuotesHandler,
 		addQuoteItemHandler,
+		updateQuoteHandler,
 		updateQuoteStatusHandler,
 		deleteQuoteItemHandler,
 		deleteQuoteHandler,

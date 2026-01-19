@@ -286,6 +286,12 @@ export default function QuoteDetailPage() {
           {quote.status === 'pending' && (
             <>
               <button
+                onClick={() => router.push(`/dashboard/quotes/new?edit=${quote.id}`)}
+                className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700"
+              >
+                ✏️ Editar Cotización
+              </button>
+              <button
                 onClick={() => updateStatus('approved')}
                 disabled={updating}
                 className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50"

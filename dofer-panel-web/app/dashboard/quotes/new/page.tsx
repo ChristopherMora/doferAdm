@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import CalculadoraCostos from '@/components/CalculadoraCostos'
 
@@ -18,9 +18,13 @@ interface QuoteItem {
 
 export default function NewQuotePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editMode = searchParams.get('edit')
+  
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [quoteId, setQuoteId] = useState<string | null>(null)
+  const [isEditMode, setIsEditMode] = useState(false)
 
   // Step 1: Customer info
   const [customerName, setCustomerName] = useState('')
@@ -41,6 +45,82 @@ export default function NewQuotePage() {
     quantity: 1,
     other_costs: 0,
   })
+
+  // Load existing quote if in edit mode
+  useEffect(() => {
+    if (editMode) {
+      loadQuoteForEdit(editMode)
+    }
+  }, [editMode])
+
+  const loadQuoteForEdit = async (quoteIdToEdit: string) => {
+    try {
+      setLoading(true)
+      const response = await apiClient.get<any>(`/quotes/${quoteIdToEdit}`)
+      const quote = response.quote
+      const existingItems = response.items || []
+
+      // Set customer info
+      setCustomerName(quote.customer_name)
+      setCustomerEmail(quote.customer_email || '')
+      setCustomerPhone(quote.customer_phone || '')
+      setNotes(quote.notes || '')
+      
+      // Calcular valid_days aproximado
+      const validUntil = new Date(quote.valid_until)
+      const createdAt = new Date(quote.created_at)
+      const diffDays = Math.ceil((validUntil.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
+      setValidDays(diffDays > 0 ? diffDays : 15)
+
+      // Load existing items
+      const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
+        product_name: item.product_name,
+        description: item.description || '',
+        weight_grams: item.weight_grams,
+        print_time_hours: item.print_time_hours,
+        quantity: item.quantity,
+        other_costs: item.other_costs || 0,
+        unit_price: item.unit_price,
+        total: item.total,
+      }))
+      setItems(formattedItems)
+
+      setQuoteId(quoteIdToEdit)
+      setIsEditMode(true)
+      setStep(2) // Go directly to items step
+    } catch (error: any) {
+      console.error('Error loading quote:', error)
+      alert('Error al cargar cotización para editar')
+      router.push('/dashboard/quotes')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updateQuote = async () => {
+    if (!customerName) {
+      alert('Por favor completa el nombre del cliente')
+      return
+    }
+
+    try {
+      setLoading(true)
+      // Update customer info via API
+      await apiClient.patch(`/quotes/${quoteId}`, {
+        customer_name: customerName,
+        customer_email: customerEmail || '',
+        customer_phone: customerPhone,
+        notes: notes,
+      })
+      
+      alert('✅ Información del cliente actualizada')
+    } catch (error: any) {
+      console.error('Error updating quote:', error)
+      alert(`Error al actualizar cotización: ${error.message || 'Error desconocido'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const createQuote = async () => {
     if (!customerName) {
@@ -198,8 +278,12 @@ export default function NewQuotePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">📝 Nueva Cotización</h1>
-          <p className="text-gray-600">Crea una cotización para un cliente</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isEditMode ? '✏️ Editar Cotización' : '📝 Nueva Cotización'}
+          </h1>
+          <p className="text-gray-600">
+            {isEditMode ? 'Actualiza la información de la cotización' : 'Crea una cotización para un cliente'}
+          </p>
         </div>
         <button
           onClick={() => router.back()}
@@ -301,11 +385,11 @@ export default function NewQuotePage() {
           </div>
 
           <button
-            onClick={createQuote}
+            onClick={isEditMode ? updateQuote : createQuote}
             disabled={loading}
             className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
           >
-            {loading ? 'Creando...' : 'Continuar →'}
+            {loading ? 'Procesando...' : isEditMode ? 'Actualizar y Continuar →' : 'Continuar →'}
           </button>
         </div>
       )}
