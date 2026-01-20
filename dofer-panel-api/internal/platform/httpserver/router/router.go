@@ -126,6 +126,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	deleteQuoteHandler := quotesApp.NewDeleteQuoteHandler(quoteRepo)
 	searchQuotesHandler := quotesApp.NewSearchQuotesHandler(quoteRepo)
 	convertToOrderHandler := quotesApp.NewConvertToOrderHandler(quoteRepo, orderRepo)
+	addPaymentHandler := quotesApp.NewAddPaymentHandler(quoteRepo)
 	quoteHandler := quotesTransport.NewQuoteHandler(
 		createQuoteHandler,
 		getQuoteHandler,
@@ -137,6 +138,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		deleteQuoteHandler,
 		searchQuotesHandler,
 		convertToOrderHandler,
+		addPaymentHandler,
 	)
 
 	// Setup tracking handler

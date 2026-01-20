@@ -16,6 +16,8 @@ type Quote struct {
 	Discount           float64   `json:"discount"`
 	Tax                float64   `json:"tax"`
 	Total              float64   `json:"total"`
+	AmountPaid         float64   `json:"amount_paid"`
+	Balance            float64   `json:"balance"`
 	Notes              string    `json:"notes"`
 	ValidUntil         time.Time `json:"valid_until"`
 	CreatedBy          string    `json:"created_by"`

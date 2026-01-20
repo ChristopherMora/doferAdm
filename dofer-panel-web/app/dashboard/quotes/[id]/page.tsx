@@ -14,6 +14,8 @@ export default function QuoteDetailPage() {
   const [quote, setQuote] = useState<Quote | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [paymentAmount, setPaymentAmount] = useState<string>('')
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
 
   useEffect(() => {
     loadQuote()
@@ -133,6 +135,28 @@ export default function QuoteDetailPage() {
       } else {
         alert(`Error al convertir cotización: ${error.message || 'Error desconocido'}`)
       }
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const addPayment = async () => {
+    const amount = parseFloat(paymentAmount)
+    if (!amount || amount <= 0) {
+      alert('Ingresa un monto válido')
+      return
+    }
+
+    try {
+      setUpdating(true)
+      await apiClient.post(`/quotes/${quoteId}/payments`, { amount })
+      alert('✅ Pago registrado')
+      setPaymentAmount('')
+      setShowPaymentModal(false)
+      await loadQuote()
+    } catch (error: any) {
+      console.error('Error adding payment:', error)
+      alert(`Error al registrar pago: ${error.message || 'Error desconocido'}`)
     } finally {
       setUpdating(false)
     }
@@ -286,9 +310,34 @@ export default function QuoteDetailPage() {
                   <span className="text-gray-600">IVA (16%):</span>
                   <span className="font-medium">{formatCurrency(quote.tax)}</span>
                 </div>
-                <div className="flex justify-between text-lg font-bold border-t pt-2">
+                <div className="flex justify-between text-lg font-bold border-t pt-2 pb-2">
                   <span>Total:</span>
                   <span className="text-green-600">{formatCurrency(quote.total)}</span>
+                </div>
+                
+                {/* Payment Info */}
+                <div className="border-t pt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Pagado:</span>
+                    <span className="font-medium text-blue-600">{formatCurrency(quote.amount_paid || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold">
+                    <span className={quote.balance > 0 ? 'text-orange-600' : 'text-green-600'}>
+                      {quote.balance > 0 ? 'Saldo pendiente:' : 'Pagado completo ✓'}
+                    </span>
+                    <span className={quote.balance > 0 ? 'text-orange-600' : 'text-green-600'}>
+                      {formatCurrency(quote.balance || 0)}
+                    </span>
+                  </div>
+                  
+                  {quote.balance > 0 && (
+                    <button
+                      onClick={() => setShowPaymentModal(true)}
+                      className="w-full mt-2 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 text-sm font-medium"
+                    >
+                      💵 Registrar Pago
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -382,6 +431,57 @@ export default function QuoteDetailPage() {
           </p>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">💵 Registrar Pago</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Saldo pendiente:</p>
+                <p className="text-2xl font-bold text-orange-600">{formatCurrency(quote.balance)}</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Monto a pagar:
+                </label>
+                <input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-black"
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  max={quote.balance}
+                />
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={addPayment}
+                  disabled={updating}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+                >
+                  {updating ? 'Procesando...' : 'Registrar'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPaymentModal(false)
+                    setPaymentAmount('')
+                  }}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 font-medium"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

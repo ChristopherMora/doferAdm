@@ -19,11 +19,14 @@ func NewPostgresQuoteRepository(db *pgxpool.Pool) *PostgresQuoteRepository {
 }
 
 func (r *PostgresQuoteRepository) Create(quote *domain.Quote) error {
+	// Calcular balance inicial
+	quote.Balance = quote.Total - quote.AmountPaid
+	
 	query := `
 		INSERT INTO quotes (
 			id, quote_number, customer_name, customer_email, customer_phone,
-			status, subtotal, discount, tax, total, notes, valid_until, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			status, subtotal, discount, tax, total, amount_paid, balance, notes, valid_until, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	_, err := r.db.Exec(context.Background(), query,
@@ -37,6 +40,8 @@ func (r *PostgresQuoteRepository) Create(quote *domain.Quote) error {
 		quote.Discount,
 		quote.Tax,
 		quote.Total,
+		quote.AmountPaid,
+		quote.Balance,
 		quote.Notes,
 		quote.ValidUntil,
 		quote.CreatedBy,
@@ -48,7 +53,7 @@ func (r *PostgresQuoteRepository) Create(quote *domain.Quote) error {
 func (r *PostgresQuoteRepository) FindByID(id string) (*domain.Quote, error) {
 	query := `
 		SELECT id, quote_number, customer_name, customer_email, customer_phone,
-		       status, subtotal, discount, tax, total, notes, valid_until,
+		       status, subtotal, discount, tax, total, amount_paid, balance, notes, valid_until,
 		       created_by, created_at, updated_at, 
 		       COALESCE(converted_to_order_id::text, '') as converted_to_order_id
 		FROM quotes
@@ -70,6 +75,8 @@ func (r *PostgresQuoteRepository) FindByID(id string) (*domain.Quote, error) {
 		&quote.Discount,
 		&quote.Tax,
 		&quote.Total,
+		&quote.AmountPaid,
+		&quote.Balance,
 		&notes,
 		&validUntil,
 		&quote.CreatedBy,
@@ -166,13 +173,16 @@ func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*do
 }
 
 func (r *PostgresQuoteRepository) Update(quote *domain.Quote) error {
+	// Calcular balance
+	quote.Balance = quote.Total - quote.AmountPaid
+	
 	query := `
 		UPDATE quotes
 		SET customer_name = $1, customer_email = $2, customer_phone = $3,
 		    status = $4, subtotal = $5, discount = $6, tax = $7, total = $8,
-		    notes = $9, valid_until = $10, updated_at = NOW(),
-		    converted_to_order_id = $11
-		WHERE id = $12
+		    amount_paid = $9, balance = $10, notes = $11, valid_until = $12, updated_at = NOW(),
+		    converted_to_order_id = $13
+		WHERE id = $14
 	`
 
 	var convertedToOrderID *string
@@ -189,6 +199,8 @@ func (r *PostgresQuoteRepository) Update(quote *domain.Quote) error {
 		quote.Discount,
 		quote.Tax,
 		quote.Total,
+		quote.AmountPaid,
+		quote.Balance,
 		quote.Notes,
 		quote.ValidUntil,
 		convertedToOrderID,

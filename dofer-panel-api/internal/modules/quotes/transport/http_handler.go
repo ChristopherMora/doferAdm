@@ -21,6 +21,7 @@ type QuoteHandler struct {
 	deleteQuoteHandler  *app.DeleteQuoteHandler
 	searchHandler       *app.SearchQuotesHandler
 	convertToOrderHandler *app.ConvertToOrderHandler
+	addPaymentHandler   *app.AddPaymentHandler
 }
 
 func NewQuoteHandler(
@@ -34,6 +35,7 @@ func NewQuoteHandler(
 	deleteQuoteHandler *app.DeleteQuoteHandler,
 	searchHandler *app.SearchQuotesHandler,
 	convertToOrderHandler *app.ConvertToOrderHandler,
+	addPaymentHandler *app.AddPaymentHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
 		createHandler:       createHandler,
@@ -46,6 +48,7 @@ func NewQuoteHandler(
 		deleteQuoteHandler:  deleteQuoteHandler,
 		searchHandler:       searchHandler,
 		convertToOrderHandler: convertToOrderHandler,
+		addPaymentHandler:   addPaymentHandler,
 	}
 }
 
@@ -76,6 +79,10 @@ type UpdateQuoteRequest struct {
 	CustomerEmail *string `json:"customer_email"`
 	CustomerPhone *string `json:"customer_phone"`
 	Notes         *string `json:"notes"`
+}
+
+type AddPaymentRequest struct {
+	Amount float64 `json:"amount"`
 }
 
 func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
@@ -323,5 +330,40 @@ func (h *QuoteHandler) ConvertToOrder(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"order": order,
 		"message": "Cotización convertida a pedido exitosamente",
+	})
+}
+
+func (h *QuoteHandler) AddPayment(w http.ResponseWriter, r *http.Request) {
+	quoteID := chi.URLParam(r, "id")
+
+	var req AddPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cmd := app.AddPaymentCommand{
+		QuoteID: quoteID,
+		Amount:  req.Amount,
+	}
+
+	quote, err := h.addPaymentHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		if err == app.ErrInvalidPaymentAmount {
+			http.Error(w, "El monto del pago debe ser mayor a 0", http.StatusBadRequest)
+			return
+		}
+		if err == app.ErrPaymentExceedsBalance {
+			http.Error(w, "El monto del pago excede el saldo pendiente", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"quote": quote,
+		"message": "Pago registrado exitosamente",
 	})
 }

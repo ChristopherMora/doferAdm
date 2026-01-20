@@ -62,6 +62,8 @@ export interface Quote {
   discount: number
   tax: number
   total: number
+  amount_paid: number
+  balance: number
   notes?: string
   valid_until: string
   created_by: string
