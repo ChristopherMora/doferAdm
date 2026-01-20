@@ -202,7 +202,7 @@ export default function KanbanPage() {
 
       {/* Kanban Board */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 h-full">
+        <div className="flex gap-4 h-full">
           {STATUS_COLUMNS.map((column) => {
             const columnOrders = getOrdersByStatus(column.id)
             const isHovered = draggedOverColumn === column.id
@@ -214,7 +214,7 @@ export default function KanbanPage() {
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, column.id)}
                 onMouseEnter={() => draggedOrder && setDraggedOverColumn(column.id)}
-                className="w-full md:w-72 flex flex-col h-full"
+                className="flex-shrink-0 w-80 flex flex-col h-full"
               >
                 {/* Column Header */}
                 <div className={`p-3 rounded-t-xl border-2 border-b-0 ${column.color} ${isHovered ? 'ring-2 ring-blue-400' : ''} transition-all`}>
