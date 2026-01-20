@@ -4,26 +4,85 @@ import { useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { RefreshCw, GripVertical, User, Package } from 'lucide-react'
+import { RefreshCw, User, Package } from 'lucide-react'
 import { Order } from '@/types'
 
 const STATUS_COLUMNS = [
-  { id: 'new', label: 'Nuevas', icon: '✨' },
-  { id: 'printing', label: 'Imprimiendo', icon: '🖨️' },
-  { id: 'post', label: 'Post-Proceso', icon: '🔧' },
-  { id: 'packed', label: 'Empacadas', icon: '📦' },
-  { id: 'ready', label: 'Listas', icon: '✅' },
-  { id: 'delivered', label: 'Entregadas', icon: '🚚' },
+  { id: 'new', label: 'Nuevas', icon: '✨', color: 'bg-yellow-50 border-yellow-200' },
+  { id: 'printing', label: 'Imprimiendo', icon: '🖨️', color: 'bg-purple-50 border-purple-200' },
+  { id: 'post', label: 'Post-Proceso', icon: '🔧', color: 'bg-blue-50 border-blue-200' },
+  { id: 'packed', label: 'Empacadas', icon: '📦', color: 'bg-orange-50 border-orange-200' },
+  { id: 'ready', label: 'Listas', icon: '✅', color: 'bg-green-50 border-green-200' },
+  { id: 'delivered', label: 'Entregadas', icon: '🚚', color: 'bg-gray-50 border-gray-200' },
 ]
+
+function OrderCard({ order, isDragging }: { order: Order; isDragging?: boolean }) {
+  const getPriorityColor = (priority: string) => {
+    const colors: Record<string, string> = {
+      urgent: 'bg-red-100 text-red-700 border-red-300',
+      high: 'bg-orange-100 text-orange-700 border-orange-300',
+      normal: 'bg-blue-100 text-blue-700 border-blue-300',
+      low: 'bg-gray-100 text-gray-700 border-gray-300',
+    }
+    return colors[priority] || colors.normal
+  }
+
+  return (
+    <Card className={`touch-none select-none ${isDragging ? 'opacity-50 scale-105 rotate-2' : 'hover:shadow-lg transition-all'}`}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-mono font-semibold text-gray-700">{order.order_number}</span>
+          {order.priority && (
+            <span className={`text-xs px-2 py-1 rounded-full font-medium border ${getPriorityColor(order.priority)}`}>
+              {order.priority}
+            </span>
+          )}
+        </div>
+
+        {order.product_image && (
+          <div className="mb-3">
+            <img
+              src={order.product_image}
+              alt={order.product_name}
+              className="w-full h-32 object-cover rounded-lg border-2 border-gray-200"
+            />
+          </div>
+        )}
+
+        <h4 className="font-semibold text-base mb-3 line-clamp-2 text-gray-900">
+          {order.product_name}
+        </h4>
+
+        <div className="space-y-2 text-sm">
+          <div className="flex items-center gap-2 text-gray-700">
+            <User className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate font-medium">{order.customer_name}</span>
+          </div>
+          <div className="flex items-center justify-between text-gray-600">
+            <span className="capitalize px-2 py-1 bg-gray-100 rounded text-xs font-medium">
+              {order.platform}
+            </span>
+            <span className="font-bold text-base text-gray-900">×{order.quantity}</span>
+          </div>
+          {order.assigned_to && (
+            <div className="pt-2 border-t border-gray-200">
+              <span className="text-xs text-gray-600">👷 {order.assigned_to}</span>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function KanbanPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
+  const [draggedOrder, setDraggedOrder] = useState<Order | null>(null)
+  const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
 
   useEffect(() => {
     loadOrders()
-    // Auto-refresh cada 30 segundos
     const interval = setInterval(loadOrders, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -43,182 +102,179 @@ export default function KanbanPage() {
     return orders.filter(order => order.status === status)
   }
 
-  const moveOrder = async (orderId: string, newStatus: string) => {
-    const order = orders.find(o => o.id === orderId)
-    if (!order || order.status === newStatus) return
+  const handleTouchStart = (e: React.TouchEvent, order: Order) => {
+    e.currentTarget.classList.add('dragging')
+    setDraggedOrder(order)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault()
+    const touch = e.touches[0]
+    const element = document.elementFromPoint(touch.clientX, touch.clientY)
+    const column = element?.closest('[data-column-id]')
+    if (column) {
+      const columnId = column.getAttribute('data-column-id')
+      setDraggedOverColumn(columnId)
+    }
+  }
+
+  const handleTouchEnd = async (e: React.TouchEvent) => {
+    e.currentTarget.classList.remove('dragging')
+    
+    if (!draggedOrder || !draggedOverColumn) {
+      setDraggedOrder(null)
+      setDraggedOverColumn(null)
+      return
+    }
+
+    const newStatus = draggedOverColumn
+    if (draggedOrder.status === newStatus) {
+      setDraggedOrder(null)
+      setDraggedOverColumn(null)
+      return
+    }
 
     try {
-      // Actualizar en el backend
-      await apiClient.patch(`/orders/${orderId}/status`, { status: newStatus })
-      
-      // Actualizar localmente
+      await apiClient.patch(`/orders/${draggedOrder.id}/status`, { status: newStatus })
       setOrders(orders.map(o => 
-        o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o
+        o.id === draggedOrder.id ? { ...o, status: newStatus as Order['status'] } : o
       ))
     } catch (error) {
       console.error('Error updating order status:', error)
-      alert('Error al actualizar el estado de la orden')
+      alert('Error al actualizar el estado')
     }
+
+    setDraggedOrder(null)
+    setDraggedOverColumn(null)
   }
 
-  const getNextStatus = (currentStatus: string): string | null => {
-    const index = STATUS_COLUMNS.findIndex(col => col.id === currentStatus)
-    if (index < STATUS_COLUMNS.length - 1) {
-      return STATUS_COLUMNS[index + 1].id
-    }
-    return null
+  const handleDragStart = (e: React.DragEvent, order: Order) => {
+    setDraggedOrder(order)
+    e.dataTransfer.effectAllowed = 'move'
   }
 
-  const getPrevStatus = (currentStatus: string): string | null => {
-    const index = STATUS_COLUMNS.findIndex(col => col.id === currentStatus)
-    if (index > 0) {
-      return STATUS_COLUMNS[index - 1].id
-    }
-    return null
+  const handleDragEnd = () => {
+    setDraggedOrder(null)
+    setDraggedOverColumn(null)
   }
 
-  const getPriorityBadge = (priority: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      urgent: 'destructive',
-      high: 'destructive',
-      normal: 'default',
-      low: 'secondary',
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault()
+    
+    if (!draggedOrder || draggedOrder.status === newStatus) {
+      setDraggedOrder(null)
+      return
     }
-    return variants[priority] || 'secondary'
+
+    try {
+      await apiClient.patch(`/orders/${draggedOrder.id}/status`, { status: newStatus })
+      setOrders(orders.map(o => 
+        o.id === draggedOrder.id ? { ...o, status: newStatus as Order['status'] } : o
+      ))
+    } catch (error) {
+      console.error('Error updating order status:', error)
+      alert('Error al actualizar el estado')
+    }
+
+    setDraggedOrder(null)
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-        <p className="text-sm text-muted-foreground mt-3 ml-3">Cargando tablero...</p>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent mb-4"></div>
+          <p className="text-lg text-muted-foreground">Cargando tablero...</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header operativo */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Flujo de Trabajo</h1>
-          <p className="text-sm text-muted-foreground mt-1">Arrastra las tarjetas entre columnas para actualizar estado</p>
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b shadow-sm p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Flujo de Trabajo</h1>
+            <p className="text-sm text-gray-600 mt-1">Arrastra las tarjetas entre columnas para actualizar estado</p>
+          </div>
+          <Button onClick={loadOrders} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Actualizar
+          </Button>
         </div>
-        <Button onClick={loadOrders} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Actualizar
-        </Button>
       </div>
 
-      {/* Kanban Board - enfocado en flujo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        {STATUS_COLUMNS.map((column) => {
-          const columnOrders = getOrdersByStatus(column.id)
-          return (
-            <div
-              key={column.id}
-              className="flex flex-col"
-            >
-              {/* Column Header - minimalista */}
-              <div className="mb-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">{column.icon}</span>
-                  <h3 className="text-sm font-medium uppercase tracking-wider">{column.label}</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">{columnOrders.length} órdenes</p>
-              </div>
-
-              {/* Cards Container */}
-              <div className="flex-1 space-y-3 min-h-[400px] p-3 rounded-lg border border-dashed">
-                {columnOrders.map((order) => {
-                  const nextStatus = getNextStatus(order.status)
-                  const prevStatus = getPrevStatus(order.status)
-                  
-                  return (
-                    <Card
-                      key={order.id}
-                      className="hover:border-primary transition-colors"
-                    >
-                      <CardContent className="p-3">
-                        {/* Order Number */}
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-mono text-muted-foreground">{order.order_number}</span>
-                          {order.priority && (
-                            <Badge variant={getPriorityBadge(order.priority)} className="text-xs">
-                              {order.priority}
-                            </Badge>
-                          )}
-                        </div>
-
-                        {/* Product Image - solo si existe */}
-                        {order.product_image && (
-                          <div className="mb-2">
-                            <img
-                              src={order.product_image}
-                              alt={order.product_name}
-                              className="w-full h-20 object-cover rounded border"
-                            />
-                          </div>
-                        )}
-
-                        {/* Product Name */}
-                        <h4 className="font-medium text-sm mb-2 line-clamp-2">
-                          {order.product_name}
-                        </h4>
-
-                        {/* Info operativa */}
-                        <div className="space-y-1 text-xs text-muted-foreground mb-3">
-                          <div className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            <span className="truncate">{order.customer_name}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span>{order.platform}</span>
-                            <span className="font-medium">×{order.quantity}</span>
-                          </div>
-                          {order.assigned_to && (
-                            <div className="pt-1 border-t">
-                              <span>👷 {order.assigned_to}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Movement Buttons */}
-                        <div className="flex gap-1 border-t pt-2">
-                          {prevStatus && (
-                            <button
-                              onClick={() => moveOrder(order.id, prevStatus)}
-                              className="flex-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                              title={`Mover a ${STATUS_COLUMNS.find(c => c.id === prevStatus)?.label}`}
-                            >
-                              ← {STATUS_COLUMNS.find(c => c.id === prevStatus)?.icon}
-                            </button>
-                          )}
-                          {nextStatus && (
-                            <button
-                              onClick={() => moveOrder(order.id, nextStatus)}
-                              className="flex-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors font-medium"
-                              title={`Mover a ${STATUS_COLUMNS.find(c => c.id === nextStatus)?.label}`}
-                            >
-                              {STATUS_COLUMNS.find(c => c.id === nextStatus)?.icon} →
-                            </button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-
-                {columnOrders.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <Package className="h-8 w-8 text-muted-foreground mb-2" />
-                    <p className="text-xs text-muted-foreground">Sin órdenes</p>
+      {/* Kanban Board */}
+      <div className="flex-1 overflow-x-auto p-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 min-w-max">
+          {STATUS_COLUMNS.map((column) => {
+            const columnOrders = getOrdersByStatus(column.id)
+            const isHovered = draggedOverColumn === column.id
+            
+            return (
+              <div
+                key={column.id}
+                data-column-id={column.id}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, column.id)}
+                onMouseEnter={() => draggedOrder && setDraggedOverColumn(column.id)}
+                className="w-full md:w-80"
+              >
+                {/* Column Header */}
+                <div className={`p-4 rounded-t-xl border-2 border-b-0 ${column.color} ${isHovered ? 'ring-4 ring-blue-300' : ''} transition-all`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{column.icon}</span>
+                      <div>
+                        <h3 className="font-bold text-sm uppercase tracking-wide text-gray-800">
+                          {column.label}
+                        </h3>
+                        <p className="text-xs text-gray-600 font-medium">{columnOrders.length} órdenes</p>
+                      </div>
+                    </div>
                   </div>
-                )}
+                </div>
+
+                {/* Cards Container */}
+                <div 
+                  className={`flex-1 p-3 space-y-3 min-h-[500px] border-2 border-t-0 rounded-b-xl ${column.color} ${isHovered ? 'ring-4 ring-blue-300 bg-blue-50' : ''} overflow-y-auto transition-all`}
+                  style={{ maxHeight: 'calc(100vh - 250px)' }}
+                >
+                  {columnOrders.map((order) => (
+                    <div
+                      key={order.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, order)}
+                      onDragEnd={handleDragEnd}
+                      onTouchStart={(e) => handleTouchStart(e, order)}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      className="cursor-grab active:cursor-grabbing"
+                    >
+                      <OrderCard 
+                        order={order} 
+                        isDragging={draggedOrder?.id === order.id}
+                      />
+                    </div>
+                  ))}
+
+                  {columnOrders.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <Package className="h-12 w-12 text-gray-400 mb-3" />
+                      <p className="text-sm text-gray-500 font-medium">Sin órdenes</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )
