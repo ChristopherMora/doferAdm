@@ -7,6 +7,7 @@ import { OrderItem } from '@/types'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
+import OrderLabel from '@/components/OrderLabel'
 
 interface Order {
   id: string
@@ -49,6 +50,7 @@ export default function OrderDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
+  const [showLabel, setShowLabel] = useState(false)
 
   useEffect(() => {
     loadOrder()
@@ -440,7 +442,7 @@ export default function OrderDetailPage() {
         <h2 className="text-xl font-semibold text-gray-900 mb-4">
           Acciones
         </h2>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button 
             onClick={() => setIsStatusModalOpen(true)}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
@@ -453,6 +455,20 @@ export default function OrderDetailPage() {
           >
             Asignar Operador
           </button>
+          <button
+            onClick={() => setShowLabel(!showLabel)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            {showLabel ? '📦 Ocultar Etiqueta' : '🏷️ Ver Etiqueta'}
+          </button>
+          {showLabel && (
+            <button
+              onClick={() => window.print()}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+            >
+              🖨️ Imprimir Etiqueta
+            </button>
+          )}
           <a
             href={`/track/${order.public_id}`}
             target="_blank"
@@ -463,6 +479,27 @@ export default function OrderDetailPage() {
           </a>
         </div>
       </div>
+
+      {/* Label Preview */}
+      {showLabel && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            📦 Etiqueta de Envío
+          </h2>
+          <div className="flex justify-center">
+            <OrderLabel
+              orderNumber={order.order_number}
+              customerName={order.customer_name}
+              customerPhone={order.customer_phone}
+              customerEmail={order.customer_email}
+              publicId={order.public_id}
+              items={items}
+              createdAt={order.created_at}
+              platform={order.platform}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Historial de Cambios */}
       <div className="bg-white rounded-lg shadow p-6">
