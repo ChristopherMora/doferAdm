@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api'
 import CalculadoraCostos from '@/components/CalculadoraCostos'
 
 interface QuoteItem {
+  id?: string // ID del backend (solo en modo edición)
   product_name: string
   description: string
   weight_grams: number
@@ -74,6 +75,7 @@ function NewQuotePageContent() {
 
       // Load existing items
       const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
+        id: item.id, // Guardar el ID del backend
         product_name: item.product_name,
         description: item.description || '',
         weight_grams: item.weight_grams,
@@ -206,13 +208,32 @@ function NewQuotePageContent() {
 
       await apiClient.post(`/quotes/${quoteId}/items`, itemData)
 
-      // Add to local list
-      const newItem: QuoteItem = {
-        ...currentItem,
-        unit_price: finalUnitPrice,
-        total: finalTotal,
+      // Si estamos en modo edición, recargar la cotización para obtener totales actualizados
+      if (isEditMode) {
+        const response = await apiClient.get<any>(`/quotes/${quoteId}`)
+        const existingItems = response.items || []
+        
+        const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
+          id: item.id,
+          product_name: item.product_name,
+          description: item.description || '',
+          weight_grams: item.weight_grams,
+          print_time_hours: item.print_time_hours,
+          quantity: item.quantity,
+          other_costs: item.other_costs || 0,
+          unit_price: item.unit_price,
+          total: item.total,
+        }))
+        setItems(formattedItems)
+      } else {
+        // En modo creación, agregar al estado local
+        const newItem: QuoteItem = {
+          ...currentItem,
+          unit_price: finalUnitPrice,
+          total: finalTotal,
+        }
+        setItems([...items, newItem])
       }
-      setItems([...items, newItem])
 
       // Reset form
       setCurrentItem({
@@ -234,9 +255,44 @@ function NewQuotePageContent() {
     }
   }
 
-  const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index))
-    alert('✅ Item eliminado')
+  const removeItem = async (index: number) => {
+    const item = items[index]
+    
+    // Si estamos en modo edición y el item tiene ID del backend, eliminarlo del servidor
+    if (isEditMode && item.id && quoteId) {
+      try {
+        setLoading(true)
+        await apiClient.delete(`/quotes/${quoteId}/items/${item.id}`)
+        
+        // Recargar la cotización para obtener los totales actualizados
+        const response = await apiClient.get<any>(`/quotes/${quoteId}`)
+        const existingItems = response.items || []
+        
+        const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
+          id: item.id,
+          product_name: item.product_name,
+          description: item.description || '',
+          weight_grams: item.weight_grams,
+          print_time_hours: item.print_time_hours,
+          quantity: item.quantity,
+          other_costs: item.other_costs || 0,
+          unit_price: item.unit_price,
+          total: item.total,
+        }))
+        setItems(formattedItems)
+        
+        alert('✅ Item eliminado')
+      } catch (error: any) {
+        console.error('Error deleting item:', error)
+        alert(`Error al eliminar item: ${error.message || 'Error desconocido'}`)
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      // En modo creación, solo eliminar del estado local
+      setItems(items.filter((_, i) => i !== index))
+      alert('✅ Item eliminado')
+    }
   }
 
   const editItem = (index: number) => {
