@@ -20,7 +20,6 @@ const STATUS_COLUMNS = [
 export default function KanbanPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const [dragging, setDragging] = useState<string | null>(null)
 
   useEffect(() => {
     loadOrders()
@@ -44,27 +43,7 @@ export default function KanbanPage() {
     return orders.filter(order => order.status === status)
   }
 
-  const handleDragStart = (e: React.DragEvent, orderId: string) => {
-    setDragging(orderId)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/html', orderId)
-  }
-
-  const handleDragEnd = () => {
-    setDragging(null)
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
-    e.preventDefault()
-    const orderId = e.dataTransfer.getData('text/html')
-    
-    if (!orderId || dragging !== orderId) return
-
+  const moveOrder = async (orderId: string, newStatus: string) => {
     const order = orders.find(o => o.id === orderId)
     if (!order || order.status === newStatus) return
 
@@ -80,6 +59,22 @@ export default function KanbanPage() {
       console.error('Error updating order status:', error)
       alert('Error al actualizar el estado de la orden')
     }
+  }
+
+  const getNextStatus = (currentStatus: string): string | null => {
+    const index = STATUS_COLUMNS.findIndex(col => col.id === currentStatus)
+    if (index < STATUS_COLUMNS.length - 1) {
+      return STATUS_COLUMNS[index + 1].id
+    }
+    return null
+  }
+
+  const getPrevStatus = (currentStatus: string): string | null => {
+    const index = STATUS_COLUMNS.findIndex(col => col.id === currentStatus)
+    if (index > 0) {
+      return STATUS_COLUMNS[index - 1].id
+    }
+    return null
   }
 
   const getPriorityBadge = (priority: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
@@ -123,8 +118,6 @@ export default function KanbanPage() {
             <div
               key={column.id}
               className="flex flex-col"
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, column.id)}
             >
               {/* Column Header - minimalista */}
               <div className="mb-3">
@@ -137,65 +130,84 @@ export default function KanbanPage() {
 
               {/* Cards Container */}
               <div className="flex-1 space-y-3 min-h-[400px] p-3 rounded-lg border border-dashed">
-                {columnOrders.map((order) => (
-                  <Card
-                    key={order.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, order.id)}
-                    onDragEnd={handleDragEnd}
-                    className={`cursor-move hover:border-primary transition-colors ${
-                      dragging === order.id ? 'opacity-50' : ''
-                    }`}
-                  >
-                    <CardContent className="p-3">
-                      {/* Drag Handle + Order Number */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <GripVertical className="h-4 w-4 text-muted-foreground" />
+                {columnOrders.map((order) => {
+                  const nextStatus = getNextStatus(order.status)
+                  const prevStatus = getPrevStatus(order.status)
+                  
+                  return (
+                    <Card
+                      key={order.id}
+                      className="hover:border-primary transition-colors"
+                    >
+                      <CardContent className="p-3">
+                        {/* Order Number */}
+                        <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-mono text-muted-foreground">{order.order_number}</span>
+                          {order.priority && (
+                            <Badge variant={getPriorityBadge(order.priority)} className="text-xs">
+                              {order.priority}
+                            </Badge>
+                          )}
                         </div>
-                        {order.priority && (
-                          <Badge variant={getPriorityBadge(order.priority)} className="text-xs">
-                            {order.priority}
-                          </Badge>
-                        )}
-                      </div>
 
-                      {/* Product Image - solo si existe */}
-                      {order.product_image && (
-                        <div className="mb-2">
-                          <img
-                            src={order.product_image}
-                            alt={order.product_name}
-                            className="w-full h-20 object-cover rounded border"
-                          />
-                        </div>
-                      )}
-
-                      {/* Product Name */}
-                      <h4 className="font-medium text-sm mb-2 line-clamp-2">
-                        {order.product_name}
-                      </h4>
-
-                      {/* Info operativa */}
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          <span className="truncate">{order.customer_name}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>{order.platform}</span>
-                          <span className="font-medium">×{order.quantity}</span>
-                        </div>
-                        {order.assigned_to && (
-                          <div className="pt-1 border-t">
-                            <span>👷 {order.assigned_to}</span>
+                        {/* Product Image - solo si existe */}
+                        {order.product_image && (
+                          <div className="mb-2">
+                            <img
+                              src={order.product_image}
+                              alt={order.product_name}
+                              className="w-full h-20 object-cover rounded border"
+                            />
                           </div>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+
+                        {/* Product Name */}
+                        <h4 className="font-medium text-sm mb-2 line-clamp-2">
+                          {order.product_name}
+                        </h4>
+
+                        {/* Info operativa */}
+                        <div className="space-y-1 text-xs text-muted-foreground mb-3">
+                          <div className="flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            <span className="truncate">{order.customer_name}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>{order.platform}</span>
+                            <span className="font-medium">×{order.quantity}</span>
+                          </div>
+                          {order.assigned_to && (
+                            <div className="pt-1 border-t">
+                              <span>👷 {order.assigned_to}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Movement Buttons */}
+                        <div className="flex gap-1 border-t pt-2">
+                          {prevStatus && (
+                            <button
+                              onClick={() => moveOrder(order.id, prevStatus)}
+                              className="flex-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                              title={`Mover a ${STATUS_COLUMNS.find(c => c.id === prevStatus)?.label}`}
+                            >
+                              ← {STATUS_COLUMNS.find(c => c.id === prevStatus)?.icon}
+                            </button>
+                          )}
+                          {nextStatus && (
+                            <button
+                              onClick={() => moveOrder(order.id, nextStatus)}
+                              className="flex-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors font-medium"
+                              title={`Mover a ${STATUS_COLUMNS.find(c => c.id === nextStatus)?.label}`}
+                            >
+                              {STATUS_COLUMNS.find(c => c.id === nextStatus)?.icon} →
+                            </button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
 
                 {columnOrders.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
