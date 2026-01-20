@@ -116,6 +116,28 @@ export default function QuoteDetailPage() {
     }
   }
 
+  const convertToOrder = async () => {
+    if (!confirm('¿Deseas convertir esta cotización en un pedido? Se creará una nueva orden.')) {
+      return
+    }
+
+    try {
+      setUpdating(true)
+      const response = await apiClient.post<any>(`/quotes/${quoteId}/convert-to-order`, {})
+      alert(`✅ Cotización convertida a pedido: ${response.order.order_number}`)
+      router.push(`/dashboard/orders`)
+    } catch (error: any) {
+      console.error('Error converting to order:', error)
+      if (error.message?.includes('debe estar aprobada')) {
+        alert('❌ La cotización debe estar aprobada para convertirla en pedido')
+      } else {
+        alert(`Error al convertir cotización: ${error.message || 'Error desconocido'}`)
+      }
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -310,8 +332,9 @@ export default function QuoteDetailPage() {
 
           {quote.status === 'approved' && (
             <button
-              onClick={() => alert('Función de convertir a pedido próximamente')}
-              className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700"
+              onClick={convertToOrder}
+              disabled={updating}
+              className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
             >
               📦 Convertir a Pedido
             </button>

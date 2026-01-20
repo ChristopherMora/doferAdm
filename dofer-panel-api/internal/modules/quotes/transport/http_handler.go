@@ -20,6 +20,7 @@ type QuoteHandler struct {
 	deleteItemHandler   *app.DeleteQuoteItemHandler
 	deleteQuoteHandler  *app.DeleteQuoteHandler
 	searchHandler       *app.SearchQuotesHandler
+	convertToOrderHandler *app.ConvertToOrderHandler
 }
 
 func NewQuoteHandler(
@@ -32,6 +33,7 @@ func NewQuoteHandler(
 	deleteItemHandler *app.DeleteQuoteItemHandler,
 	deleteQuoteHandler *app.DeleteQuoteHandler,
 	searchHandler *app.SearchQuotesHandler,
+	convertToOrderHandler *app.ConvertToOrderHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
 		createHandler:       createHandler,
@@ -43,6 +45,7 @@ func NewQuoteHandler(
 		deleteItemHandler:   deleteItemHandler,
 		deleteQuoteHandler:  deleteQuoteHandler,
 		searchHandler:       searchHandler,
+		convertToOrderHandler: convertToOrderHandler,
 	}
 }
 
@@ -292,5 +295,33 @@ func (h *QuoteHandler) SearchQuotes(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"quotes": quotes,
 		"total":  len(quotes),
+	})
+}
+
+func (h *QuoteHandler) ConvertToOrder(w http.ResponseWriter, r *http.Request) {
+	quoteID := chi.URLParam(r, "id")
+
+	cmd := app.ConvertToOrderCommand{
+		QuoteID: quoteID,
+	}
+
+	order, err := h.convertToOrderHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		if err == app.ErrQuoteNotApproved {
+			http.Error(w, "La cotización debe estar aprobada para convertirla en pedido", http.StatusBadRequest)
+			return
+		}
+		if err == app.ErrQuoteNoItems {
+			http.Error(w, "La cotización debe tener al menos un item", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"order": order,
+		"message": "Cotización convertida a pedido exitosamente",
 	})
 }
