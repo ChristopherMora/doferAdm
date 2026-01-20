@@ -68,20 +68,27 @@ export default function OrderLabel({
             position: absolute;
             left: 0;
             top: 0;
-            width: 100%;
+            width: 4in;
+            height: 6in;
           }
           .no-print {
             display: none !important;
           }
+          @page {
+            size: 4in 6in;
+            margin: 0;
+          }
         }
         
         .order-label {
-          width: 10cm;
-          padding: 1cm;
+          width: 4in;
+          height: 6in;
+          padding: 0.3in;
           margin: 0 auto;
           background: white;
           border: 2px dashed #ccc;
           font-family: Arial, sans-serif;
+          box-sizing: border-box;
         }
       `}</style>
 
