@@ -6,6 +6,11 @@ type OrderRepository interface {
 	FindByPublicID(publicID string) (*Order, error)
 	FindAll(filters OrderFilters) ([]*Order, error)
 	Update(order *Order) error
+	
+	// Order Items
+	CreateOrderItem(item *OrderItem) error
+	GetOrderItems(orderID string) ([]*OrderItem, error)
+	UpdateOrderItemStatus(itemID string, isCompleted bool) error
 }
 
 type OrderFilters struct {
