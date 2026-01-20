@@ -27,6 +27,21 @@ export interface Order {
   timer_paused_at?: string
   is_timer_running?: boolean
   timer_total_paused_minutes?: number
+  // Items
+  items?: OrderItem[]
+}
+
+export interface OrderItem {
+  id: string
+  order_id: string
+  product_name: string
+  description?: string
+  quantity: number
+  unit_price: number
+  total: number
+  is_completed: boolean
+  completed_at?: string
+  created_at: string
 }
 
 export interface Product {

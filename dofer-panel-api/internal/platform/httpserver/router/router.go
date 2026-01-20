@@ -85,6 +85,8 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	getTimerHandler := ordersApp.NewGetTimerHandler(timerRepo)
 	updateEstimatedHandler := ordersApp.NewUpdateEstimatedTimeHandler(timerRepo)
 	operatorStatsHandler := ordersApp.NewGetOperatorStatsHandler(timerRepo)
+	getOrderItemsHandler := ordersApp.NewGetOrderItemsHandler(orderRepo)
+	updateOrderItemStatusHandler := ordersApp.NewUpdateOrderItemStatusHandler(orderRepo)
 
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
@@ -101,6 +103,8 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		getTimerHandler,
 		updateEstimatedHandler,
 		operatorStatsHandler,
+		getOrderItemsHandler,
+		updateOrderItemStatusHandler,
 	)
 
 	// Setup cost handlers

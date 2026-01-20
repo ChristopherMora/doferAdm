@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
+import { OrderItem } from '@/types'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
@@ -42,6 +43,7 @@ export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
   const [order, setOrder] = useState<Order | null>(null)
+  const [items, setItems] = useState<OrderItem[]>([])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,12 +58,14 @@ export default function OrderDetailPage() {
     try {
       setLoading(true)
       setError(null)
-      const [orderData, historyData] = await Promise.all([
+      const [orderData, historyData, itemsData] = await Promise.all([
         apiClient.get<Order>(`/orders/${params.id}`),
-        apiClient.get<{ history: HistoryEntry[] }>(`/orders/${params.id}/history`)
+        apiClient.get<{ history: HistoryEntry[] }>(`/orders/${params.id}/history`),
+        apiClient.get<{ items: OrderItem[] }>(`/orders/${params.id}/items`)
       ])
       setOrder(orderData)
       setHistory(historyData.history || [])
+      setItems(itemsData.items || [])
     } catch (err: any) {
       console.error('Error loading order:', err)
       setError(err.response?.data?.error || err.message || 'Error al cargar la orden')
@@ -90,6 +94,23 @@ export default function OrderDetailPage() {
       low: 'bg-gray-100 text-gray-800',
     }
     return badges[priority] || 'bg-gray-100 text-gray-800'
+  }
+
+  const handleItemToggle = async (itemId: string, currentStatus: boolean) => {
+    try {
+      await apiClient.patch(`/orders/${params.id}/items/${itemId}/status`, {
+        is_completed: !currentStatus
+      })
+      // Actualizar el estado local
+      setItems(items.map(item => 
+        item.id === itemId 
+          ? { ...item, is_completed: !currentStatus, completed_at: !currentStatus ? new Date().toISOString() : null }
+          : item
+      ))
+    } catch (err: any) {
+      console.error('Error updating item status:', err)
+      alert('Error al actualizar el estado del item')
+    }
   }
 
   if (loading) {
@@ -211,11 +232,60 @@ export default function OrderDetailPage() {
             {order.notes && (
               <div>
                 <p className="text-sm text-gray-500">Notas</p>
-                <p className="text-base text-gray-900">{order.notes}</p>
+                <p className="text-base text-gray-900 whitespace-pre-wrap">{order.notes}</p>
               </div>
             )}
           </div>
         </div>
+
+        {/* Order Items */}
+        {items.length > 0 && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              Items del Pedido ({items.filter(i => i.is_completed).length}/{items.length} completados)
+            </h2>
+            <div className="space-y-3">
+              {items.map((item) => (
+                <div 
+                  key={item.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border ${
+                    item.is_completed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={item.is_completed}
+                    onChange={() => handleItemToggle(item.id, item.is_completed)}
+                    className="mt-1 h-5 w-5 text-green-600 rounded focus:ring-green-500 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className={`font-medium ${item.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                          {item.product_name}
+                        </p>
+                        {item.description && (
+                          <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+                        )}
+                        <p className="text-sm text-gray-500 mt-1">
+                          Cantidad: {item.quantity} × ${item.unit_price.toFixed(2)} = ${item.total.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                    {item.completed_at && (
+                      <p className="text-xs text-green-600 mt-2">
+                        ✓ Completado {new Date(item.completed_at).toLocaleString('es-MX', {
+                          dateStyle: 'short',
+                          timeStyle: 'short'
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Timestamps */}
         <div className="bg-white rounded-lg shadow p-6">

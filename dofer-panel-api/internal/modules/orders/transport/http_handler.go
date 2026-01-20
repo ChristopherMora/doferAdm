@@ -24,6 +24,8 @@ type OrderHandler struct {
 	getTimerHandler        *app.GetTimerHandler
 	updateEstimatedHandler *app.UpdateEstimatedTimeHandler
 	operatorStatsHandler   *app.GetOperatorStatsHandler
+	getItemsHandler        *app.GetOrderItemsHandler
+	updateItemStatusHandler *app.UpdateOrderItemStatusHandler
 }
 
 func NewOrderHandler(
@@ -41,6 +43,8 @@ func NewOrderHandler(
 	getTimerHandler *app.GetTimerHandler,
 	updateEstimatedHandler *app.UpdateEstimatedTimeHandler,
 	operatorStatsHandler *app.GetOperatorStatsHandler,
+	getItemsHandler *app.GetOrderItemsHandler,
+	updateItemStatusHandler *app.UpdateOrderItemStatusHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:          createHandler,
@@ -57,6 +61,8 @@ func NewOrderHandler(
 		getTimerHandler:        getTimerHandler,
 		updateEstimatedHandler: updateEstimatedHandler,
 		operatorStatsHandler:   operatorStatsHandler,
+		getItemsHandler:        getItemsHandler,
+		updateItemStatusHandler: updateItemStatusHandler,
 	}
 }
 
@@ -507,4 +513,51 @@ func (h *OrderHandler) GetOperatorStats(w http.ResponseWriter, r *http.Request) 
 			"total":     len(stats),
 		})
 	}
+}
+
+// GetOrderItems obtiene los items de una orden
+func (h *OrderHandler) GetOrderItems(w http.ResponseWriter, r *http.Request) {
+orderID := chi.URLParam(r, "id")
+
+query := app.GetOrderItemsQuery{
+OrderID: orderID,
+}
+
+items, err := h.getItemsHandler.Handle(r.Context(), query)
+if err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]interface{}{
+"items": items,
+"total": len(items),
+})
+}
+
+// UpdateOrderItemStatus actualiza el estado de un item
+func (h *OrderHandler) UpdateOrderItemStatus(w http.ResponseWriter, r *http.Request) {
+itemID := chi.URLParam(r, "itemId")
+
+var req struct {
+IsCompleted bool `json:"is_completed"`
+}
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+http.Error(w, err.Error(), http.StatusBadRequest)
+return
+}
+
+cmd := app.UpdateOrderItemStatusCommand{
+ItemID:      itemID,
+IsCompleted: req.IsCompleted,
+}
+
+if err := h.updateItemStatusHandler.Handle(r.Context(), cmd); err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]string{"message": "Item status updated"})
 }
