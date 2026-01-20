@@ -104,7 +104,7 @@ export default function OrderDetailPage() {
       // Actualizar el estado local
       setItems(items.map(item => 
         item.id === itemId 
-          ? { ...item, is_completed: !currentStatus, completed_at: !currentStatus ? new Date().toISOString() : null }
+          ? { ...item, is_completed: !currentStatus, completed_at: !currentStatus ? new Date().toISOString() : undefined }
           : item
       ))
     } catch (err: any) {
