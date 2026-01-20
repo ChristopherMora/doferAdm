@@ -140,6 +140,24 @@ export default function QuoteDetailPage() {
     }
   }
 
+  const syncItemsToOrder = async () => {
+    if (!confirm('¿Sincronizar items de esta cotización al pedido existente?')) {
+      return
+    }
+
+    try {
+      setUpdating(true)
+      await apiClient.post(`/quotes/${quoteId}/sync-items`, {})
+      alert('✅ Items sincronizados al pedido exitosamente')
+      loadQuote()
+    } catch (error: any) {
+      console.error('Error syncing items:', error)
+      alert(`Error: ${error.message || 'No se pudieron sincronizar los items'}`)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   const addPayment = async () => {
     const amount = parseFloat(paymentAmount)
     if (!amount || amount <= 0) {
@@ -380,13 +398,24 @@ export default function QuoteDetailPage() {
           )}
 
           {quote.status === 'approved' && (
-            <button
-              onClick={convertToOrder}
-              disabled={updating}
-              className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-            >
-              📦 Convertir a Pedido
-            </button>
+            <>
+              <button
+                onClick={convertToOrder}
+                disabled={updating}
+                className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                📦 Convertir a Pedido
+              </button>
+              {(quote as any).converted_to_order_id && (
+                <button
+                  onClick={syncItemsToOrder}
+                  disabled={updating}
+                  className="bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                >
+                  🔄 Sincronizar Items al Pedido
+                </button>
+              )}
+            </>
           )}
 
           <button
