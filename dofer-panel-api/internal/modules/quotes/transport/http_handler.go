@@ -22,6 +22,7 @@ type QuoteHandler struct {
 	searchHandler       *app.SearchQuotesHandler
 	convertToOrderHandler *app.ConvertToOrderHandler
 	addPaymentHandler   *app.AddPaymentHandler
+	syncItemsHandler    *app.SyncItemsToOrderHandler
 }
 
 func NewQuoteHandler(
@@ -36,6 +37,7 @@ func NewQuoteHandler(
 	searchHandler *app.SearchQuotesHandler,
 	convertToOrderHandler *app.ConvertToOrderHandler,
 	addPaymentHandler *app.AddPaymentHandler,
+	syncItemsHandler *app.SyncItemsToOrderHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
 		createHandler:       createHandler,
@@ -49,6 +51,7 @@ func NewQuoteHandler(
 		searchHandler:       searchHandler,
 		convertToOrderHandler: convertToOrderHandler,
 		addPaymentHandler:   addPaymentHandler,
+		syncItemsHandler:    syncItemsHandler,
 	}
 }
 
@@ -366,4 +369,24 @@ func (h *QuoteHandler) AddPayment(w http.ResponseWriter, r *http.Request) {
 		"quote": quote,
 		"message": "Pago registrado exitosamente",
 	})
+}
+
+// SyncItemsToOrder sincroniza items de cotización a pedido existente
+func (h *QuoteHandler) SyncItemsToOrder(w http.ResponseWriter, r *http.Request) {
+quoteID := chi.URLParam(r, "id")
+
+cmd := app.SyncItemsToOrderCommand{
+QuoteID: quoteID,
+}
+
+err := h.syncItemsHandler.Handle(r.Context(), cmd)
+if err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]interface{}{
+"message": "Items sincronizados al pedido exitosamente",
+})
 }
