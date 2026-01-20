@@ -87,23 +87,14 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 	order.CustomerEmail = quote.CustomerEmail
 	order.CustomerPhone = quote.CustomerPhone
 	
-	// Agregar notas con detalles de la cotización
-	notesDetail := fmt.Sprintf("Pedido generado desde cotización %s\n\n", quote.QuoteNumber)
+	// Agregar notas simplificadas
+	notesDetail := fmt.Sprintf("🔄 Generado desde cotización %s\n", quote.QuoteNumber)
+	notesDetail += fmt.Sprintf("💰 Total: $%.2f | Items: %d\n", quote.Total, len(items))
+	
 	if quote.Notes != "" {
-		notesDetail += fmt.Sprintf("Notas originales: %s\n\n", quote.Notes)
+		notesDetail += fmt.Sprintf("\n📝 %s", quote.Notes)
 	}
-	notesDetail += "Items:\n"
-	for i, item := range items {
-		notesDetail += fmt.Sprintf("%d. %s - %dx (%.0fg, %.1fh) - $%.2f c/u\n", 
-			i+1, 
-			item.ProductName, 
-			item.Quantity, 
-			item.WeightGrams, 
-			item.PrintTimeHours, 
-			item.UnitPrice,
-		)
-	}
-	notesDetail += fmt.Sprintf("\nTotal cotización: $%.2f", quote.Total)
+	
 	order.Notes = notesDetail
 
 	// Guardar la orden
