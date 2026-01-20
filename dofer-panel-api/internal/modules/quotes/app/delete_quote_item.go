@@ -45,8 +45,8 @@ func (h *DeleteQuoteItemHandler) Handle(ctx context.Context, cmd DeleteQuoteItem
 
 	// Actualizar totales
 	quote.Subtotal = subtotal
-	quote.Tax = subtotal * 0.16 // IVA 16%
-	quote.Total = quote.Subtotal + quote.Tax
+	quote.Tax = 0 // Sin IVA por ahora
+	quote.Total = quote.Subtotal - quote.Discount
 
 	// Guardar cotización actualizada
 	return h.repo.Update(quote)
