@@ -113,7 +113,8 @@ func (h *AddQuoteItemHandler) updateQuoteTotals(ctx context.Context, quoteID str
 	}
 
 	quote.Subtotal = subtotal
-	quote.Total = subtotal - quote.Discount + quote.Tax
+	quote.Tax = subtotal * 0.16 // IVA 16%
+	quote.Total = quote.Subtotal + quote.Tax - quote.Discount
 
 	return h.quoteRepo.Update(quote)
 }
