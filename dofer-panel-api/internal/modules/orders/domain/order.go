@@ -68,6 +68,19 @@ type Order struct {
 	TimerTotalPausedMins int        `json:"timer_total_paused_minutes"`
 }
 
+type OrderItem struct {
+	ID          string    `json:"id"`
+	OrderID     string    `json:"order_id"`
+	ProductName string    `json:"product_name"`
+	Description string    `json:"description"`
+	Quantity    int       `json:"quantity"`
+	UnitPrice   float64   `json:"unit_price"`
+	Total       float64   `json:"total"`
+	IsCompleted bool      `json:"is_completed"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 func NewOrder(
 	orderNumber string,
 	platform OrderPlatform,

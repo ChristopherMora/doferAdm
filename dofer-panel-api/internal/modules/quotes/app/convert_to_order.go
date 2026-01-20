@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	ordersDomain "github.com/dofer/panel-api/internal/modules/orders/domain"
 	"github.com/dofer/panel-api/internal/modules/quotes/domain"
 )
@@ -100,6 +101,25 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 	// Guardar la orden
 	if err := h.orderRepo.Create(order); err != nil {
 		return nil, err
+	}
+
+	// Crear los items individuales de la orden
+	for _, quoteItem := range items {
+		orderItem := &ordersDomain.OrderItem{
+			ID:          uuid.New().String(),
+			OrderID:     order.ID,
+			ProductName: quoteItem.ProductName,
+			Description: quoteItem.Description,
+			Quantity:    quoteItem.Quantity,
+			UnitPrice:   quoteItem.UnitPrice,
+			Total:       quoteItem.Total,
+			IsCompleted: false,
+		}
+		
+		if err := h.orderRepo.CreateOrderItem(orderItem); err != nil {
+			// Log error but continue
+			fmt.Printf("Warning: could not create order item: %v\n", err)
+		}
 	}
 
 	// Actualizar la cotización para marcarla como convertida
