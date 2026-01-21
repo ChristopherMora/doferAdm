@@ -56,13 +56,18 @@ for migration_file in /app/migrations/*.sql; do
     if [ "$already_applied" = "0" ] || [ "$already_applied" = "" ]; then
       echo "  Applying: $filename"
       
-      if PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "$migration_file" > /dev/null 2>&1; then
+      # Aplicar migración y capturar errores
+      migration_output=$(PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "$migration_file" 2>&1)
+      migration_exit_code=$?
+      
+      if [ $migration_exit_code -eq 0 ]; then
         PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -c \
           "INSERT INTO schema_migrations (migration_file) VALUES ('${filename}') ON CONFLICT (migration_file) DO NOTHING" > /dev/null 2>&1
         echo "    SUCCESS"
       else
         echo "    FAILED!"
-        echo "ERROR: Migration $filename failed"
+        echo "ERROR: Migration $filename failed with:"
+        echo "$migration_output"
         exit 1
       fi
     else
