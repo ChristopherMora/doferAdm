@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { autoAssignOrder, type Printer, type Order, type AssignmentResult } from '@/lib/autoAssignment'
-import { api } from '@/lib/api'
+import { apiClient } from '@/lib/api'
 
 export default function PrintersPage() {
   const [printers, setPrinters] = useState<Printer[]>([])
@@ -19,8 +19,8 @@ export default function PrintersPage() {
   const loadData = async () => {
     try {
       const [printersData, ordersData] = await Promise.all([
-        api.get('/printers'),
-        api.get('/orders?status=pending')
+        apiClient.get('/printers'),
+        apiClient.get('/orders?status=pending')
       ])
       setPrinters(printersData.printers || [])
       setPendingOrders(ordersData.orders || [])
@@ -42,7 +42,7 @@ export default function PrintersPage() {
     if (result.success) {
       // Asignar en el backend
       try {
-        await api.patch(`/orders/${orderId}`, {
+        await apiClient.patch(`/orders/${orderId}`, {
           printer_id: result.printerId,
           estimated_start: result.estimatedStart,
           estimated_completion: result.estimatedCompletion

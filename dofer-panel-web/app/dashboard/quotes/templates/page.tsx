@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { api } from '@/lib/api'
+import { apiClient } from '@/lib/api'
 
 interface QuoteTemplate {
   id: string
@@ -37,7 +37,7 @@ export default function QuoteTemplatesPage() {
 
   const loadTemplates = async () => {
     try {
-      const data = await api.get('/quotes/templates')
+      const data = await apiClient.get('/quotes/templates')
       setTemplates(data.templates || [])
     } catch (error) {
       console.error('Error loading templates:', error)
@@ -49,7 +49,7 @@ export default function QuoteTemplatesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await api.post('/quotes/templates', formData)
+      await apiClient.post('/quotes/templates', formData)
       await loadTemplates()
       setShowForm(false)
       setFormData({
@@ -71,7 +71,7 @@ export default function QuoteTemplatesPage() {
     if (!confirm('¿Eliminar esta plantilla?')) return
     
     try {
-      await api.delete(`/quotes/templates/${id}`)
+      await apiClient.delete(`/quotes/templates/${id}`)
       await loadTemplates()
     } catch (error) {
       console.error('Error deleting template:', error)

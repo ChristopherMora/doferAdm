@@ -39,15 +39,17 @@ export interface Order {
   created_at: Date
 }
 
-export interface AssignmentResult {
+interface AssignmentResult {
   success: boolean
   printerId?: string
   printerName?: string
   reason?: string
   estimatedStart?: Date
   estimatedCompletion?: Date
-  queue Position?: number
+  queuePosition?: number
 }
+
+export type { Printer, Order, AssignmentResult }
 
 /**
  * Asigna automáticamente una orden a la impresora más adecuada
