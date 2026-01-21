@@ -48,6 +48,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
         <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <img src="/logo.jpg" alt="DOFER" className="h-20 w-20 object-contain" />
+          </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             DOFER Panel
           </h1>
