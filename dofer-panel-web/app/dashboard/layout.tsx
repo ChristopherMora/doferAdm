@@ -1,51 +1,97 @@
 'use client'
 
-import { useEffect, useState, memo } from 'react'
+import { useEffect, useState, memo, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import ThemeToggle from '@/components/ThemeToggle'
 
+// Componente de breadcrumbs para navegación contextual
+const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
+  const segments = pathname.split('/').filter(Boolean)
+  
+  return (
+    <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+      <Link href="/dashboard" className="hover:text-foreground transition-colors">
+        Inicio
+      </Link>
+      {segments.slice(1).map((segment, index) => {
+        const href = '/' + segments.slice(0, index + 2).join('/')
+        const label = segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ')
+        const isLast = index === segments.length - 2
+        
+        return (
+          <span key={href} className="flex items-center gap-2">
+            <span className="text-muted-foreground/50">/</span>
+            {isLast ? (
+              <span className="text-foreground font-medium">{label}</span>
+            ) : (
+              <Link href={href} className="hover:text-foreground transition-colors">
+                {label}
+              </Link>
+            )}
+          </span>
+        )
+      })}
+    </nav>
+  )
+})
+
+Breadcrumbs.displayName = 'Breadcrumbs'
+
 // Memoizar la navegación para evitar re-renderizados innecesarios
-const NavigationItem = memo(({ item, isActive, isExpanded, onToggle }: { 
-  item: { name: string; href?: string; icon: string; subItems?: Array<{ name: string; href: string; icon: string }> }, 
+const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm }: { 
+  item: { name: string; href?: string; icon: string; shortcut?: string; subItems?: Array<{ name: string; href: string; icon: string }> }, 
   isActive: boolean,
   isExpanded?: boolean,
-  onToggle?: () => void 
+  onToggle?: () => void,
+  searchTerm?: string
 }) => {
   const pathname = usePathname()
+  
+  // Filtrar subItems si hay término de búsqueda
+  const filteredSubItems = item.subItems?.filter(sub => 
+    searchTerm ? sub.name.toLowerCase().includes(searchTerm.toLowerCase()) : true
+  )
+  
+  // Si hay búsqueda y no hay coincidencias, no mostrar este item
+  if (searchTerm && !item.name.toLowerCase().includes(searchTerm.toLowerCase()) && (!filteredSubItems || filteredSubItems.length === 0)) {
+    return null
+  }
   
   if (item.subItems) {
     return (
       <div className="space-y-1">
         <button
           onClick={onToggle}
-          className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-colors ${
+          className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:scale-[1.02] ${
             isActive
-              ? 'bg-primary/10 text-primary font-medium'
+              ? 'bg-primary/10 text-primary font-medium shadow-sm'
               : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
           }`}
+          title={`${isActive ? 'Contraer' : 'Expandir'} ${item.name}`}
         >
           <div className="flex items-center gap-3">
             <span className="text-xl">{item.icon}</span>
             <span>{item.name}</span>
           </div>
-          <span className={`text-sm transition-transform ${isExpanded ? 'rotate-90' : ''}`}>›</span>
+          <span className={`text-sm transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>›</span>
         </button>
-        {isExpanded && (
-          <div className="ml-6 space-y-1 border-l-2 border-border pl-2">
-            {item.subItems.map((subItem) => {
+        <div className={`overflow-hidden transition-all duration-200 ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+          <div className="ml-6 space-y-1 border-l-2 border-border pl-2 py-1">
+            {filteredSubItems?.map((subItem) => {
               const isSubActive = pathname === subItem.href
               return (
                 <Link
                   key={subItem.name}
                   href={subItem.href}
                   prefetch={true}
-                  className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
+                  className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-sm hover:scale-[1.02] ${
                     isSubActive
-                      ? 'bg-primary/10 text-primary font-medium'
+                      ? 'bg-primary/10 text-primary font-medium shadow-sm'
                       : 'text-foreground/60 hover:bg-accent hover:text-accent-foreground'
                   }`}
+                  title={subItem.name}
                 >
                   <span>{subItem.icon}</span>
                   <span>{subItem.name}</span>
@@ -53,7 +99,7 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle }: {
               )
             })}
           </div>
-        )}
+        </div>
       </div>
     )
   }
@@ -62,14 +108,22 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle }: {
     <Link
       href={item.href!}
       prefetch={true}
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+      className={`group flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:scale-[1.02] ${
         isActive
-          ? 'bg-primary/10 text-primary font-medium'
+          ? 'bg-primary/10 text-primary font-medium shadow-sm'
           : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
       }`}
+      title={item.name}
     >
-      <span className="text-xl">{item.icon}</span>
-      <span>{item.name}</span>
+      <div className="flex items-center gap-3">
+        <span className="text-xl">{item.icon}</span>
+        <span>{item.name}</span>
+      </div>
+      {item.shortcut && (
+        <kbd className="hidden group-hover:inline-flex px-2 py-1 text-xs font-mono bg-muted rounded opacity-60">
+          {item.shortcut}
+        </kbd>
+      )}
     </Link>
   )
 })
@@ -84,18 +138,70 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
+  const [sidebarCompact, setSidebarCompact] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'Órdenes': false,
     'Cotizaciones': false,
     'Configuración': false
   })
 
-  const toggleSection = (sectionName: string) => {
+  const toggleSection = useCallback((sectionName: string) => {
     setExpandedSections(prev => ({
       ...prev,
       [sectionName]: !prev[sectionName]
     }))
-  }
+  }, [])
+
+  // Auto-expandir secciones cuando la ruta activa está dentro
+  useEffect(() => {
+    const newExpanded = { ...expandedSections }
+    
+    if (pathname.includes('/orders') || pathname.includes('/kanban') || pathname.includes('/search')) {
+      newExpanded['Órdenes'] = true
+    }
+    if (pathname.includes('/quotes')) {
+      newExpanded['Cotizaciones'] = true
+    }
+    if (pathname.includes('/printers') || pathname.includes('/products') || 
+        pathname.includes('/calculadora') || pathname.includes('/settings')) {
+      newExpanded['Configuración'] = true
+    }
+    
+    setExpandedSections(newExpanded)
+  }, [pathname])
+
+  // Atajos de teclado
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl + K para búsqueda rápida
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowSearch(prev => !prev)
+      }
+      // Cmd/Ctrl + B para toggle sidebar compacto
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault()
+        setSidebarCompact(prev => !prev)
+      }
+      // Escape para cerrar búsqueda
+      if (e.key === 'Escape' && showSearch) {
+        setShowSearch(false)
+        setSearchTerm('')
+      }
+      // Atajos numéricos Cmd/Ctrl + 1-5
+      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault()
+        const routes = ['/dashboard', '/dashboard/orders', '/dashboard/quotes', '/dashboard/stats', '/dashboard/settings']
+        const index = parseInt(e.key) - 1
+        if (routes[index]) router.push(routes[index])
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [router, showSearch])
 
   useEffect(() => {
     const getUser = async () => {
@@ -118,10 +224,11 @@ export default function DashboardLayout({
   }
 
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: '📊' },
+    { name: 'Dashboard', href: '/dashboard', icon: '📊', shortcut: '⌘1' },
     { 
       name: 'Órdenes', 
       icon: '📦',
+      shortcut: '⌘2',
       subItems: [
         { name: 'Lista', href: '/dashboard/orders', icon: '📋' },
         { name: 'Kanban', href: '/dashboard/kanban', icon: '🎯' },
@@ -131,15 +238,17 @@ export default function DashboardLayout({
     { 
       name: 'Cotizaciones', 
       icon: '💼',
+      shortcut: '⌘3',
       subItems: [
         { name: 'Nueva', href: '/dashboard/quotes', icon: '✨' },
         { name: 'Plantillas', href: '/dashboard/quotes/templates', icon: '📝' },
       ]
     },
-    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈' },
+    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈', shortcut: '⌘4' },
     { 
       name: 'Configuración', 
       icon: '⚙️',
+      shortcut: '⌘5',
       subItems: [
         { name: 'Impresoras', href: '/dashboard/printers', icon: '🖨️' },
         { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
@@ -151,6 +260,75 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background transition-colors duration-200">
+      {/* Búsqueda rápida modal */}
+      {showSearch && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-32">
+          <div className="bg-card rounded-lg shadow-2xl w-full max-w-2xl border border-border animate-in fade-in zoom-in duration-200">
+            <div className="p-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Buscar en el menú... (Esc para cerrar)"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+                  autoFocus
+                />
+                <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded">Esc</kbd>
+              </div>
+            </div>
+            <div className="max-h-96 overflow-y-auto p-2">
+              {navigation.map((item) => {
+                if (item.subItems) {
+                  const filteredSubs = item.subItems.filter(sub =>
+                    sub.name.toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  if (filteredSubs.length > 0 || item.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    return (
+                      <div key={item.name} className="mb-2">
+                        <div className="px-3 py-2 text-sm font-medium text-muted-foreground">{item.icon} {item.name}</div>
+                        {filteredSubs.map(sub => (
+                          <Link
+                            key={sub.href}
+                            href={sub.href}
+                            onClick={() => {
+                              setShowSearch(false)
+                              setSearchTerm('')
+                            }}
+                            className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                          >
+                            <span>{sub.icon}</span>
+                            <span>{sub.name}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )
+                  }
+                } else if (item.href && item.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => {
+                        setShowSearch(false)
+                        setSearchTerm('')
+                      }}
+                      className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                    >
+                      <span className="text-xl">{item.icon}</span>
+                      <span>{item.name}</span>
+                      {item.shortcut && <kbd className="ml-auto px-2 py-1 text-xs font-mono bg-muted rounded">{item.shortcut}</kbd>}
+                    </Link>
+                  )
+                }
+                return null
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <div className="fixed inset-y-0 left-0 w-64 bg-card border-r border-border shadow-lg transition-colors duration-200">
         <div className="flex flex-col h-full">
@@ -165,6 +343,18 @@ export default function DashboardLayout({
             </div>
           </div>
 
+          {/* Búsqueda rápida button */}
+          <div className="px-4 pt-4">
+            <button
+              onClick={() => setShowSearch(true)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg bg-accent/50 hover:bg-accent transition-all duration-200 text-muted-foreground hover:text-foreground group"
+            >
+              <span className="text-lg">🔍</span>
+              <span className="text-sm flex-1 text-left">Buscar...</span>
+              <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded group-hover:bg-background">⌘K</kbd>
+            </button>
+          </div>
+
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             {navigation.map((item) => {
@@ -177,10 +367,36 @@ export default function DashboardLayout({
                   isActive={isActive}
                   isExpanded={isExpanded}
                   onToggle={() => item.subItems && toggleSection(item.name)}
+                  searchTerm={searchTerm}
                 />
               )
             })}
           </nav>
+
+          {/* Atajos de teclado info */}
+          <div className="px-4 py-2 border-t border-border/50">
+            <details className="group">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors list-none flex items-center gap-2">
+                <span>⌨️</span>
+                <span>Atajos de teclado</span>
+                <span className="ml-auto group-open:rotate-90 transition-transform">›</span>
+              </summary>
+              <div className="mt-2 space-y-1 text-xs">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Buscar</span>
+                  <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘K</kbd>
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Sidebar compacto</span>
+                  <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘B</kbd>
+                </div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Navegación rápida</span>
+                  <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘1-5</kbd>
+                </div>
+              </div>
+            </details>
+          </div>
 
           {/* User info */}
           <div className="p-4 border-t border-border">
@@ -208,14 +424,38 @@ export default function DashboardLayout({
 
       {/* Main content */}
       <div className="ml-64">
-        {/* Header */}
-        <header className="bg-card border-b border-border shadow-sm transition-colors duration-200">
+        {/* Header con breadcrumbs */}
+        <header className="bg-card border-b border-border shadow-sm transition-colors duration-200 sticky top-0 z-40 backdrop-blur-sm bg-card/95">
           <div className="px-8 py-4">
-            <h2 className="text-2xl font-semibold text-foreground transition-colors duration-200">
-              {navigation.find(item => item.href === pathname)?.name || 
-               navigation.flatMap(item => item.subItems || []).find(sub => sub.href === pathname)?.name || 
-               'Dashboard'}
-            </h2>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-foreground transition-colors duration-200">
+                  {navigation.find(item => item.href === pathname)?.name || 
+                   navigation.flatMap(item => item.subItems || []).find(sub => sub.href === pathname)?.name || 
+                   'Dashboard'}
+                </h2>
+                <Breadcrumbs pathname={pathname} />
+              </div>
+              
+              {/* Acciones rápidas */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="p-2 rounded-lg hover:bg-accent transition-colors"
+                  title="Recargar página"
+                >
+                  🔄
+                </button>
+                <Link
+                  href="/dashboard/quotes"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md"
+                  title="Nueva cotización (acceso rápido)"
+                >
+                  <span>✨</span>
+                  <span className="font-medium">Nueva Cotización</span>
+                </Link>
+              </div>
+            </div>
           </div>
         </header>
 
