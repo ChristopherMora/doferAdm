@@ -22,8 +22,8 @@ export default function PrintersPage() {
         apiClient.get('/printers'),
         apiClient.get('/orders?status=pending')
       ])
-      setPrinters(printersData.printers || [])
-      setPendingOrders(ordersData.orders || [])
+      setPrinters((printersData as any).printers || [])
+      setPendingOrders((ordersData as any).orders || [])
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {

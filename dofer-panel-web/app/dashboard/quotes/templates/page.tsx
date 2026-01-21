@@ -38,7 +38,7 @@ export default function QuoteTemplatesPage() {
   const loadTemplates = async () => {
     try {
       const data = await apiClient.get('/quotes/templates')
-      setTemplates(data.templates || [])
+      setTemplates((data as any).templates || [])
     } catch (error) {
       console.error('Error loading templates:', error)
     } finally {
