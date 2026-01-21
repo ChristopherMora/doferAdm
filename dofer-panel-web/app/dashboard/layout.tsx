@@ -7,10 +7,60 @@ import { supabase } from '@/lib/supabase'
 import ThemeToggle from '@/components/ThemeToggle'
 
 // Memoizar la navegación para evitar re-renderizados innecesarios
-const NavigationItem = memo(({ item, isActive }: { item: { name: string; href: string; icon: string }, isActive: boolean }) => {
+const NavigationItem = memo(({ item, isActive, isExpanded, onToggle }: { 
+  item: { name: string; href?: string; icon: string; subItems?: Array<{ name: string; href: string; icon: string }> }, 
+  isActive: boolean,
+  isExpanded?: boolean,
+  onToggle?: () => void 
+}) => {
+  const pathname = usePathname()
+  
+  if (item.subItems) {
+    return (
+      <div className="space-y-1">
+        <button
+          onClick={onToggle}
+          className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-colors ${
+            isActive
+              ? 'bg-primary/10 text-primary font-medium'
+              : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">{item.icon}</span>
+            <span>{item.name}</span>
+          </div>
+          <span className={`text-sm transition-transform ${isExpanded ? 'rotate-90' : ''}`}>›</span>
+        </button>
+        {isExpanded && (
+          <div className="ml-6 space-y-1 border-l-2 border-border pl-2">
+            {item.subItems.map((subItem) => {
+              const isSubActive = pathname === subItem.href
+              return (
+                <Link
+                  key={subItem.name}
+                  href={subItem.href}
+                  prefetch={true}
+                  className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm ${
+                    isSubActive
+                      ? 'bg-primary/10 text-primary font-medium'
+                      : 'text-foreground/60 hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  <span>{subItem.icon}</span>
+                  <span>{subItem.name}</span>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Link
-      href={item.href}
+      href={item.href!}
       prefetch={true}
       className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
         isActive
@@ -34,6 +84,18 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    'Órdenes': false,
+    'Cotizaciones': false,
+    'Configuración': false
+  })
+
+  const toggleSection = (sectionName: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }))
+  }
 
   useEffect(() => {
     const getUser = async () => {
@@ -57,16 +119,34 @@ export default function DashboardLayout({
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
-    { name: 'Órdenes', href: '/dashboard/orders', icon: '📦' },
-    { name: 'Cotizaciones', href: '/dashboard/quotes', icon: '💼' },
-    { name: 'Plantillas', href: '/dashboard/quotes/templates', icon: '📝' },
-    { name: 'Kanban', href: '/dashboard/kanban', icon: '📋' },
-    { name: 'Impresoras', href: '/dashboard/printers', icon: '🖨️' },
-    { name: 'Búsqueda', href: '/dashboard/search', icon: '🔍' },
-    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📊' },
-    { name: 'Calculadora', href: '/dashboard/calculadora', icon: '🧮' },
-    { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
-    { name: 'Configuración', href: '/dashboard/settings', icon: '⚙️' },
+    { 
+      name: 'Órdenes', 
+      icon: '📦',
+      subItems: [
+        { name: 'Lista', href: '/dashboard/orders', icon: '📋' },
+        { name: 'Kanban', href: '/dashboard/kanban', icon: '🎯' },
+        { name: 'Búsqueda', href: '/dashboard/search', icon: '🔍' },
+      ]
+    },
+    { 
+      name: 'Cotizaciones', 
+      icon: '💼',
+      subItems: [
+        { name: 'Nueva', href: '/dashboard/quotes', icon: '✨' },
+        { name: 'Plantillas', href: '/dashboard/quotes/templates', icon: '📝' },
+      ]
+    },
+    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈' },
+    { 
+      name: 'Configuración', 
+      icon: '⚙️',
+      subItems: [
+        { name: 'Impresoras', href: '/dashboard/printers', icon: '🖨️' },
+        { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
+        { name: 'Calculadora', href: '/dashboard/calculadora', icon: '🧮' },
+        { name: 'General', href: '/dashboard/settings', icon: '🔧' },
+      ]
+    },
   ]
 
   return (
@@ -88,12 +168,15 @@ export default function DashboardLayout({
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             {navigation.map((item) => {
-              const isActive = pathname === item.href
+              const isActive = item.href ? pathname === item.href : item.subItems?.some(sub => pathname === sub.href) || false
+              const isExpanded = item.subItems ? expandedSections[item.name] : undefined
               return (
                 <NavigationItem
                   key={item.name}
                   item={item}
                   isActive={isActive}
+                  isExpanded={isExpanded}
+                  onToggle={() => item.subItems && toggleSection(item.name)}
                 />
               )
             })}
@@ -129,7 +212,9 @@ export default function DashboardLayout({
         <header className="bg-card border-b border-border shadow-sm transition-colors duration-200">
           <div className="px-8 py-4">
             <h2 className="text-2xl font-semibold text-foreground transition-colors duration-200">
-              {navigation.find(item => item.href === pathname)?.name || 'Dashboard'}
+              {navigation.find(item => item.href === pathname)?.name || 
+               navigation.flatMap(item => item.subItems || []).find(sub => sub.href === pathname)?.name || 
+               'Dashboard'}
             </h2>
           </div>
         </header>
