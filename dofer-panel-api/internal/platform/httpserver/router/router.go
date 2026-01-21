@@ -10,6 +10,7 @@ import (
 	costsApp "github.com/dofer/panel-api/internal/modules/costs/app"
 	costsInfra "github.com/dofer/panel-api/internal/modules/costs/infra"
 	costsTransport "github.com/dofer/panel-api/internal/modules/costs/transport"
+	"github.com/dofer/panel-api/internal/modules/customers"
 	ordersApp "github.com/dofer/panel-api/internal/modules/orders/app"
 	ordersInfra "github.com/dofer/panel-api/internal/modules/orders/infra"
 	ordersTransport "github.com/dofer/panel-api/internal/modules/orders/transport"
@@ -150,6 +151,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	// Setup tracking handler
 	trackingHandler := tracking.NewTrackingHandler(orderRepo)
 
+	// Setup customers handler
+	customerRepo := customers.NewRepository(db)
+	customerHandler := customers.NewHandler(customerRepo)
+
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// Ping test
@@ -164,6 +169,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		costsTransport.RegisterRoutes(r, costHandler)
 		quotesTransport.RegisterRoutes(r, quoteHandler)
 		tracking.RegisterRoutes(r, trackingHandler)
+		customers.RegisterRoutes(r, customerHandler)
 	})
 
 	return r

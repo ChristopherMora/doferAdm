@@ -193,7 +193,7 @@ export default function DashboardLayout({
       // Atajos numéricos Cmd/Ctrl + 1-5
       if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
         e.preventDefault()
-        const routes = ['/dashboard', '/dashboard/orders', '/dashboard/quotes', '/dashboard/stats', '/dashboard/settings']
+        const routes = ['/dashboard', '/dashboard/orders', '/dashboard/quotes', '/dashboard/customers', '/dashboard/stats']
         const index = parseInt(e.key) - 1
         if (routes[index]) router.push(routes[index])
       }
@@ -244,7 +244,8 @@ export default function DashboardLayout({
         { name: 'Plantillas', href: '/dashboard/quotes/templates', icon: '📝' },
       ]
     },
-    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈', shortcut: '⌘4' },
+    { name: 'Clientes', href: '/dashboard/customers', icon: '👥', shortcut: '⌘4' },
+    { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈', shortcut: '⌘5' },
     { 
       name: 'Configuración', 
       icon: '⚙️',
