@@ -75,7 +75,7 @@ export default function DashboardLayout({
           {/* Logo */}
           <div className="p-6 border-b border-border">
             <div className="flex items-center gap-3">
-              <img src="/logo.jpg" alt="DOFER" className="h-12 w-12 object-contain" />
+              <img src="/logo.png" alt="DOFER" className="h-12 w-12 object-contain" />
               <div>
                 <h1 className="text-2xl font-bold text-primary">DOFER Panel</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">Sistema operativo</p>
