@@ -44,15 +44,15 @@ fi
 echo ""
 echo "Applying migrations..."
 
-# Aplicar migraciones SQL de forma simple
+# Aplicar migraciones SQL usando cat + pipe (más confiable que -f)
 for migration_file in /app/migrations/*.sql; do
   if [ -f "$migration_file" ]; then
     filename=$(basename "$migration_file")
     
     echo "  Processing: $filename"
     
-    # Ejecutar la migración directamente (psql maneja idempotencia con CREATE TABLE IF NOT EXISTS)
-    PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "$migration_file" > /dev/null 2>&1
+    # Ejecutar la migración usando cat y pipe
+    cat "$migration_file" | PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 > /dev/null 2>&1
     
     if [ $? -eq 0 ]; then
       # Marcar como aplicada en la BD
