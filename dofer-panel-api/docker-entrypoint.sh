@@ -44,23 +44,26 @@ fi
 echo ""
 echo "Applying migrations..."
 
-# Aplicar migraciones SQL usando cat + pipe (más confiable que -f)
+# Aplicar migraciones SQL usando cat + pipe con logging detallado
 for migration_file in /app/migrations/*.sql; do
   if [ -f "$migration_file" ]; then
     filename=$(basename "$migration_file")
     
-    echo "  Processing: $filename"
+    echo "  [$(date '+%H:%M:%S')] Processing: $filename"
     
-    # Ejecutar la migración usando cat y pipe
-    cat "$migration_file" | PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 > /dev/null 2>&1
+    # Ejecutar la migración usando cat y pipe con stdout redirection
+    echo "    → Executing SQL..."
+    cat "$migration_file" | PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 2>&1 | head -5
+    migration_exit_code=$?
     
-    if [ $? -eq 0 ]; then
+    if [ $migration_exit_code -eq 0 ]; then
+      echo "    → Marking as applied..."
       # Marcar como aplicada en la BD
       PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -c \
         "INSERT INTO schema_migrations (migration_file) VALUES ('${filename}') ON CONFLICT DO NOTHING;" > /dev/null 2>&1
-      echo "    ✓ OK"
+      echo "    ✓ SUCCESS"
     else
-      echo "    ✗ FAILED"
+      echo "    ✗ FAILED with exit code: $migration_exit_code"
       exit 1
     fi
   fi
