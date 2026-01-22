@@ -6,12 +6,12 @@ echo "DB_USER: ${DB_USER}"
 echo "DB_NAME: ${DB_NAME}"
 echo ""
 
-# Esperar a que PostgreSQL esté listo
+# Esperar a que PostgreSQL esté listo (conectarse al postgres por defecto primero)
 echo "Waiting for PostgreSQL..."
 MAX_RETRIES=30
 RETRY_COUNT=0
 
-until PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -c '\q' 2>/dev/null; do
+until PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "postgres" -c '\q' 2>/dev/null; do
   RETRY_COUNT=$((RETRY_COUNT+1))
   if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
     echo "ERROR: PostgreSQL not available after $MAX_RETRIES attempts"
@@ -22,6 +22,24 @@ until PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -
 done
 
 echo "PostgreSQL is ready!"
+echo ""
+
+# Crear la base de datos si no existe
+echo "Ensuring database exists..."
+PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "postgres" << 'SQL_EOF'
+SELECT 1 FROM pg_database WHERE datname = 'dofer_panel';
+SQL_EOF
+
+DB_EXISTS=$(PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "postgres" -tAc "SELECT 1 FROM pg_database WHERE datname = 'dofer_panel';" 2>/dev/null || echo "")
+
+if [ -z "$DB_EXISTS" ]; then
+  echo "Creating database ${DB_NAME}..."
+  PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "postgres" -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || true
+  echo "  Database created"
+else
+  echo "  Database already exists"
+fi
+
 echo ""
 
 # Crear tabla de migraciones
