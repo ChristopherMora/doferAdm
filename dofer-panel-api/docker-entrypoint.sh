@@ -44,26 +44,28 @@ fi
 echo ""
 echo "Applying migrations..."
 
-# Aplicar migraciones SQL
+# Aplicar migraciones SQL con timeout y mejor manejo de errores
 for migration_file in /app/migrations/*.sql; do
   if [ -f "$migration_file" ]; then
     filename=$(basename "$migration_file")
     
     # Verificar si ya se aplicó
-    already_applied=$(PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -tAc \
-      "SELECT COUNT(*) FROM schema_migrations WHERE migration_file = '${filename}'" 2>/dev/null || echo "0")
+    already_applied=$(timeout 10 bash -c "PGPASSWORD=\"${DB_PASSWORD}\" psql -h \"db\" -U \"${DB_USER}\" -d \"${DB_NAME}\" -tAc \"SELECT COUNT(*) FROM schema_migrations WHERE migration_file = '${filename}'\" 2>/dev/null" || echo "0")
     
     if [ "$already_applied" = "0" ] || [ "$already_applied" = "" ]; then
       echo "  Applying: $filename"
       
-      # Aplicar migración y capturar errores
-      migration_output=$(PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "$migration_file" 2>&1)
+      # Aplicar migración con timeout
+      migration_output=$(timeout 60 bash -c "PGPASSWORD=\"${DB_PASSWORD}\" psql -h \"db\" -U \"${DB_USER}\" -d \"${DB_NAME}\" -v ON_ERROR_STOP=1 < \"$migration_file\"" 2>&1)
       migration_exit_code=$?
       
       if [ $migration_exit_code -eq 0 ]; then
-        PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -c \
-          "INSERT INTO schema_migrations (migration_file) VALUES ('${filename}') ON CONFLICT (migration_file) DO NOTHING" > /dev/null 2>&1
+        timeout 10 bash -c "PGPASSWORD=\"${DB_PASSWORD}\" psql -h \"db\" -U \"${DB_USER}\" -d \"${DB_NAME}\" -c \"INSERT INTO schema_migrations (migration_file) VALUES ('${filename}') ON CONFLICT (migration_file) DO NOTHING\"" > /dev/null 2>&1
         echo "    SUCCESS"
+      elif [ $migration_exit_code -eq 124 ]; then
+        echo "    TIMEOUT! Migration took too long (>60s)"
+        echo "ERROR: Migration $filename timed out"
+        exit 1
       else
         echo "    FAILED!"
         echo "ERROR: Migration $filename failed with:"
