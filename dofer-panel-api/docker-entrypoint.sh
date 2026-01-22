@@ -42,12 +42,15 @@ fi
 
 echo ""
 
-# Crear tabla de migraciones
+# Crear tabla de migraciones con estructura correcta
 echo "Creating migrations tracking table..."
 PGPASSWORD="${DB_PASSWORD}" psql -h "db" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 << 'SQL_EOF'
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    id SERIAL PRIMARY KEY,
-    migration_file VARCHAR(255) UNIQUE NOT NULL,
+-- Drop table if it exists with wrong structure
+DROP TABLE IF EXISTS schema_migrations CASCADE;
+
+-- Create table with correct structure
+CREATE TABLE schema_migrations (
+    migration_file VARCHAR(255) PRIMARY KEY,
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 SQL_EOF
