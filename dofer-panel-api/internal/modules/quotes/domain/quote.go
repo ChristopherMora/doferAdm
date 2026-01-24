@@ -44,6 +44,17 @@ type QuoteItem struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
+type QuotePayment struct {
+	ID            string    `json:"id"`
+	QuoteID       string    `json:"quote_id"`
+	Amount        float64   `json:"amount"`
+	PaymentMethod string    `json:"payment_method"`
+	PaymentDate   time.Time `json:"payment_date"`
+	Notes         string    `json:"notes"`
+	CreatedBy     string    `json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type QuoteRepository interface {
 	Create(quote *Quote) error
 	FindByID(id string) (*Quote, error)
@@ -57,4 +68,8 @@ type QuoteRepository interface {
 	UpdateItem(item *QuoteItem) error
 	DeleteItem(itemID string) error
 	DeleteQuoteItem(ctx context.Context, quoteID, itemID string) error
+
+	// Payments
+	AddPayment(payment *QuotePayment) error
+	GetPayments(quoteID string) ([]*QuotePayment, error)
 }

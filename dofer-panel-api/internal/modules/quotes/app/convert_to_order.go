@@ -122,6 +122,36 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 		}
 	}
 
+	// Copiar pagos de cotización a orden (sincronización automática)
+	quotePayments, err := h.quoteRepo.GetPayments(cmd.QuoteID)
+	if err != nil {
+		fmt.Printf("Warning: could not fetch quote payments: %v\n", err)
+	} else if len(quotePayments) > 0 {
+		for _, quotePayment := range quotePayments {
+			orderPayment := &ordersDomain.OrderPayment{
+				ID:            uuid.New().String(),
+				OrderID:       order.ID,
+				Amount:        quotePayment.Amount,
+				PaymentMethod: quotePayment.PaymentMethod,
+				PaymentDate:   quotePayment.PaymentDate,
+				Notes:         fmt.Sprintf("🔄 Copiado desde cotización %s: %s", quote.QuoteNumber, quotePayment.Notes),
+				CreatedBy:     quotePayment.CreatedBy,
+				CreatedAt:     time.Now(),
+			}
+			
+			if err := h.orderRepo.AddPayment(orderPayment); err != nil {
+				fmt.Printf("Warning: could not copy payment to order: %v\n", err)
+			}
+		}
+		
+		// Actualizar los montos de la orden
+		order.AmountPaid = quote.AmountPaid
+		order.Balance = quote.Balance
+		if err := h.orderRepo.Update(order); err != nil {
+			fmt.Printf("Warning: could not update order payment amounts: %v\n", err)
+		}
+	}
+
 	// Actualizar la cotización para marcarla como convertida
 	quote.ConvertedToOrderID = order.ID
 	if err := h.quoteRepo.Update(quote); err != nil {
