@@ -706,10 +706,12 @@ export default function OrderDetailPage() {
 
       {/* Resto de componentes del backup (Timestamps, Actions, History, etc.) */}
       {/* Timer de Producción */}
-      <OrderTimer 
-        orderId={order.id} 
-        estimatedMinutes={(order as any).estimated_time_minutes || 0}
-      />
+      {order && (
+        <OrderTimer 
+          orderId={order.id} 
+          estimatedMinutes={(order as any).estimated_time_minutes || 0}
+        />
+      )}
 
       {/* Actions */}
       <div className="bg-white rounded-lg shadow p-6">
