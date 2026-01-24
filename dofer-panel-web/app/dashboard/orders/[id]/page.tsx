@@ -332,12 +332,18 @@ export default function OrderDetailPage() {
               <button
                 onClick={async () => {
                   try {
+                    console.log('Recalculando totales para orden:', params.id)
                     const updatedOrder = await apiClient.post<OrderType>(`/orders/${params.id}/recalculate`)
+                    console.log('Orden actualizada recibida:', updatedOrder)
                     setOrder(updatedOrder)
-                    alert(`Totales recalculados:\nMonto Total: ${formatCurrency(updatedOrder.amount)}\nPagado: ${formatCurrency(updatedOrder.amount_paid)}\nBalance: ${formatCurrency(updatedOrder.balance)}`)
+                    const msg = `✅ Totales recalculados:\n\n` +
+                      `Monto Total: ${formatCurrency(updatedOrder.amount)}\n` +
+                      `Pagado: ${formatCurrency(updatedOrder.amount_paid)}\n` +
+                      `Balance: ${formatCurrency(updatedOrder.balance)}`
+                    alert(msg)
                   } catch (err: any) {
-                    console.error('Error recalculating totals:', err)
-                    alert('Error al recalcular totales: ' + (err.message || 'Error desconocido'))
+                    console.error('Error completo al recalcular:', err)
+                    alert('❌ Error al recalcular totales:\n' + (err.message || JSON.stringify(err)))
                   }
                 }}
                 className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
