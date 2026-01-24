@@ -644,7 +644,7 @@ func (h *OrderHandler) RecalculateOrderTotals(w http.ResponseWriter, r *http.Req
 	}
 
 	// Devolver la orden actualizada
-	order, err := h.getHandler.Handle(r.Context(), app.GetOrderQuery{ID: orderID})
+	order, err := h.getHandler.Handle(r.Context(), app.GetOrderQuery{OrderID: orderID})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
