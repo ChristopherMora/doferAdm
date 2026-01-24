@@ -59,6 +59,10 @@ type Order struct {
 	UpdatedAt        time.Time
 	CompletedAt      *time.Time
 	DeliveryDeadline *time.Time
+	// Payment fields
+	Amount      float64 `json:"amount"`
+	AmountPaid  float64 `json:"amount_paid"`
+	Balance     float64 `json:"balance"`
 	// Timer fields
 	EstimatedTimeMins    int        `json:"estimated_time_minutes"`
 	ActualTimeMins       int        `json:"actual_time_minutes"`

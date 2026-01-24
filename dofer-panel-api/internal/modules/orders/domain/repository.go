@@ -11,6 +11,12 @@ type OrderRepository interface {
 	CreateOrderItem(item *OrderItem) error
 	GetOrderItems(orderID string) ([]*OrderItem, error)
 	UpdateOrderItemStatus(itemID string, isCompleted bool) error
+	DeleteOrderItem(itemID string) error
+	
+	// Order Payments
+	AddPayment(payment *OrderPayment) error
+	GetPayments(orderID string) ([]*OrderPayment, error)
+	UpdateOrderPaymentTotals(orderID string, amountPaid float64, balance float64) error
 }
 
 type OrderFilters struct {

@@ -89,3 +89,10 @@ func (r *PostgresOrderRepository) UpdateOrderItemStatus(itemID string, isComplet
 	_, err := r.db.Exec(context.Background(), query, isCompleted, itemID)
 	return err
 }
+
+// DeleteOrderItem elimina un item de una orden
+func (r *PostgresOrderRepository) DeleteOrderItem(itemID string) error {
+	query := `DELETE FROM order_items WHERE id = $1`
+	_, err := r.db.Exec(context.Background(), query, itemID)
+	return err
+}

@@ -3,31 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
-import { OrderItem } from '@/types'
+import { OrderItem, OrderPayment, Order as OrderType } from '@/types'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
 import OrderLabel from '@/components/OrderLabel'
-
-interface Order {
-  id: string
-  public_id: string
-  order_number: string
-  customer_name: string
-  customer_email: string
-  customer_phone: string
-  product_name: string
-  quantity: number
-  status: string
-  priority: string
-  platform: string
-  notes: string
-  assigned_to: string
-  assigned_at: string | null
-  created_at: string
-  updated_at: string
-  completed_at: string | null
-}
+import { Plus, X, DollarSign, Package, Trash2 } from 'lucide-react'
 
 interface HistoryEntry {
   id: string
@@ -43,14 +24,32 @@ interface HistoryEntry {
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const [order, setOrder] = useState<Order | null>(null)
+  const [order, setOrder] = useState<OrderType | null>(null)
   const [items, setItems] = useState<OrderItem[]>([])
+  const [payments, setPayments] = useState<OrderPayment[]>([])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [showLabel, setShowLabel] = useState(false)
+  
+  // Estado para modales de items
+  const [showAddItemModal, setShowAddItemModal] = useState(false)
+  const [newItem, setNewItem] = useState({
+    product_name: '',
+    description: '',
+    quantity: 1,
+    unit_price: 0
+  })
+  
+  // Estado para modal de pago
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false)
+  const [newPayment, setNewPayment] = useState({
+    amount: 0,
+    payment_method: 'efectivo',
+    notes: ''
+  })
 
   useEffect(() => {
     loadOrder()
@@ -60,20 +59,103 @@ export default function OrderDetailPage() {
     try {
       setLoading(true)
       setError(null)
-      const [orderData, historyData, itemsData] = await Promise.all([
-        apiClient.get<Order>(`/orders/${params.id}`),
+      const [orderData, historyData, itemsData, paymentsData] = await Promise.all([
+        apiClient.get<OrderType>(`/orders/${params.id}`),
         apiClient.get<{ history: HistoryEntry[] }>(`/orders/${params.id}/history`),
-        apiClient.get<{ items: OrderItem[] }>(`/orders/${params.id}/items`)
+        apiClient.get<{ items: OrderItem[] }>(`/orders/${params.id}/items`),
+        apiClient.get<{ payments: OrderPayment[] }>(`/orders/${params.id}/payments`).catch(() => ({ payments: [] }))
       ])
       setOrder(orderData)
       setHistory(historyData.history || [])
       setItems(itemsData.items || [])
+      setPayments(paymentsData.payments || [])
     } catch (err: any) {
       console.error('Error loading order:', err)
       setError(err.response?.data?.error || err.message || 'Error al cargar la orden')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleItemToggle = async (itemId: string, currentStatus: boolean) => {
+    try {
+      await apiClient.patch(`/orders/${params.id}/items/${itemId}/status`, {
+        is_completed: !currentStatus
+      })
+      setItems(items.map(item => 
+        item.id === itemId 
+          ? { ...item, is_completed: !currentStatus, completed_at: !currentStatus ? new Date().toISOString() : undefined }
+          : item
+      ))
+    } catch (err: any) {
+      console.error('Error updating item status:', err)
+      alert('Error al actualizar el estado del item')
+    }
+  }
+
+  const handleAddItem = async () => {
+    if (!newItem.product_name || newItem.quantity <= 0 || newItem.unit_price <= 0) {
+      alert('Por favor completa todos los campos')
+      return
+    }
+
+    try {
+      const item = await apiClient.post<OrderItem>(`/orders/${params.id}/items`, newItem)
+      setItems([...items, item])
+      setShowAddItemModal(false)
+      setNewItem({ product_name: '', description: '', quantity: 1, unit_price: 0 })
+    } catch (err: any) {
+      console.error('Error adding item:', err)
+      alert('Error al agregar el item')
+    }
+  }
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este item?')) return
+
+    try {
+      await apiClient.delete(`/orders/${params.id}/items/${itemId}`)
+      setItems(items.filter(item => item.id !== itemId))
+    } catch (err: any) {
+      console.error('Error deleting item:', err)
+      alert('Error al eliminar el item')
+    }
+  }
+
+  const handleAddPayment = async () => {
+    if (newPayment.amount <= 0) {
+      alert('El monto debe ser mayor a 0')
+      return
+    }
+
+    try {
+      const payment = await apiClient.post<OrderPayment>(`/orders/${params.id}/payments`, {
+        ...newPayment,
+        created_by: 'admin', // TODO: obtener del usuario actual
+        payment_date: new Date().toISOString()
+      })
+      setPayments([payment, ...payments])
+      // Actualizar el balance de la orden
+      if (order) {
+        setOrder({
+          ...order,
+          amount_paid: order.amount_paid + newPayment.amount,
+          balance: order.balance - newPayment.amount
+        })
+      }
+      setShowAddPaymentModal(false)
+      setNewPayment({ amount: 0, payment_method: 'efectivo', notes: '' })
+    } catch (err: any) {
+      console.error('Error adding payment:', err)
+      alert('Error al agregar el pago')
+    }
+  }
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+    }).format(value)
   }
 
   const getStatusBadge = (status: string) => {
@@ -98,21 +180,8 @@ export default function OrderDetailPage() {
     return badges[priority] || 'bg-gray-100 text-gray-800'
   }
 
-  const handleItemToggle = async (itemId: string, currentStatus: boolean) => {
-    try {
-      await apiClient.patch(`/orders/${params.id}/items/${itemId}/status`, {
-        is_completed: !currentStatus
-      })
-      // Actualizar el estado local
-      setItems(items.map(item => 
-        item.id === itemId 
-          ? { ...item, is_completed: !currentStatus, completed_at: !currentStatus ? new Date().toISOString() : undefined }
-          : item
-      ))
-    } catch (err: any) {
-      console.error('Error updating item status:', err)
-      alert('Error al actualizar el estado del item')
-    }
+  const getTotalItems = () => {
+    return items.reduce((sum, item) => sum + item.total, 0)
   }
 
   if (loading) {
@@ -240,197 +309,345 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        {/* Order Items */}
-        {items.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Items del Pedido ({items.filter(i => i.is_completed).length}/{items.length} completados)
+        {/* Payment Section - NEW */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+              <DollarSign className="h-5 w-5" />
+              Información de Pago
             </h2>
-            <div className="space-y-3">
-              {items.map((item) => (
-                <div 
-                  key={item.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg border ${
-                    item.is_completed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={item.is_completed}
-                    onChange={() => handleItemToggle(item.id, item.is_completed)}
-                    className="mt-1 h-5 w-5 text-green-600 rounded focus:ring-green-500 cursor-pointer"
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
+            <button
+              onClick={() => setShowAddPaymentModal(true)}
+              className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Agregar Pago
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500 mb-1">Monto Total</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(order.amount || 0)}</p>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500 mb-1">Pagado</p>
+                <p className="text-2xl font-bold text-green-600">{formatCurrency(order.amount_paid || 0)}</p>
+              </div>
+              <div className="bg-red-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500 mb-1">Balance</p>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(order.balance || 0)}</p>
+              </div>
+            </div>
+
+            {payments.length > 0 && (
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Historial de Pagos</h3>
+                <div className="space-y-2">
+                  {payments.map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
-                        <p className={`font-medium ${item.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                          {item.product_name}
+                        <p className="font-medium text-gray-900">{formatCurrency(payment.amount)}</p>
+                        <p className="text-xs text-gray-500">
+                          {payment.payment_method && `${payment.payment_method} • `}
+                          {new Date(payment.payment_date).toLocaleString('es-MX', {
+                            dateStyle: 'short',
+                            timeStyle: 'short'
+                          })}
                         </p>
-                        {item.description && (
-                          <p className="text-sm text-gray-600 mt-1">{item.description}</p>
-                        )}
-                        <p className="text-sm text-gray-500 mt-1">
-                          Cantidad: {item.quantity} × ${item.unit_price.toFixed(2)} = ${item.total.toFixed(2)}
-                        </p>
+                        {payment.notes && <p className="text-xs text-gray-600 mt-1">{payment.notes}</p>}
                       </div>
                     </div>
-                    {item.completed_at && (
-                      <p className="text-xs text-green-600 mt-2">
-                        ✓ Completado {new Date(item.completed_at).toLocaleString('es-MX', {
-                          dateStyle: 'short',
-                          timeStyle: 'short'
-                        })}
-                      </p>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Timestamps */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Fechas
-          </h2>
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm text-gray-500">Creada</p>
-              <p className="text-base text-gray-900">
-                {new Date(order.created_at).toLocaleString('es-MX', {
-                  dateStyle: 'long',
-                  timeStyle: 'short'
-                })}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Última actualización</p>
-              <p className="text-base text-gray-900">
-                {new Date(order.updated_at).toLocaleString('es-MX', {
-                  dateStyle: 'long',
-                  timeStyle: 'short'
-                })}
-              </p>
-            </div>
-            {order.completed_at && (
-              <div>
-                <p className="text-sm text-gray-500">Completada</p>
-                <p className="text-base text-gray-900">
-                  {new Date(order.completed_at).toLocaleString('es-MX', {
-                    dateStyle: 'long',
-                    timeStyle: 'short'
-                  })}
-                </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Delivery Deadline */}
-        {(order as any).delivery_deadline && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              📅 Fecha de Entrega
+        {/* Order Items - UPDATED */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Items del Pedido ({items.filter(i => i.is_completed).length}/{items.length} completados)
             </h2>
-            <div className="space-y-3">
-              {(() => {
-                const deadline = new Date((order as any).delivery_deadline)
-                const now = new Date()
-                const diffTime = deadline.getTime() - now.getTime()
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-                const diffHours = Math.ceil(diffTime / (1000 * 60 * 60))
-                
-                let statusColor = 'bg-green-50 text-green-800 border-green-200'
-                let statusIcon = '✅'
-                let statusText = 'A tiempo'
-                
-                if (diffDays < 0) {
-                  statusColor = 'bg-red-50 text-red-800 border-red-200'
-                  statusIcon = '❌'
-                  statusText = 'Vencida'
-                } else if (diffDays === 0) {
-                  statusColor = 'bg-orange-50 text-orange-800 border-orange-200'
-                  statusIcon = '⚠️'
-                  statusText = 'Vence hoy'
-                } else if (diffDays === 1) {
-                  statusColor = 'bg-yellow-50 text-yellow-800 border-yellow-200'
-                  statusIcon = '⏰'
-                  statusText = 'Vence mañana'
-                } else if (diffDays <= 3) {
-                  statusColor = 'bg-yellow-50 text-yellow-800 border-yellow-200'
-                  statusIcon = '⏳'
-                  statusText = 'Próxima a vencer'
-                }
-                
-                return (
-                  <>
-                    <div>
-                      <p className="text-sm text-gray-500">Fecha límite</p>
-                      <p className="text-xl font-semibold text-gray-900">
-                        {deadline.toLocaleString('es-MX', {
-                          dateStyle: 'full',
-                          timeStyle: 'short'
-                        })}
-                      </p>
-                    </div>
-                    <div className={`border-2 rounded-lg p-4 ${statusColor}`}>
-                      <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowAddItemModal(true)}
+              className="flex items-center gap-2 px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Agregar Item
+            </button>
+          </div>
+          
+          {items.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">No hay items agregados</p>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <div 
+                    key={item.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border ${
+                      item.is_completed ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={item.is_completed}
+                      onChange={() => handleItemToggle(item.id, item.is_completed)}
+                      className="mt-1 h-5 w-5 text-green-600 rounded focus:ring-green-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between">
                         <div>
-                          <p className="text-sm font-medium mb-1">Estado de entrega</p>
-                          <p className="text-2xl font-bold">{statusIcon} {statusText}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium mb-1">Tiempo restante</p>
-                          <p className="text-2xl font-bold">
-                            {diffDays < 0 
-                              ? `${Math.abs(diffDays)} días vencidos`
-                              : diffDays === 0
-                              ? `${diffHours} horas`
-                              : `${diffDays} días`
-                            }
+                          <p className={`font-medium ${item.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                            {item.product_name}
+                          </p>
+                          {item.description && (
+                            <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+                          )}
+                          <p className="text-sm text-gray-500 mt-1">
+                            Cantidad: {item.quantity} × {formatCurrency(item.unit_price)} = {formatCurrency(item.total)}
                           </p>
                         </div>
+                        <button
+                          onClick={() => handleDeleteItem(item.id)}
+                          className="text-red-600 hover:text-red-800 p-1"
+                          title="Eliminar item"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
+                      {item.completed_at && (
+                        <p className="text-xs text-green-600 mt-2">
+                          ✓ Completado {new Date(item.completed_at).toLocaleString('es-MX', {
+                            dateStyle: 'short',
+                            timeStyle: 'short'
+                          })}
+                        </p>
+                      )}
                     </div>
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* Assignment */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Asignación
-          </h2>
-          <div className="space-y-3">
-            {order.assigned_to ? (
-              <>
-                <div>
-                  <p className="text-sm text-gray-500">Asignado a</p>
-                  <p className="text-base text-gray-900">{order.assigned_to}</p>
-                </div>
-                {order.assigned_at && (
-                  <div>
-                    <p className="text-sm text-gray-500">Fecha de asignación</p>
-                    <p className="text-base text-gray-900">
-                      {new Date(order.assigned_at).toLocaleString('es-MX', {
-                        dateStyle: 'long',
-                        timeStyle: 'short'
-                      })}
-                    </p>
                   </div>
-                )}
-              </>
-            ) : (
-              <p className="text-gray-500 italic">No asignada</p>
-            )}
-          </div>
+                ))}
+              </div>
+              
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex justify-end">
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500">Total Items</p>
+                    <p className="text-2xl font-bold text-gray-900">{formatCurrency(getTotalItems())}</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Modal Agregar Item */}
+      {showAddItemModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Agregar Nuevo Item</h3>
+              <button
+                onClick={() => {
+                  setShowAddItemModal(false)
+                  setNewItem({ product_name: '', description: '', quantity: 1, unit_price: 0 })
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre del Producto *
+                </label>
+                <input
+                  type="text"
+                  value={newItem.product_name}
+                  onChange={(e) => setNewItem({ ...newItem, product_name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Ej: Tortuga en ola"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Descripción
+                </label>
+                <textarea
+                  value={newItem.description}
+                  onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  rows={2}
+                  placeholder="Detalles adicionales..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cantidad *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newItem.quantity}
+                    onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Precio Unitario *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newItem.unit_price}
+                    onChange={(e) => setNewItem({ ...newItem, unit_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-600">Total del Item</p>
+                <p className="text-2xl font-bold text-indigo-600">
+                  {formatCurrency(newItem.quantity * newItem.unit_price)}
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowAddItemModal(false)
+                    setNewItem({ product_name: '', description: '', quantity: 1, unit_price: 0 })
+                  }}
+                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddItem}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  Agregar Item
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Agregar Pago */}
+      {showAddPaymentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Registrar Pago</h3>
+              <button
+                onClick={() => {
+                  setShowAddPaymentModal(false)
+                  setNewPayment({ amount: 0, payment_method: 'efectivo', notes: '' })
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">Balance Pendiente</p>
+                <p className="text-3xl font-bold text-red-600">{formatCurrency(order.balance || 0)}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Monto del Pago *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newPayment.amount}
+                  onChange={(e) => setNewPayment({ ...newPayment, amount: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Método de Pago
+                </label>
+                <select
+                  value={newPayment.payment_method}
+                  onChange={(e) => setNewPayment({ ...newPayment, payment_method: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notas
+                </label>
+                <textarea
+                  value={newPayment.notes}
+                  onChange={(e) => setNewPayment({ ...newPayment, notes: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                  rows={2}
+                  placeholder="Detalles del pago..."
+                />
+              </div>
+
+              {newPayment.amount > 0 && (
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <p className="text-sm text-green-700">Nuevo Balance</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {formatCurrency((order.balance || 0) - newPayment.amount)}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowAddPaymentModal(false)
+                    setNewPayment({ amount: 0, payment_method: 'efectivo', notes: '' })
+                  }}
+                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddPayment}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  Registrar Pago
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resto de componentes del backup (Timestamps, Actions, History, etc.) */}
       {/* Timer de Producción */}
       <OrderTimer 
         orderId={order.id} 
@@ -490,8 +707,8 @@ export default function OrderDetailPage() {
             <OrderLabel
               orderNumber={order.order_number}
               customerName={order.customer_name}
-              customerPhone={order.customer_phone}
-              customerEmail={order.customer_email}
+              customerPhone={order.customer_phone || ''}
+              customerEmail={order.customer_email || ''}
               publicId={order.public_id}
               items={items}
               createdAt={order.created_at}

@@ -20,6 +20,10 @@ export interface Order {
   updated_at: string
   completed_at?: string
   delivery_deadline?: string
+  // Payment fields
+  amount: number
+  amount_paid: number
+  balance: number
   // Timer fields
   estimated_time_minutes?: number
   actual_time_minutes?: number
@@ -41,6 +45,17 @@ export interface OrderItem {
   total: number
   is_completed: boolean
   completed_at?: string
+  created_at: string
+}
+
+export interface OrderPayment {
+  id: string
+  order_id: string
+  amount: number
+  payment_method?: string
+  payment_date: string
+  notes?: string
+  created_by?: string
   created_at: string
 }
 

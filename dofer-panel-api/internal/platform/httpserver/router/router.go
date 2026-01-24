@@ -88,6 +88,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	operatorStatsHandler := ordersApp.NewGetOperatorStatsHandler(timerRepo)
 	getOrderItemsHandler := ordersApp.NewGetOrderItemsHandler(orderRepo)
 	updateOrderItemStatusHandler := ordersApp.NewUpdateOrderItemStatusHandler(orderRepo)
+	
+	// Setup order item and payment handlers
+	addOrderItemHandler := ordersApp.NewAddOrderItemHandler(orderRepo)
+	deleteOrderItemHandler := ordersApp.NewDeleteOrderItemHandler(orderRepo)
+	addOrderPaymentHandler := ordersApp.NewAddOrderPaymentHandler(orderRepo)
+	getOrderPaymentsHandler := ordersApp.NewGetOrderPaymentsHandler(orderRepo)
 
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
@@ -106,6 +112,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		operatorStatsHandler,
 		getOrderItemsHandler,
 		updateOrderItemStatusHandler,
+		addOrderItemHandler,
+		deleteOrderItemHandler,
+		addOrderPaymentHandler,
+		getOrderPaymentsHandler,
 	)
 
 	// Setup cost handlers

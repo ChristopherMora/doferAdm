@@ -26,6 +26,10 @@ type OrderHandler struct {
 	operatorStatsHandler   *app.GetOperatorStatsHandler
 	getItemsHandler        *app.GetOrderItemsHandler
 	updateItemStatusHandler *app.UpdateOrderItemStatusHandler
+	addItemHandler         *app.AddOrderItemHandler
+	deleteItemHandler      *app.DeleteOrderItemHandler
+	addPaymentHandler      *app.AddOrderPaymentHandler
+	getPaymentsHandler     *app.GetOrderPaymentsHandler
 }
 
 func NewOrderHandler(
@@ -45,6 +49,10 @@ func NewOrderHandler(
 	operatorStatsHandler *app.GetOperatorStatsHandler,
 	getItemsHandler *app.GetOrderItemsHandler,
 	updateItemStatusHandler *app.UpdateOrderItemStatusHandler,
+	addItemHandler *app.AddOrderItemHandler,
+	deleteItemHandler *app.DeleteOrderItemHandler,
+	addPaymentHandler *app.AddOrderPaymentHandler,
+	getPaymentsHandler *app.GetOrderPaymentsHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:          createHandler,
@@ -63,6 +71,10 @@ func NewOrderHandler(
 		operatorStatsHandler:   operatorStatsHandler,
 		getItemsHandler:        getItemsHandler,
 		updateItemStatusHandler: updateItemStatusHandler,
+		addItemHandler:         addItemHandler,
+		deleteItemHandler:      deleteItemHandler,
+		addPaymentHandler:      addPaymentHandler,
+		getPaymentsHandler:     getPaymentsHandler,
 	}
 }
 
@@ -560,4 +572,119 @@ return
 
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(map[string]string{"message": "Item status updated"})
+}
+// AddOrderItem agrega un nuevo item a una orden
+func (h *OrderHandler) AddOrderItem(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	var req struct {
+		ProductName string  `json:"product_name"`
+		Description string  `json:"description"`
+		Quantity    int     `json:"quantity"`
+		UnitPrice   float64 `json:"unit_price"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cmd := app.AddOrderItemCommand{
+		OrderID:     orderID,
+		ProductName: req.ProductName,
+		Description: req.Description,
+		Quantity:    req.Quantity,
+		UnitPrice:   req.UnitPrice,
+	}
+
+	item, err := h.addItemHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(item)
+}
+
+// DeleteOrderItem elimina un item de una orden
+func (h *OrderHandler) DeleteOrderItem(w http.ResponseWriter, r *http.Request) {
+	itemID := chi.URLParam(r, "itemId")
+
+	cmd := app.DeleteOrderItemCommand{
+		ItemID: itemID,
+	}
+
+	if err := h.deleteItemHandler.Handle(r.Context(), cmd); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Item deleted successfully"})
+}
+
+// AddOrderPayment agrega un pago a una orden
+func (h *OrderHandler) AddOrderPayment(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	var req struct {
+		Amount        float64 `json:"amount"`
+		PaymentMethod string  `json:"payment_method"`
+		PaymentDate   string  `json:"payment_date"`
+		Notes         string  `json:"notes"`
+		CreatedBy     string  `json:"created_by"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	paymentDate := time.Now()
+	if req.PaymentDate != "" {
+		var err error
+		paymentDate, err = time.Parse(time.RFC3339, req.PaymentDate)
+		if err != nil {
+			paymentDate = time.Now()
+		}
+	}
+
+	cmd := app.AddOrderPaymentCommand{
+		OrderID:       orderID,
+		Amount:        req.Amount,
+		PaymentMethod: req.PaymentMethod,
+		PaymentDate:   paymentDate,
+		Notes:         req.Notes,
+		CreatedBy:     req.CreatedBy,
+	}
+
+	payment, err := h.addPaymentHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(payment)
+}
+
+// GetOrderPayments obtiene todos los pagos de una orden
+func (h *OrderHandler) GetOrderPayments(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	query := app.GetOrderPaymentsQuery{
+		OrderID: orderID,
+	}
+
+	payments, err := h.getPaymentsHandler.Handle(r.Context(), query)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"payments": payments,
+		"total":    len(payments),
+	})
 }
