@@ -81,6 +81,52 @@ func (r *PostgresOrderRepository) GetPayments(orderID string) ([]*domain.OrderPa
 	return payments, nil
 }
 
+// GetPaymentByID obtiene un pago por su ID
+func (r *PostgresOrderRepository) GetPaymentByID(paymentID string) (*domain.OrderPayment, error) {
+	query := `
+		SELECT id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
+		FROM order_payments
+		WHERE id = $1
+	`
+
+	var payment domain.OrderPayment
+	var paymentMethod, notes, createdBy sql.NullString
+
+	err := r.db.QueryRow(context.Background(), query, paymentID).Scan(
+		&payment.ID,
+		&payment.OrderID,
+		&payment.Amount,
+		&paymentMethod,
+		&payment.PaymentDate,
+		&notes,
+		&createdBy,
+		&payment.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if paymentMethod.Valid {
+		payment.PaymentMethod = paymentMethod.String
+	}
+	if notes.Valid {
+		payment.Notes = notes.String
+	}
+	if createdBy.Valid {
+		payment.CreatedBy = createdBy.String
+	}
+
+	return &payment, nil
+}
+
+// DeletePayment elimina un pago
+func (r *PostgresOrderRepository) DeletePayment(paymentID string) error {
+	query := `DELETE FROM order_payments WHERE id = $1`
+	_, err := r.db.Exec(context.Background(), query, paymentID)
+	return err
+}
+
 // UpdateOrderPaymentTotals actualiza los totales de pago de una orden
 func (r *PostgresOrderRepository) UpdateOrderPaymentTotals(orderID string, amountPaid float64, balance float64) error {
 	query := `

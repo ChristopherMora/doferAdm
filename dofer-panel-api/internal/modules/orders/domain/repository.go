@@ -16,6 +16,8 @@ type OrderRepository interface {
 	// Order Payments
 	AddPayment(payment *OrderPayment) error
 	GetPayments(orderID string) ([]*OrderPayment, error)
+	GetPaymentByID(paymentID string) (*OrderPayment, error)
+	DeletePayment(paymentID string) error
 	UpdateOrderPaymentTotals(orderID string, amountPaid float64, balance float64) error
 }
 

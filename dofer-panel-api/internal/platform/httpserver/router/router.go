@@ -94,6 +94,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	deleteOrderItemHandler := ordersApp.NewDeleteOrderItemHandler(orderRepo)
 	addOrderPaymentHandler := ordersApp.NewAddOrderPaymentHandler(orderRepo)
 	getOrderPaymentsHandler := ordersApp.NewGetOrderPaymentsHandler(orderRepo)
+	deleteOrderPaymentHandler := ordersApp.NewDeleteOrderPaymentHandler(orderRepo)
 
 	orderHandler := ordersTransport.NewOrderHandler(
 		createOrderHandler,
@@ -116,6 +117,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		deleteOrderItemHandler,
 		addOrderPaymentHandler,
 		getOrderPaymentsHandler,
+		deleteOrderPaymentHandler,
 	)
 
 	// Setup cost handlers

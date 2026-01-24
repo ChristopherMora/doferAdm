@@ -26,6 +26,7 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 		// Payment endpoints
 		r.Get("/{id}/payments", handler.GetOrderPayments)
 		r.Post("/{id}/payments", handler.AddOrderPayment)
+		r.Delete("/{id}/payments/{paymentId}", handler.DeleteOrderPayment)
 		// Timer endpoints
 		r.Get("/{id}/timer", handler.GetTimer)
 		r.Post("/{id}/timer/start", handler.StartTimer)

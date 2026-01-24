@@ -30,6 +30,7 @@ type OrderHandler struct {
 	deleteItemHandler      *app.DeleteOrderItemHandler
 	addPaymentHandler      *app.AddOrderPaymentHandler
 	getPaymentsHandler     *app.GetOrderPaymentsHandler
+	deletePaymentHandler   *app.DeleteOrderPaymentHandler
 }
 
 func NewOrderHandler(
@@ -53,6 +54,7 @@ func NewOrderHandler(
 	deleteItemHandler *app.DeleteOrderItemHandler,
 	addPaymentHandler *app.AddOrderPaymentHandler,
 	getPaymentsHandler *app.GetOrderPaymentsHandler,
+	deletePaymentHandler *app.DeleteOrderPaymentHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:          createHandler,
@@ -74,6 +76,7 @@ func NewOrderHandler(
 		addItemHandler:         addItemHandler,
 		deleteItemHandler:      deleteItemHandler,
 		addPaymentHandler:      addPaymentHandler,
+		deletePaymentHandler:   deletePaymentHandler,
 		getPaymentsHandler:     getPaymentsHandler,
 	}
 }
@@ -689,4 +692,23 @@ func (h *OrderHandler) GetOrderPayments(w http.ResponseWriter, r *http.Request) 
 		"payments": payments,
 		"total":    len(payments),
 	})
+}
+
+// DeleteOrderPayment elimina un pago de una orden
+func (h *OrderHandler) DeleteOrderPayment(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+	paymentID := chi.URLParam(r, "paymentId")
+
+	cmd := app.DeleteOrderPaymentCommand{
+		OrderID:   orderID,
+		PaymentID: paymentID,
+	}
+
+	if err := h.deletePaymentHandler.Handle(r.Context(), cmd); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Payment deleted successfully"})
 }

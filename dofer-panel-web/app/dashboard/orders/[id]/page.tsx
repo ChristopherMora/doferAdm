@@ -104,6 +104,8 @@ export default function OrderDetailPage() {
       setItems([...items, item])
       setShowAddItemModal(false)
       setNewItem({ product_name: '', description: '', quantity: 1, unit_price: 0 })
+      // Recargar la orden para actualizar los totales
+      await loadOrder()
     } catch (err: any) {
       console.error('Error adding item:', err)
       alert('Error al agregar el item')
@@ -116,6 +118,8 @@ export default function OrderDetailPage() {
     try {
       await apiClient.delete(`/orders/${params.id}/items/${itemId}`)
       setItems(items.filter(item => item.id !== itemId))
+      // Recargar la orden para actualizar los totales
+      await loadOrder()
     } catch (err: any) {
       console.error('Error deleting item:', err)
       alert('Error al eliminar el item')
@@ -135,19 +139,27 @@ export default function OrderDetailPage() {
         payment_date: new Date().toISOString()
       })
       setPayments([payment, ...payments])
-      // Actualizar el balance de la orden
-      if (order) {
-        setOrder({
-          ...order,
-          amount_paid: order.amount_paid + newPayment.amount,
-          balance: order.balance - newPayment.amount
-        })
-      }
       setShowAddPaymentModal(false)
       setNewPayment({ amount: 0, payment_method: 'efectivo', notes: '' })
+      // Recargar la orden para actualizar los totales
+      await loadOrder()
     } catch (err: any) {
       console.error('Error adding payment:', err)
       alert('Error al agregar el pago')
+    }
+  }
+
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este pago?')) return
+
+    try {
+      await apiClient.delete(`/orders/${params.id}/payments/${paymentId}`)
+      setPayments(payments.filter(p => p.id !== paymentId))
+      // Recargar la orden para actualizar los totales
+      await loadOrder()
+    } catch (err: any) {
+      console.error('Error deleting payment:', err)
+      alert('Error al eliminar el pago')
     }
   }
 
@@ -355,7 +367,7 @@ export default function OrderDetailPage() {
                     
                     return (
                       <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
+                        <div className="flex-1">
                           <p className="font-medium text-gray-900">
                             {typeof payment.amount === 'number' ? formatCurrency(payment.amount) : '$0.00'}
                           </p>
@@ -371,6 +383,13 @@ export default function OrderDetailPage() {
                           </p>
                           {payment.notes && <p className="text-xs text-gray-600 mt-1">{payment.notes}</p>}
                         </div>
+                        <button
+                          onClick={() => handleDeletePayment(payment.id)}
+                          className="text-red-600 hover:text-red-800 p-2"
+                          title="Eliminar pago"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     )
                   })}
