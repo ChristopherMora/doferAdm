@@ -31,6 +31,7 @@ type OrderHandler struct {
 	addPaymentHandler      *app.AddOrderPaymentHandler
 	getPaymentsHandler     *app.GetOrderPaymentsHandler
 	deletePaymentHandler   *app.DeleteOrderPaymentHandler
+	recalculateTotalsHandler *app.RecalculateOrderTotalsHandler
 }
 
 func NewOrderHandler(
@@ -55,6 +56,7 @@ func NewOrderHandler(
 	addPaymentHandler *app.AddOrderPaymentHandler,
 	getPaymentsHandler *app.GetOrderPaymentsHandler,
 	deletePaymentHandler *app.DeleteOrderPaymentHandler,
+	recalculateTotalsHandler *app.RecalculateOrderTotalsHandler,
 ) *OrderHandler {
 	return &OrderHandler{
 		createHandler:          createHandler,
@@ -78,6 +80,7 @@ func NewOrderHandler(
 		addPaymentHandler:      addPaymentHandler,
 		deletePaymentHandler:   deletePaymentHandler,
 		getPaymentsHandler:     getPaymentsHandler,
+		recalculateTotalsHandler: recalculateTotalsHandler,
 	}
 }
 
@@ -627,7 +630,29 @@ func (h *OrderHandler) DeleteOrderItem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Item deleted successfully"})
 }
+// RecalculateOrderTotals recalcula los totales de una orden desde sus items y pagos
+func (h *OrderHandler) RecalculateOrderTotals(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
 
+	cmd := app.RecalculateOrderTotalsCommand{
+		OrderID: orderID,
+	}
+
+	if err := h.recalculateTotalsHandler.Handle(r.Context(), cmd); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Devolver la orden actualizada
+	order, err := h.getHandler.Handle(r.Context(), app.GetOrderQuery{ID: orderID})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(order)
+}
 // AddOrderPayment agrega un pago a una orden
 func (h *OrderHandler) AddOrderPayment(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")

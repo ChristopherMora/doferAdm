@@ -328,13 +328,31 @@ export default function OrderDetailPage() {
               <DollarSign className="h-5 w-5" />
               Información de Pago
             </h2>
-            <button
-              onClick={() => setShowAddPaymentModal(true)}
-              className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              Agregar Pago
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    await apiClient.post(`/orders/${params.id}/recalculate`)
+                    await loadOrder()
+                    alert('Totales recalculados correctamente')
+                  } catch (err: any) {
+                    console.error('Error recalculating totals:', err)
+                    alert('Error al recalcular totales')
+                  }
+                }}
+                className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                title="Recalcular totales desde items y pagos"
+              >
+                🔄 Recalcular
+              </button>
+              <button
+                onClick={() => setShowAddPaymentModal(true)}
+                className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar Pago
+              </button>
+            </div>
           </div>
           
           <div className="space-y-4">

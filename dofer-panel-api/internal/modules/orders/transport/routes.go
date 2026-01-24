@@ -33,6 +33,8 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 		r.Post("/{id}/timer/pause", handler.PauseTimer)
 		r.Post("/{id}/timer/stop", handler.StopTimer)
 		r.Patch("/{id}/estimated-time", handler.UpdateEstimatedTime)
+		// Recalculate totals endpoint
+		r.Post("/{id}/recalculate", handler.RecalculateOrderTotals)
 		r.Get("/{id}", handler.GetOrder)
 	})
 }
