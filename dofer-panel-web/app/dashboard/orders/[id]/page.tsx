@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { OrderItem, OrderPayment, Order as OrderType } from '@/types'
@@ -51,11 +51,7 @@ export default function OrderDetailPage() {
     notes: ''
   })
 
-  useEffect(() => {
-    loadOrder()
-  }, [params.id])
-
-  const loadOrder = async () => {
+  const loadOrder = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -75,7 +71,11 @@ export default function OrderDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [params.id])
+
+  useEffect(() => {
+    loadOrder()
+  }, [loadOrder])
 
   const handleItemToggle = async (itemId: string, currentStatus: boolean) => {
     try {
