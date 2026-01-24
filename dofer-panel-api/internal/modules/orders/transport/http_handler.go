@@ -608,10 +608,12 @@ func (h *OrderHandler) AddOrderItem(w http.ResponseWriter, r *http.Request) {
 
 // DeleteOrderItem elimina un item de una orden
 func (h *OrderHandler) DeleteOrderItem(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
 	itemID := chi.URLParam(r, "itemId")
 
 	cmd := app.DeleteOrderItemCommand{
-		ItemID: itemID,
+		OrderID: orderID,
+		ItemID:  itemID,
 	}
 
 	if err := h.deleteItemHandler.Handle(r.Context(), cmd); err != nil {

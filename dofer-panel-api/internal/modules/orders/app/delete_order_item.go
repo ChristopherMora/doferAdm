@@ -7,7 +7,8 @@ import (
 )
 
 type DeleteOrderItemCommand struct {
-	ItemID string
+	OrderID string
+	ItemID  string
 }
 
 type DeleteOrderItemHandler struct {
@@ -19,5 +20,29 @@ func NewDeleteOrderItemHandler(repo domain.OrderRepository) *DeleteOrderItemHand
 }
 
 func (h *DeleteOrderItemHandler) Handle(ctx context.Context, cmd DeleteOrderItemCommand) error {
-	return h.repo.DeleteOrderItem(cmd.ItemID)
+	// Eliminar el item
+	if err := h.repo.DeleteOrderItem(cmd.ItemID); err != nil {
+		return err
+	}
+
+	// Recalcular el total de la orden
+	order, err := h.repo.FindByID(cmd.OrderID)
+	if err != nil {
+		return err
+	}
+
+	items, err := h.repo.GetOrderItems(cmd.OrderID)
+	if err != nil {
+		return err
+	}
+
+	newAmount := 0.0
+	for _, i := range items {
+		newAmount += i.Total
+	}
+
+	// Actualizar el amount y balance de la orden
+	order.Amount = newAmount
+	order.Balance = newAmount - order.AmountPaid
+	return h.repo.Update(order)
 }

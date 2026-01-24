@@ -103,7 +103,8 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 		return nil, err
 	}
 
-	// Crear los items individuales de la orden
+	// Crear los items individuales de la orden y calcular el total
+	totalAmount := 0.0
 	for _, quoteItem := range items {
 		orderItem := &ordersDomain.OrderItem{
 			ID:          uuid.New().String(),
@@ -119,8 +120,14 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 		if err := h.orderRepo.CreateOrderItem(orderItem); err != nil {
 			// Log error but continue
 			fmt.Printf("Warning: could not create order item: %v\n", err)
+		} else {
+			totalAmount += orderItem.Total
 		}
 	}
+
+	// Actualizar el amount de la orden con el total calculado
+	order.Amount = totalAmount
+	order.Balance = totalAmount // Balance inicial es igual al total
 
 	// Copiar pagos de cotización a orden (sincronización automática)
 	quotePayments, err := h.quoteRepo.GetPayments(cmd.QuoteID)

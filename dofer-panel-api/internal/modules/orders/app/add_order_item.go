@@ -25,7 +25,7 @@ func NewAddOrderItemHandler(repo domain.OrderRepository) *AddOrderItemHandler {
 
 func (h *AddOrderItemHandler) Handle(ctx context.Context, cmd AddOrderItemCommand) (*domain.OrderItem, error) {
 	// Verificar que la orden existe
-	_, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +44,24 @@ func (h *AddOrderItemHandler) Handle(ctx context.Context, cmd AddOrderItemComman
 	}
 
 	if err := h.repo.CreateOrderItem(item); err != nil {
+		return nil, err
+	}
+
+	// Recalcular el total de la orden sumando todos los items
+	items, err := h.repo.GetOrderItems(cmd.OrderID)
+	if err != nil {
+		return nil, err
+	}
+
+	newAmount := 0.0
+	for _, i := range items {
+		newAmount += i.Total
+	}
+
+	// Actualizar el amount y balance de la orden
+	order.Amount = newAmount
+	order.Balance = newAmount - order.AmountPaid
+	if err := h.repo.Update(order); err != nil {
 		return nil, err
 	}
 
