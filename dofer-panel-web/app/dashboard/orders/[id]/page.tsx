@@ -341,28 +341,42 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            {payments.length > 0 && (
-              <div className="border-t pt-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Historial de Pagos</h3>
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Historial de Pagos</h3>
+              {payments.length === 0 ? (
+                <p className="text-gray-500 text-sm italic text-center py-4">
+                  No hay pagos registrados aún
+                </p>
+              ) : (
                 <div className="space-y-2">
-                  {payments.map((payment) => (
-                    <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-gray-900">{formatCurrency(payment.amount)}</p>
-                        <p className="text-xs text-gray-500">
-                          {payment.payment_method && `${payment.payment_method} • `}
-                          {new Date(payment.payment_date).toLocaleString('es-MX', {
-                            dateStyle: 'short',
-                            timeStyle: 'short'
-                          })}
-                        </p>
-                        {payment.notes && <p className="text-xs text-gray-600 mt-1">{payment.notes}</p>}
+                  {payments.map((payment) => {
+                    const paymentDate = payment.payment_date ? new Date(payment.payment_date) : null
+                    const isValidDate = paymentDate && !isNaN(paymentDate.getTime())
+                    
+                    return (
+                      <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            {typeof payment.amount === 'number' ? formatCurrency(payment.amount) : '$0.00'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {payment.payment_method && `${payment.payment_method} • `}
+                            {isValidDate 
+                              ? paymentDate.toLocaleString('es-MX', {
+                                  dateStyle: 'short',
+                                  timeStyle: 'short'
+                                })
+                              : 'Fecha no disponible'
+                            }
+                          </p>
+                          {payment.notes && <p className="text-xs text-gray-600 mt-1">{payment.notes}</p>}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
