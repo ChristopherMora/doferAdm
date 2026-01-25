@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/lib/api'
-import { useToast } from '@/components/ToastProvider'
+import { useToast } from '@/components/ui/toast'
 import Link from 'next/link'
 
 interface Customer {
@@ -45,7 +45,7 @@ export default function CustomersPage() {
     tax_id: '',
     accepts_marketing: true
   })
-  const { showToast } = useToast()
+  const { addToast } = useToast()
 
   useEffect(() => {
     loadCustomers()
@@ -60,7 +60,11 @@ export default function CustomersPage() {
       const data = await apiClient.get(`/customers?${params.toString()}`)
       setCustomers((data as any).customers || [])
     } catch (error) {
-      showToast('Error al cargar clientes', 'error')
+      addToast({
+        title: 'Error al cargar clientes',
+        description: 'No se pudieron cargar los clientes',
+        variant: 'error'
+      })
       console.error(error)
     } finally {
       setLoading(false)
@@ -87,7 +91,11 @@ export default function CustomersPage() {
       const data = await apiClient.get(`/customers/search?q=${encodeURIComponent(searchTerm)}`)
       setCustomers((data as any).customers || [])
     } catch (error) {
-      showToast('Error en la búsqueda', 'error')
+      addToast({
+        title: 'Error en la búsqueda',
+        description: 'No se pudo realizar la búsqueda',
+        variant: 'error'
+      })
     }
   }
 
@@ -96,7 +104,11 @@ export default function CustomersPage() {
     
     try {
       await apiClient.post('/customers', formData)
-      showToast('Cliente creado exitosamente', 'success')
+      addToast({
+        title: 'Cliente creado exitosamente',
+        description: `${formData.name} ha sido agregado`,
+        variant: 'success'
+      })
       setShowForm(false)
       setFormData({
         name: '',
@@ -109,7 +121,11 @@ export default function CustomersPage() {
       loadCustomers()
       loadStats()
     } catch (error) {
-      showToast('Error al crear cliente', 'error')
+      addToast({
+        title: 'Error al crear cliente',
+        description: 'No se pudo crear el cliente',
+        variant: 'error'
+      })
       console.error(error)
     }
   }
