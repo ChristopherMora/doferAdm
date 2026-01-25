@@ -66,7 +66,8 @@ func (r *PostgresOrderRepository) FindByID(id string) (*domain.Order, error) {
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
-			assigned_to, assigned_at, created_at, updated_at, completed_at
+			assigned_to, assigned_at, created_at, updated_at, completed_at,
+			amount, amount_paid, balance
 		FROM orders
 		WHERE id = $1
 	`
@@ -80,7 +81,8 @@ func (r *PostgresOrderRepository) FindByPublicID(publicID string) (*domain.Order
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
-			assigned_to, assigned_at, created_at, updated_at, completed_at
+			assigned_to, assigned_at, created_at, updated_at, completed_at,
+			amount, amount_paid, balance
 		FROM orders
 		WHERE public_id = $1
 	`
@@ -94,7 +96,8 @@ func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domai
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
-			assigned_to, assigned_at, created_at, updated_at, completed_at
+			assigned_to, assigned_at, created_at, updated_at, completed_at,
+			amount, amount_paid, balance
 		FROM orders
 		WHERE 1=1
 	`
@@ -233,6 +236,9 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 		&order.CreatedAt,
 		&order.UpdatedAt,
 		&completedAt,
+		&order.Amount,
+		&order.AmountPaid,
+		&order.Balance,
 	)
 
 	if err != nil {
@@ -311,6 +317,9 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 		&order.CreatedAt,
 		&order.UpdatedAt,
 		&completedAt,
+		&order.Amount,
+		&order.AmountPaid,
+		&order.Balance,
 	)
 
 	if err != nil {
