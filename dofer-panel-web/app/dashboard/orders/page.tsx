@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
-import { Plus, FileDown, FileSpreadsheet, Search, Filter, Package } from 'lucide-react'
+import { Plus, FileDown, FileSpreadsheet, Search, Filter, Package, X, Calendar, AlertCircle } from 'lucide-react'
 import CreateOrderModal from './CreateOrderModal'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -26,6 +26,7 @@ interface Order {
   platform: string
   created_at: string
   updated_at: string
+  delivery_deadline?: string
 }
 
 export default function OrdersPage() {
@@ -34,17 +35,31 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterPriority, setFilterPriority] = useState<string>('all')
+  const [filterPlatform, setFilterPlatform] = useState<string>('all')
+  const [filterDateRange, setFilterDateRange] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   
   // Paginación
   const [currentPage, setCurrentPage] = useState(1)
   const [totalOrders, setTotalOrders] = useState(0)
   const ordersPerPage = 50
 
+  // Debounce para búsqueda
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery)
+    }, 300)
+    
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
   useEffect(() => {
     loadOrders()
-  }, [filterStatus, currentPage])
+  }, [filterStatus, filterPriority, filterPlatform, filterDateRange, debouncedSearch, currentPage])
 
   const loadOrders = async () => {
     try {
@@ -59,11 +74,20 @@ export default function OrdersPage() {
         params.status = filterStatus
       }
       
+      if (debouncedSearch) {
+        params.search = debouncedSearch
+      }
+      
       const response = await apiClient.get<{ orders: Order[], total: number }>('/orders', { params })
       setOrders(response.orders || [])
       setTotalOrders(response.total || 0)
     } catch (error) {
       console.error('Error loading orders:', error)
+      addToast({
+        title: 'Error al cargar órdenes',
+        description: 'No se pudieron cargar las órdenes',
+        variant: 'error'
+      })
     } finally {
       setLoading(false)
     }
@@ -92,7 +116,7 @@ export default function OrdersPage() {
   }
 
   const statusOptions = [
-    { value: 'all', label: 'Todos' },
+    { value: 'all', label: 'Todos los estados' },
     { value: 'new', label: 'Nuevas' },
     { value: 'printing', label: 'En Impresión' },
     { value: 'post', label: 'Post-proceso' },
@@ -102,17 +126,77 @@ export default function OrdersPage() {
     { value: 'cancelled', label: 'Canceladas' },
   ]
 
+  const priorityOptions = [
+    { value: 'all', label: 'Todas las prioridades' },
+    { value: 'urgent', label: 'Urgente' },
+    { value: 'normal', label: 'Normal' },
+    { value: 'low', label: 'Baja' },
+  ]
+
+  const platformOptions = [
+    { value: 'all', label: 'Todas las plataformas' },
+    { value: 'WhatsApp', label: 'WhatsApp' },
+    { value: 'Instagram', label: 'Instagram' },
+    { value: 'Facebook', label: 'Facebook' },
+    { value: 'Website', label: 'Sitio Web' },
+    { value: 'Phone', label: 'Teléfono' },
+    { value: 'Other', label: 'Otro' },
+  ]
+
+  const dateRangeOptions = [
+    { value: 'all', label: 'Todas las fechas' },
+    { value: 'today', label: 'Hoy' },
+    { value: 'week', label: 'Última semana' },
+    { value: 'month', label: 'Último mes' },
+  ]
+
   const getFilteredOrders = () => {
-    return orders.filter(order => {
-      if (!searchQuery) return true
-      const query = searchQuery.toLowerCase()
-      return (
-        order.order_number.toLowerCase().includes(query) ||
-        order.customer_name.toLowerCase().includes(query) ||
-        order.product_name.toLowerCase().includes(query)
-      )
-    })
+    let filtered = orders
+    
+    // Filtro de prioridad (client-side)
+    if (filterPriority !== 'all') {
+      filtered = filtered.filter(order => order.priority === filterPriority)
+    }
+    
+    // Filtro de plataforma (client-side)
+    if (filterPlatform !== 'all') {
+      filtered = filtered.filter(order => order.platform === filterPlatform)
+    }
+    
+    // Filtro de rango de fecha (client-side)
+    if (filterDateRange !== 'all') {
+      const now = new Date()
+      filtered = filtered.filter(order => {
+        const orderDate = new Date(order.created_at)
+        const diffDays = Math.floor((now.getTime() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
+        
+        switch (filterDateRange) {
+          case 'today': return diffDays === 0
+          case 'week': return diffDays <= 7
+          case 'month': return diffDays <= 30
+          default: return true
+        }
+      })
+    }
+    
+    return filtered
   }
+
+  const clearFilters = () => {
+    setFilterStatus('all')
+    setFilterPriority('all')
+    setFilterPlatform('all')
+    setFilterDateRange('all')
+    setSearchQuery('')
+  }
+
+  const activeFiltersCount = [
+    filterStatus !== 'all',
+    filterPriority !== 'all',
+    filterPlatform !== 'all',
+    filterDateRange !== 'all',
+    searchQuery !== ''
+  ].filter(Boolean).length
 
   const exportToExcel = () => {
     try {
@@ -230,43 +314,136 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Filtros operativos */}
+      {/* Filtros avanzados */}
       <Card className="elevated-md">
         <CardContent className="pt-6 pb-6">
-          <div className="flex gap-4 flex-wrap">
-            <div className="flex-1 min-w-[300px]">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar por # orden, cliente o producto..."
-                  className="w-full pl-12 pr-4 py-3 text-base bg-background border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-                />
+          <div className="space-y-4">
+            {/* Barra de búsqueda principal */}
+            <div className="flex gap-3 flex-wrap">
+              <div className="flex-1 min-w-[280px]">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar por # orden, cliente o producto..."
+                    aria-label="Buscar órdenes"
+                    className="w-full pl-12 pr-4 py-3 text-base bg-background border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label="Limpiar búsqueda"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex gap-3 items-center">
-              <div className="p-2 rounded-lg bg-muted/50">
-                <Filter className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-4 py-3 bg-background border-2 rounded-xl text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer hover:border-primary/50"
+              
+              <Button
+                variant={showFilters ? "default" : "outline"}
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-2"
+                aria-label="Mostrar filtros avanzados"
               >
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                <Filter className="h-4 w-4" />
+                Filtros
+                {activeFiltersCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 bg-primary text-primary-foreground">
+                    {activeFiltersCount}
+                  </Badge>
+                )}
+              </Button>
+
+              {activeFiltersCount > 0 && (
+                <Button
+                  variant="ghost"
+                  onClick={clearFilters}
+                  className="gap-2"
+                  aria-label="Limpiar todos los filtros"
+                >
+                  <X className="h-4 w-4" />
+                  Limpiar
+                </Button>
+              )}
             </div>
+
+            {/* Filtros expandibles */}
+            {showFilters && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 animate-in fade-in slide-in-from-top-2">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Estado</label>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    aria-label="Filtrar por estado"
+                    className="w-full px-3 py-2 bg-background border-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer"
+                  >
+                    {statusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Prioridad</label>
+                  <select
+                    value={filterPriority}
+                    onChange={(e) => setFilterPriority(e.target.value)}
+                    aria-label="Filtrar por prioridad"
+                    className="w-full px-3 py-2 bg-background border-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer"
+                  >
+                    {priorityOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Plataforma</label>
+                  <select
+                    value={filterPlatform}
+                    onChange={(e) => setFilterPlatform(e.target.value)}
+                    aria-label="Filtrar por plataforma"
+                    className="w-full px-3 py-2 bg-background border-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer"
+                  >
+                    {platformOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Fecha</label>
+                  <select
+                    value={filterDateRange}
+                    onChange={(e) => setFilterDateRange(e.target.value)}
+                    aria-label="Filtrar por rango de fecha"
+                    className="w-full px-3 py-2 bg-background border-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer"
+                  >
+                    {dateRangeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabla operativa */}
+      {/* Vista responsive: Cards en móvil, Tabla en desktop */}
       <Card className="elevated-lg overflow-hidden">
         <CardContent className="p-0">
           {loading ? (
@@ -277,99 +454,195 @@ export default function OrdersPage() {
                   <Skeleton className="h-5 w-32" />
                   <Skeleton className="h-5 flex-1" />
                   <Skeleton className="h-6 w-20" />
-                  <Skeleton className="h-6 w-20" />
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider"># Orden</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cliente</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Producto</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cant.</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Prioridad</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider hidden md:table-cell">Plataforma</th>
-                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider hidden lg:table-cell">Fecha</th>
-                    <th className="text-right py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {getFilteredOrders().length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="text-center py-16">
-                        <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                        <p className="text-sm text-muted-foreground">
-                          {searchQuery
-                            ? `No se encontraron órdenes con "${searchQuery}"`
-                            : filterStatus === 'all' 
-                            ? 'No hay órdenes registradas' 
-                            : `No hay órdenes "${statusOptions.find(o => o.value === filterStatus)?.label}"`
-                          }
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    getFilteredOrders().map((order) => (
-                      <tr key={order.id} className="border-b hover:bg-muted/50 transition-colors cursor-pointer group animate-fade-in" onClick={() => router.push(`/dashboard/orders/${order.id}`)}>
-                        <td className="py-3 px-4">
-                          <span className="font-mono text-sm">{order.order_number}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-medium">{order.customer_name}</div>
-                          <div className="text-xs text-muted-foreground">{order.customer_email}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            {order.product_image && (
-                              <img 
-                                src={order.product_image} 
-                                alt={order.product_name}
-                                className="h-8 w-8 object-cover rounded border"
-                              />
-                            )}
-                            <span className="text-sm">{order.product_name}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-medium tabular-nums">
-                          {order.quantity}
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge variant={getPriorityBadge(order.priority)}>{order.priority}</Badge>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground hidden md:table-cell">
-                          {order.platform}
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground text-sm hidden lg:table-cell">
-                          {new Date(order.created_at).toLocaleDateString('es-MX', {
-                            day: '2-digit',
-                            month: 'short'
-                          })}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/dashboard/orders/${order.id}`)
-                            }}
-                          >
-                            Ver →
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+          ) : getFilteredOrders().length === 0 ? (
+            <div className="text-center py-16 px-4">
+              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">
+                {searchQuery || activeFiltersCount > 0
+                  ? 'No se encontraron órdenes con los filtros aplicados'
+                  : 'No hay órdenes registradas'
+                }
+              </p>
+              {activeFiltersCount > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={clearFilters}
+                  className="mt-4 gap-2"
+                >
+                  <X className="h-4 w-4" />
+                  Limpiar filtros
+                </Button>
+              )}
             </div>
+          ) : (
+            <>
+              {/* Vista de Cards para móvil */}
+              <div className="md:hidden divide-y">
+                {getFilteredOrders().map((order) => {
+                  const isOverdue = order.delivery_deadline && new Date(order.delivery_deadline) < new Date() && !['delivered', 'cancelled'].includes(order.status)
+                  
+                  return (
+                    <div
+                      key={order.id}
+                      onClick={() => router.push(`/dashboard/orders/${order.id}`)}
+                      className="p-4 hover:bg-muted/50 active:bg-muted transition-colors cursor-pointer"
+                    >
+                      <div className="space-y-3">
+                        {/* Header del card */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-sm font-semibold">{order.order_number}</span>
+                              {isOverdue && (
+                                <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" aria-label="Orden vencida" />
+                              )}
+                            </div>
+                            <p className="font-medium truncate">{order.customer_name}</p>
+                            {order.customer_email && (
+                              <p className="text-xs text-muted-foreground truncate">{order.customer_email}</p>
+                            )}
+                          </div>
+                          {order.product_image && (
+                            <img
+                              src={order.product_image}
+                              alt={order.product_name}
+                              className="h-12 w-12 object-cover rounded border flex-shrink-0"
+                            />
+                          )}
+                        </div>
+
+                        {/* Producto */}
+                        <div>
+                          <p className="text-sm">{order.product_name}</p>
+                          <p className="text-xs text-muted-foreground">Cantidad: {order.quantity}</p>
+                        </div>
+
+                        {/* Badges */}
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
+                          <Badge variant={getPriorityBadge(order.priority)}>{order.priority}</Badge>
+                          <Badge variant="outline" className="text-xs">{order.platform}</Badge>
+                        </div>
+
+                        {/* Fecha y deadline */}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(order.created_at).toLocaleDateString('es-MX')}
+                          </span>
+                          {order.delivery_deadline && (
+                            <span className={isOverdue ? 'text-red-500 font-medium' : ''}>
+                              Entrega: {new Date(order.delivery_deadline).toLocaleDateString('es-MX')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Vista de Tabla para desktop */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider"># Orden</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cliente</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Producto</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cant.</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Prioridad</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Plataforma</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Fecha</th>
+                      <th className="text-right py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getFilteredOrders().map((order) => {
+                      const isOverdue = order.delivery_deadline && new Date(order.delivery_deadline) < new Date() && !['delivered', 'cancelled'].includes(order.status)
+                      
+                      return (
+                        <tr 
+                          key={order.id} 
+                          className="border-b hover:bg-muted/50 transition-colors cursor-pointer group" 
+                          onClick={() => router.push(`/dashboard/orders/${order.id}`)}
+                        >
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm">{order.order_number}</span>
+                              {isOverdue && (
+                                <AlertCircle className="h-4 w-4 text-red-500" aria-label="Orden vencida" />
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-medium">{order.customer_name}</div>
+                            {order.customer_email && (
+                              <div className="text-xs text-muted-foreground truncate max-w-[200px]">{order.customer_email}</div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              {order.product_image && (
+                                <img
+                                  src={order.product_image}
+                                  alt={order.product_name}
+                                  className="h-8 w-8 object-cover rounded border"
+                                />
+                              )}
+                              <span className="text-sm truncate max-w-[200px]">{order.product_name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-medium tabular-nums">
+                            {order.quantity}
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge variant={getPriorityBadge(order.priority)}>{order.priority}</Badge>
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground">
+                            {order.platform}
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground text-sm">
+                            <div>{new Date(order.created_at).toLocaleDateString('es-MX', {
+                              day: '2-digit',
+                              month: 'short'
+                            })}</div>
+                            {order.delivery_deadline && (
+                              <div className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : ''}`}>
+                                ⏰ {new Date(order.delivery_deadline).toLocaleDateString('es-MX', {
+                                  day: '2-digit',
+                                  month: 'short'
+                                })}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(`/dashboard/orders/${order.id}`)
+                              }}
+                              aria-label={`Ver detalles de orden ${order.order_number}`}
+                            >
+                              Ver →
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

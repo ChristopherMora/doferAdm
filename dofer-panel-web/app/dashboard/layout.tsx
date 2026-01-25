@@ -40,13 +40,14 @@ const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
 Breadcrumbs.displayName = 'Breadcrumbs'
 
 // Memoizar la navegación para evitar re-renderizados innecesarios
-const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm, onClose }: { 
+const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm, onClose, badge }: { 
   item: { name: string; href?: string; icon: string; shortcut?: string; subItems?: Array<{ name: string; href: string; icon: string }> }, 
   isActive: boolean,
   isExpanded?: boolean,
   onToggle?: () => void,
   searchTerm?: string,
-  onClose?: () => void
+  onClose?: () => void,
+  badge?: number
 }) => {
   const pathname = usePathname()
   
@@ -71,12 +72,21 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
               : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
           }`}
           title={`${isActive ? 'Contraer' : 'Expandir'} ${item.name}`}
+          aria-expanded={isExpanded}
+          aria-label={`${item.name}${badge ? ` - ${badge} pendientes` : ''}`}
         >
           <div className="flex items-center gap-3">
             <span className="text-xl">{item.icon}</span>
             <span>{item.name}</span>
           </div>
-          <span className={`text-sm transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>›</span>
+          <div className="flex items-center gap-2">
+            {badge !== undefined && badge > 0 && (
+              <span className="px-2 py-0.5 text-xs font-bold bg-primary text-primary-foreground rounded-full">
+                {badge}
+              </span>
+            )}
+            <span className={`text-sm transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>›</span>
+          </div>
         </button>
         <div className={`overflow-hidden transition-all duration-200 ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
           <div className="ml-6 space-y-1 border-l-2 border-border pl-2 py-1">
@@ -117,16 +127,25 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
           : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
       }`}
       title={item.name}
+      aria-label={`${item.name}${badge ? ` - ${badge} pendientes` : ''}`}
+      aria-current={isActive ? 'page' : undefined}
     >
       <div className="flex items-center gap-3">
         <span className="text-xl">{item.icon}</span>
         <span>{item.name}</span>
       </div>
-      {item.shortcut && (
-        <kbd className="hidden group-hover:inline-flex px-2 py-1 text-xs font-mono bg-muted rounded opacity-60">
-          {item.shortcut}
-        </kbd>
-      )}
+      <div className="flex items-center gap-2">
+        {badge !== undefined && badge > 0 && (
+          <span className="px-2 py-0.5 text-xs font-bold bg-primary text-primary-foreground rounded-full">
+            {badge}
+          </span>
+        )}
+        {item.shortcut && (
+          <kbd className="hidden group-hover:inline-flex px-2 py-1 text-xs font-mono bg-muted rounded opacity-60">
+            {item.shortcut}
+          </kbd>
+        )}
+      </div>
     </Link>
   )
 })
@@ -145,6 +164,7 @@ export default function DashboardLayout({
   const [showSearch, setShowSearch] = useState(false)
   const [sidebarCompact, setSidebarCompact] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [orderStats, setOrderStats] = useState<{ urgent: number; new: number; total: number }>({ urgent: 0, new: 0, total: 0 })
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'Órdenes': false,
     'Cotizaciones': false,
@@ -215,6 +235,28 @@ export default function DashboardLayout({
       }
     }
     getUser()
+    
+    // Cargar stats de órdenes
+    const loadOrderStats = async () => {
+      try {
+        const response = await fetch('/api/orders/stats')
+        if (response.ok) {
+          const data = await response.json()
+          setOrderStats({
+            urgent: data.urgent_orders || 0,
+            new: data.orders_by_status?.new || 0,
+            total: data.total_orders || 0
+          })
+        }
+      } catch (error) {
+        console.error('Error loading order stats:', error)
+      }
+    }
+    loadOrderStats()
+    
+    // Actualizar stats cada minuto
+    const interval = setInterval(loadOrderStats, 60000)
+    return () => clearInterval(interval)
   }, [])
 
   const handleLogout = async () => {
@@ -355,6 +397,7 @@ export default function DashboardLayout({
             <button
               onClick={() => setShowSearch(true)}
               className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg bg-accent/50 hover:bg-accent transition-all duration-200 text-muted-foreground hover:text-foreground group"
+              aria-label="Abrir búsqueda rápida (⌘K)"
             >
               <span className="text-lg">🔍</span>
               <span className="text-sm flex-1 text-left">Buscar...</span>
@@ -363,10 +406,19 @@ export default function DashboardLayout({
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto" aria-label="Navegación principal">
             {navigation.map((item) => {
               const isActive = item.href ? pathname === item.href : item.subItems?.some(sub => pathname === sub.href) || false
               const isExpanded = item.subItems ? expandedSections[item.name] : undefined
+              
+              // Agregar badges con contadores
+              let badge: number | undefined = undefined
+              if (item.name === 'Órdenes') {
+                badge = orderStats.urgent + orderStats.new
+              } else if (item.name === 'Dashboard') {
+                badge = orderStats.urgent > 0 ? orderStats.urgent : undefined
+              }
+              
               return (
                 <NavigationItem
                   key={item.name}
@@ -375,6 +427,7 @@ export default function DashboardLayout({
                   isExpanded={isExpanded}
                   onToggle={() => item.subItems && toggleSection(item.name)}
                   onClose={() => setIsMobileMenuOpen(false)}
+                  badge={badge}
                 />
               )
             })}
@@ -447,9 +500,10 @@ export default function DashboardLayout({
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors"
-                aria-label="Toggle menu"
+                aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+                aria-expanded={isMobileMenuOpen}
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
@@ -470,6 +524,8 @@ export default function DashboardLayout({
                 <button
                   className="hidden md:block p-2 rounded-lg hover:bg-accent transition-colors"
                   title="Recargar página"
+                  aria-label="Recargar página"
+                  onClick={() => window.location.reload()}
                 >
                   🔄
                 </button>
@@ -477,6 +533,7 @@ export default function DashboardLayout({
                   href="/dashboard/quotes"
                   className="flex items-center gap-2 px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md text-sm md:text-base"
                   title="Nueva cotización"
+                  aria-label="Crear nueva cotización"
                 >
                   <span>✨</span>
                   <span className="font-medium hidden sm:inline">Nueva Cotización</span>
