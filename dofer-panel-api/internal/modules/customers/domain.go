@@ -20,7 +20,7 @@ type Customer struct {
 	City                  *string    `json:"city,omitempty" db:"city"`
 	State                 *string    `json:"state,omitempty" db:"state"`
 	PostalCode            *string    `json:"postal_code,omitempty" db:"postal_code"`
-	Country               string     `json:"country" db:"country"`
+	Country               *string    `json:"country,omitempty" db:"country"`
 	
 	// Billing
 	BillingName           *string    `json:"billing_name,omitempty" db:"billing_name"`
@@ -98,7 +98,7 @@ type CreateCustomerRequest struct {
 	City                  *string  `json:"city,omitempty"`
 	State                 *string  `json:"state,omitempty"`
 	PostalCode            *string  `json:"postal_code,omitempty"`
-	Country               string   `json:"country"`
+	Country               *string  `json:"country,omitempty"`
 	BillingName           *string  `json:"billing_name,omitempty"`
 	BillingEmail          *string  `json:"billing_email,omitempty"`
 	BillingAddress        *string  `json:"billing_address,omitempty"`
