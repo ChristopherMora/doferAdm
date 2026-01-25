@@ -40,12 +40,13 @@ const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
 Breadcrumbs.displayName = 'Breadcrumbs'
 
 // Memoizar la navegación para evitar re-renderizados innecesarios
-const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm }: { 
+const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm, onClose }: { 
   item: { name: string; href?: string; icon: string; shortcut?: string; subItems?: Array<{ name: string; href: string; icon: string }> }, 
   isActive: boolean,
   isExpanded?: boolean,
   onToggle?: () => void,
-  searchTerm?: string
+  searchTerm?: string,
+  onClose?: () => void
 }) => {
   const pathname = usePathname()
   
@@ -86,6 +87,7 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm 
                   key={subItem.name}
                   href={subItem.href}
                   prefetch={true}
+                  onClick={onClose}
                   className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-sm hover:scale-[1.02] ${
                     isSubActive
                       ? 'bg-primary/10 text-primary font-medium shadow-sm'
@@ -108,6 +110,7 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm 
     <Link
       href={item.href!}
       prefetch={true}
+      onClick={onClose}
       className={`group flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:scale-[1.02] ${
         isActive
           ? 'bg-primary/10 text-primary font-medium shadow-sm'
@@ -371,7 +374,7 @@ export default function DashboardLayout({
                   isActive={isActive}
                   isExpanded={isExpanded}
                   onToggle={() => item.subItems && toggleSection(item.name)}
-                  searchTerm={searchTerm}
+                  onClose={() => setIsMobileMenuOpen(false)}
                 />
               )
             })}
