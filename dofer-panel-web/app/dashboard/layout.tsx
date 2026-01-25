@@ -141,6 +141,7 @@ export default function DashboardLayout({
   const [searchTerm, setSearchTerm] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [sidebarCompact, setSidebarCompact] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'Órdenes': false,
     'Cotizaciones': false,
@@ -331,7 +332,9 @@ export default function DashboardLayout({
       )}
 
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-card border-r border-border shadow-lg transition-colors duration-200">
+      <div className={`fixed inset-y-0 left-0 w-64 bg-card border-r border-border shadow-lg transition-all duration-300 z-50 
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
+        md:translate-x-0`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-6 border-b border-border">
@@ -421,37 +424,58 @@ export default function DashboardLayout({
             </div>
           </div>
         </div>
-      </div>
+      </diOverlay para cerrar el menú en móvil */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
 
+      {/* Main content */}
+      <div className="md:
       {/* Main content */}
       <div className="ml-64">
         {/* Header con breadcrumbs */}
         <header className="bg-card border-b border-border shadow-sm transition-colors duration-200 sticky top-0 z-40 backdrop-blur-sm bg-card/95">
-          <div className="px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-foreground transition-colors duration-200">
+          <div className="px-4 md:px-8 py-4">
+            <div className="flex items-center justify-between gap-4">
+              {/* Botón menú móvil */}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors"
+                aria-label="Toggle menu"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl md:text-2xl font-semibold text-foreground transition-colors duration-200 truncate">
                   {navigation.find(item => item.href === pathname)?.name || 
                    navigation.flatMap(item => item.subItems || []).find(sub => sub.href === pathname)?.name || 
                    'Dashboard'}
                 </h2>
-                <Breadcrumbs pathname={pathname} />
+                <div className="hidden md:block">
+                  <Breadcrumbs pathname={pathname} />
+                </div>
               </div>
               
               {/* Acciones rápidas */}
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="p-2 rounded-lg hover:bg-accent transition-colors"
+                <button hidden md:block"
                   title="Recargar página"
                 >
                   🔄
                 </button>
                 <Link
                   href="/dashboard/quotes"
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md"
-                  title="Nueva cotización (acceso rápido)"
+                  className="flex items-center gap-2 px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md text-sm md:text-base"
+                  title="Nueva cotización"
                 >
+                  <span>✨</span>
+                  <span className="font-medium hidden sm:inline
                   <span>✨</span>
                   <span className="font-medium">Nueva Cotización</span>
                 </Link>
@@ -461,7 +485,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="p-8 transition-colors duration-200">
+        <main className="p-4 md:p-8 transition-colors duration-200">
           {children}
         </main>
       </div>
