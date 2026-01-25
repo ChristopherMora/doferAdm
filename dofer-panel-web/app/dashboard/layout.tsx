@@ -435,9 +435,7 @@ export default function DashboardLayout({
       )}
 
       {/* Main content */}
-      <div className="md:
-      {/* Main content */}
-      <div className="ml-64">
+      <div className="md:ml-64">
         {/* Header con breadcrumbs */}
         <header className="bg-card border-b border-border shadow-sm transition-colors duration-200 sticky top-0 z-40 backdrop-blur-sm bg-card/95">
           <div className="px-4 md:px-8 py-4">
