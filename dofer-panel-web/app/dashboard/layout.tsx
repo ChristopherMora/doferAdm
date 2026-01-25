@@ -424,7 +424,9 @@ export default function DashboardLayout({
             </div>
           </div>
         </div>
-      </diOverlay para cerrar el menú en móvil */}
+      </div>
+
+      {/* Overlay para cerrar el menú en móvil */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
