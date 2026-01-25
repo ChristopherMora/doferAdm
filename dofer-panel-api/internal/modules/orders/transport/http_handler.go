@@ -119,6 +119,9 @@ type OrderResponse struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	Amount        float64    `json:"amount"`
+	AmountPaid    float64    `json:"amount_paid"`
+	Balance       float64    `json:"balance"`
 }
 
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +208,9 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     order.CreatedAt,
 		UpdatedAt:     order.UpdatedAt,
 		CompletedAt:   order.CompletedAt,
+		Amount:        order.Amount,
+		AmountPaid:    order.AmountPaid,
+		Balance:       order.Balance,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
