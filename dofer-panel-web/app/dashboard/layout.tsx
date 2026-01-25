@@ -464,7 +464,8 @@ export default function DashboardLayout({
               
               {/* Acciones rápidas */}
               <div className="flex items-center gap-2">
-                <button hidden md:block"
+                <button
+                  className="hidden md:block p-2 rounded-lg hover:bg-accent transition-colors"
                   title="Recargar página"
                 >
                   🔄
@@ -475,9 +476,7 @@ export default function DashboardLayout({
                   title="Nueva cotización"
                 >
                   <span>✨</span>
-                  <span className="font-medium hidden sm:inline
-                  <span>✨</span>
-                  <span className="font-medium">Nueva Cotización</span>
+                  <span className="font-medium hidden sm:inline">Nueva Cotización</span>
                 </Link>
               </div>
             </div>
