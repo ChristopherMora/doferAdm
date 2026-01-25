@@ -1,10 +1,43 @@
 package customers
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// StringArray is a custom type for handling JSONB arrays
+type StringArray []string
+
+func (a *StringArray) Scan(value interface{}) error {
+	if value == nil {
+		*a = []string{}
+		return nil
+	}
+	
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("failed to unmarshal JSONB value: %v", value)
+	}
+	
+	var result []string
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		return err
+	}
+	
+	*a = result
+	return nil
+}
+
+func (a StringArray) Value() (driver.Value, error) {
+	if len(a) == 0 {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(a)
+}
 
 type Customer struct {
 	ID                    uuid.UUID  `json:"id" db:"id"`
@@ -37,16 +70,17 @@ type Customer struct {
 	CustomerTier          string     `json:"customer_tier" db:"customer_tier"`
 	DiscountPercentage    float64    `json:"discount_percentage" db:"discount_percentage"`
 	PreferredPaymentMethod *string   `json:"preferred_payment_method,omitempty" db:"preferred_payment_method"`
-	PreferredMaterials    []string   `json:"preferred_materials" db:"preferred_materials"`
+	PreferredMaterials    StringArray `json:"preferred_materials" db:"preferred_materials"`
 	
 	// Internal notes
 	InternalNotes         *string    `json:"internal_notes,omitempty" db:"internal_notes"`
-	Tags                  []string   `json:"tags" db:"tags"`
+	Tags                  StringArray `json:"tags" db:"tags"`
 	
 	// Marketing
 	AcceptsMarketing      bool       `json:"accepts_marketing" db:"accepts_marketing"`
 	MarketingSegment      *string    `json:"marketing_segment,omitempty" db:"marketing_segment"`
 	AcquisitionSource     *string    `json:"acquisition_source,omitempty" db:"acquisition_source"`
+	LifetimeValue         float64    `json:"lifetime_value" db:"lifetime_value"`
 	
 	// Metadata
 	Status                string     `json:"status" db:"status"`
