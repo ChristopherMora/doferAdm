@@ -1,0 +1,15 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "31.220.55.210",
+            "port": 5433,
+            "driver": "PostgreSQL",
+            "name": "Dofer Production",
+            "database": "dofer_panel",
+            "username": "dofer",
+            "password": "dofer_secure_password_change_me"
+        }
+    ]
+}

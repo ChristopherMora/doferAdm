@@ -155,7 +155,10 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 			assigned_to = $6,
 			assigned_at = $7,
 			updated_at = $8,
-			completed_at = $9
+			completed_at = $9,
+			amount = $10,
+			amount_paid = $11,
+			balance = $12
 		WHERE id = $1
 	`
 
@@ -193,6 +196,9 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 		order.AssignedAt,
 		order.UpdatedAt,
 		order.CompletedAt,
+		order.Amount,
+		order.AmountPaid,
+		order.Balance,
 	)
 
 	return err
