@@ -15,10 +15,19 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [modelDimensions, setModelDimensions] = useState<{ x: number; y: number; z: number } | null>(null)
   const [showWireframe, setShowWireframe] = useState(false)
+  const [showSupports, setShowSupports] = useState(false)
+  const [measuringMode, setMeasuringMode] = useState(false)
+  const [measurementPoints, setMeasurementPoints] = useState<THREE.Vector3[]>([])
+  const [measurementDistance, setMeasurementDistance] = useState<number | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const modelMeshRef = useRef<THREE.Mesh | null>(null)
+  const supportsGroupRef = useRef<THREE.Group | null>(null)
+  const measurementMarkersRef = useRef<THREE.Group | null>(null)
   const initialCameraPos = useRef<THREE.Vector3 | null>(null)
   const initialTarget = useRef<THREE.Vector3 | null>(null)
+  const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster())
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -32,6 +41,7 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
     // Setup scene
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xf0f0f0)
+    sceneRef.current = scene
 
     // Setup camera
     const width = containerRef.current.clientWidth || 800
@@ -132,6 +142,7 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
         
         const mesh = new THREE.Mesh(geometry, material)
         scene.add(mesh)
+        modelMeshRef.current = mesh
         console.log('✅ Mesh añadido a la escena')
 
         // Calcular tamaño del modelo primero
@@ -149,6 +160,17 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
         
         // Guardar dimensiones para mostrar en UI
         setModelDimensions({ x: size.x, y: size.y, z: size.z })
+        
+        // Generar soportes
+        const supportsGroup = generateSupports(mesh, box)
+        supportsGroup.visible = false
+        scene.add(supportsGroup)
+        supportsGroupRef.current = supportsGroup
+        
+        // Crear grupo para marcadores de medición
+        const markersGroup = new THREE.Group()
+        scene.add(markersGroup)
+        measurementMarkersRef.current = markersGroup
         
         // Agregar grid proporcional al modelo
         const gridSize = Math.max(maxDim * 3, 10)
@@ -293,6 +315,88 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
     }
   }
 
+  // Toggle functions
+  const toggleSupports = () => {
+    if (supportsGroupRef.current) {
+      supportsGroupRef.current.visible = !supportsGroupRef.current.visible
+      setShowSupports(!showSupports)
+    }
+  }
+
+  const toggleMeasuring = () => {
+    setMeasuringMode(!measuringMode)
+    setMeasurementPoints([])
+    setMeasurementDistance(null)
+    if (measurementMarkersRef.current) {
+      measurementMarkersRef.current.clear()
+    }
+  }
+
+  // Effect for canvas click handling
+  useEffect(() => {
+    if (!containerRef.current || !measuringMode) return
+
+    const canvas = containerRef.current.querySelector('canvas')
+    if (!canvas) return
+
+    const handleClick = (event: MouseEvent) => {
+      if (!modelMeshRef.current || !cameraRef.current) return
+      
+      const rect = canvas.getBoundingClientRect()
+      const mouse = new THREE.Vector2()
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+      
+      raycasterRef.current.setFromCamera(mouse, cameraRef.current)
+      const intersects = raycasterRef.current.intersectObject(modelMeshRef.current)
+      
+      if (intersects.length > 0) {
+        const point = intersects[0].point
+        setMeasurementPoints(prev => {
+          const newPoints = [...prev, point]
+          if (newPoints.length === 2) {
+            const distance = newPoints[0].distanceTo(newPoints[1])
+            setMeasurementDistance(distance)
+            updateMeasurementMarkers(newPoints, distance)
+            return []
+          } else if (newPoints.length > 2) {
+            if (measurementMarkersRef.current) measurementMarkersRef.current.clear()
+            setMeasurementDistance(null)
+            return [point]
+          }
+          updateMeasurementMarkers(newPoints, null)
+          return newPoints
+        })
+      }
+    }
+
+    const updateMeasurementMarkers = (points: THREE.Vector3[], distance: number | null) => {
+      if (!measurementMarkersRef.current) return
+      
+      measurementMarkersRef.current.clear()
+      
+      points.forEach((point) => {
+        const sphereGeometry = new THREE.SphereGeometry(0.5, 16, 16)
+        const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
+        sphere.position.copy(point)
+        measurementMarkersRef.current!.add(sphere)
+      })
+      
+      if (points.length === 2) {
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points)
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 })
+        const line = new THREE.Line(lineGeometry, lineMaterial)
+        measurementMarkersRef.current.add(line)
+      }
+    }
+
+    canvas.addEventListener('click', handleClick)
+    return () => {
+      canvas.removeEventListener('click', handleClick)
+    }
+  }, [measuringMode])
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col">
@@ -392,6 +496,29 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
                     ↔️ Side
                   </button>
                 </div>
+                <div className="border-t pt-2 mt-2 space-y-1">
+                  <button
+                    onClick={toggleSupports}
+                    className={`w-full px-3 py-1.5 ${showSupports ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-500 hover:bg-gray-600'} text-white text-xs rounded transition`}
+                    title="Mostrar/ocultar soportes"
+                  >
+                    {showSupports ? '🏗️ Ocultar soportes' : '🏗️ Ver soportes'}
+                  </button>
+                  <button
+                    onClick={toggleMeasuring}
+                    className={`w-full px-3 py-1.5 ${measuringMode ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'} text-white text-xs rounded transition`}
+                    title="Activar/desactivar modo medición"
+                  >
+                    {measuringMode ? '📏 Desactivar medición' : '📏 Medir distancias'}
+                  </button>
+                  {measurementDistance !== null && (
+                    <div className="bg-yellow-100 border border-yellow-400 rounded px-2 py-1 text-center">
+                      <p className="text-xs font-semibold text-yellow-900">
+                        📐 {measurementDistance.toFixed(2)} mm
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -401,11 +528,85 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
             <p className="text-gray-600">• Click izq. + arrastrar: Rotar</p>
             <p className="text-gray-600">• Rueda: Zoom</p>
             <p className="text-gray-600">• Click der. + arrastrar: Mover</p>
+            {measuringMode && (
+              <p className="text-amber-700 font-medium border-t pt-1 mt-1">
+                📏 Modo medición: Click 2 puntos
+              </p>
+            )}
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+// Generate support structures
+function generateSupports(mesh: THREE.Mesh, boundingBox: THREE.Box3): THREE.Group {
+  const supportsGroup = new THREE.Group()
+  const size = boundingBox.getSize(new THREE.Vector3())
+  const min = boundingBox.min
+  
+  // Material for supports
+  const supportMaterial = new THREE.MeshPhongMaterial({
+    color: 0xff6b6b,
+    transparent: true,
+    opacity: 0.5,
+    side: THREE.DoubleSide
+  })
+  
+  // Get geometry positions to analyze overhangs
+  const geometry = mesh.geometry
+  const positions = geometry.attributes.position
+  
+  // Create a grid of potential support points
+  const gridResolution = 10
+  const stepX = size.x / gridResolution
+  const stepZ = size.z / gridResolution
+  
+  for (let i = 0; i <= gridResolution; i++) {
+    for (let j = 0; j <= gridResolution; j++) {
+      const x = min.x + i * stepX
+      const z = min.z + j * stepZ
+      
+      // Find lowest point of model at this x,z position
+      let lowestY = Infinity
+      let foundPoint = false
+      
+      for (let k = 0; k < positions.count; k++) {
+        const vx = positions.getX(k)
+        const vy = positions.getY(k)
+        const vz = positions.getZ(k)
+        
+        // Check if vertex is near this grid position
+        if (Math.abs(vx - x) < stepX / 2 && Math.abs(vz - z) < stepZ / 2) {
+          if (vy < lowestY) {
+            lowestY = vy
+            foundPoint = true
+          }
+        }
+      }
+      
+      // If point is significantly above base, add support
+      if (foundPoint && lowestY > min.y + size.y * 0.1) {
+        const supportHeight = lowestY - min.y
+        const supportRadius = Math.min(stepX, stepZ) * 0.15
+        
+        // Create cylindrical support
+        const supportGeometry = new THREE.CylinderGeometry(
+          supportRadius,
+          supportRadius * 1.5,
+          supportHeight,
+          8
+        )
+        const support = new THREE.Mesh(supportGeometry, supportMaterial)
+        support.position.set(x, min.y + supportHeight / 2, z)
+        supportsGroup.add(support)
+      }
+    }
+  }
+  
+  console.log(`✅ Generados ${supportsGroup.children.length} soportes`)
+  return supportsGroup
 }
 
 // Parse STL geometry from ArrayBuffer
