@@ -48,6 +48,31 @@ export default function OrdersPage() {
   const [totalOrders, setTotalOrders] = useState(0)
   const ordersPerPage = 50
 
+  // Atajos de teclado para página de órdenes
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+      
+      // Cmd/Ctrl + N para nueva orden
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n' && !isInputField) {
+        e.preventDefault()
+        setIsCreateModalOpen(true)
+        return
+      }
+      
+      // F para toggle filtros
+      if (e.key === 'f' && !isInputField && !(e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setShowFilters(prev => !prev)
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   // Debounce para búsqueda
   useEffect(() => {
     const timer = setTimeout(() => {

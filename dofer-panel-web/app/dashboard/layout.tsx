@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import ThemeToggle from '@/components/ThemeToggle'
+import ShortcutsHelper from '@/components/ShortcutsHelper'
 
 // Componente de breadcrumbs para navegación contextual
 const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
@@ -199,27 +200,66 @@ export default function DashboardLayout({
   // Atajos de teclado
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + K para búsqueda rápida
+      // Ignorar si está en un input, textarea o contenteditable
+      const target = e.target as HTMLElement
+      const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+      
+      // Cmd/Ctrl + K para búsqueda rápida (funciona en cualquier lugar)
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setShowSearch(prev => !prev)
+        return
       }
+      
+      // / para enfocar búsqueda (solo fuera de inputs)
+      if (e.key === '/' && !isInputField) {
+        e.preventDefault()
+        setShowSearch(true)
+        return
+      }
+      
       // Cmd/Ctrl + B para toggle sidebar compacto
       if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
         e.preventDefault()
         setSidebarCompact(prev => !prev)
+        return
       }
+      
+      // Cmd/Ctrl + D para toggle dark mode
+      if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+        e.preventDefault()
+        const isDark = document.documentElement.classList.contains('dark')
+        if (isDark) {
+          document.documentElement.classList.remove('dark')
+          localStorage.setItem('theme', 'light')
+        } else {
+          document.documentElement.classList.add('dark')
+          localStorage.setItem('theme', 'dark')
+        }
+        return
+      }
+      
       // Escape para cerrar búsqueda
       if (e.key === 'Escape' && showSearch) {
         setShowSearch(false)
         setSearchTerm('')
+        return
       }
-      // Atajos numéricos Cmd/Ctrl + 1-5
-      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
+      
+      // Atajos numéricos Cmd/Ctrl + 1-6 para navegación
+      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
         e.preventDefault()
-        const routes = ['/dashboard', '/dashboard/orders', '/dashboard/quotes', '/dashboard/customers', '/dashboard/stats']
+        const routes = [
+          '/dashboard', 
+          '/dashboard/orders', 
+          '/dashboard/quotes', 
+          '/dashboard/customers', 
+          '/dashboard/kanban',
+          '/dashboard/stats'
+        ]
         const index = parseInt(e.key) - 1
         if (routes[index]) router.push(routes[index])
+        return
       }
     }
 
