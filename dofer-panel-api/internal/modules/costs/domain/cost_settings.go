@@ -4,6 +4,7 @@ import "time"
 
 type CostSettings struct {
 	ID                     string    `json:"id"`
+	MaterialName           string    `json:"material_name"`
 	MaterialCostPerGram    float64   `json:"material_cost_per_gram"`
 	ElectricityCostPerHour float64   `json:"electricity_cost_per_hour"`
 	LaborCostPerHour       float64   `json:"labor_cost_per_hour"`
@@ -32,6 +33,8 @@ type CostBreakdown struct {
 
 type CostSettingsRepository interface {
 	Get() (*CostSettings, error)
+	GetAll() ([]CostSettings, error)
+	GetByMaterial(materialName string) (*CostSettings, error)
 	Update(settings *CostSettings) error
 	CalculateCost(input CalculationInput) (*CostBreakdown, error)
 }

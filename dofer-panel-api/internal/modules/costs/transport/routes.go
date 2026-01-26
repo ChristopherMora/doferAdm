@@ -10,6 +10,7 @@ func RegisterRoutes(r chi.Router, handler *CostHandler) {
 		r.Use(middleware.RequireAuth)
 
 		r.Get("/settings", handler.GetCostSettings)
+		r.Get("/materials", handler.GetAllMaterials)
 		r.Put("/settings", handler.UpdateCostSettings)
 		r.Post("/calculate", handler.CalculateCost)
 	})

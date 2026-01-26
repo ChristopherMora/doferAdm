@@ -54,6 +54,24 @@ func (h *CostHandler) GetCostSettings(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(settings)
 }
 
+func (h *CostHandler) GetAllMaterials(w http.ResponseWriter, r *http.Request) {
+	materials, err := h.getHandler.HandleGetAll(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Convertir costo por gramo a costo por kilo para todos los materiales
+	for i := range materials {
+		materials[i].MaterialCostPerGram = materials[i].MaterialCostPerGram * 1000
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"materials": materials,
+	})
+}
+
 func (h *CostHandler) UpdateCostSettings(w http.ResponseWriter, r *http.Request) {
 	var req UpdateCostSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

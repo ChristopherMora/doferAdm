@@ -5,6 +5,15 @@ import { apiClient } from '@/lib/api'
 import STLUploader from './STLUploader'
 import type { STLMetrics } from '@/lib/stlParser'
 
+interface Material {
+  id: string
+  material_name: string
+  material_cost_per_gram: number
+  electricity_cost_per_hour: number
+  labor_cost_per_hour: number
+  profit_margin_percentage: number
+}
+
 interface CostSettings {
   material_cost_per_gram: number
   electricity_cost_per_hour: number
@@ -29,6 +38,8 @@ interface CalculadoraCostosProps {
 
 export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosProps) {
   const [settings, setSettings] = useState<CostSettings | null>(null)
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [selectedMaterial, setSelectedMaterial] = useState<string>('PLA')
   const [loading, setLoading] = useState(false)
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null)
 
@@ -40,6 +51,7 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
 
   useEffect(() => {
     loadSettings()
+    loadMaterials()
   }, [])
 
   const loadSettings = async () => {
@@ -48,6 +60,15 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
       setSettings(data)
     } catch (error) {
       console.error('Error loading settings:', error)
+    }
+  }
+
+  const loadMaterials = async () => {
+    try {
+      const response = await apiClient.get<{ materials: Material[] }>('/costs/materials')
+      setMaterials(response.materials || [])
+    } catch (error) {
+      console.error('Error loading materials:', error)
     }
   }
 
@@ -95,6 +116,43 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
           }}
         />
       </div>
+
+      {/* Material Selector */}
+      {materials.length > 0 && (
+        <div className="border rounded-lg p-4 bg-white">
+          <label className="block text-sm font-bold text-gray-900 mb-2">
+            🎨 Selecciona Material
+          </label>
+          <select
+            value={selectedMaterial}
+            onChange={(e) => setSelectedMaterial(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            {materials.map((material) => (
+              <option key={material.id} value={material.material_name}>
+                {material.material_name} - ${material.material_cost_per_gram.toFixed(2)}/g
+                {' '}(Margen: {material.profit_margin_percentage}%)
+              </option>
+            ))}
+          </select>
+          {materials.find(m => m.material_name === selectedMaterial) && (
+            <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+              <div className="bg-gray-50 p-2 rounded">
+                <span className="text-gray-600">Costo material:</span>
+                <span className="font-bold ml-1">
+                  ${materials.find(m => m.material_name === selectedMaterial)?.material_cost_per_gram.toFixed(2)}/g
+                </span>
+              </div>
+              <div className="bg-gray-50 p-2 rounded">
+                <span className="text-gray-600">Mano de obra:</span>
+                <span className="font-bold ml-1">
+                  ${materials.find(m => m.material_name === selectedMaterial)?.labor_cost_per_hour.toFixed(2)}/h
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div className="border-b pb-4">
