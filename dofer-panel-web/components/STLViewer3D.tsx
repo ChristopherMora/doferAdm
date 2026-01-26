@@ -13,6 +13,12 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [loadingModel, setLoadingModel] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [modelDimensions, setModelDimensions] = useState<{ x: number; y: number; z: number } | null>(null)
+  const [showWireframe, setShowWireframe] = useState(false)
+  const controlsRef = useRef<OrbitControls | null>(null)
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const initialCameraPos = useRef<THREE.Vector3 | null>(null)
+  const initialTarget = useRef<THREE.Vector3 | null>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -33,6 +39,7 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000)
     camera.position.set(0, 50, 100)
     camera.lookAt(0, 0, 0)
+    cameraRef.current = camera
 
     // Setup renderer
     renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -54,6 +61,7 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.05
+    controlsRef.current = controls
 
     // Add lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
@@ -139,6 +147,9 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
           maxDim: maxDim.toFixed(2)
         })
         
+        // Guardar dimensiones para mostrar en UI
+        setModelDimensions({ x: size.x, y: size.y, z: size.z })
+        
         // Agregar grid proporcional al modelo
         const gridSize = Math.max(maxDim * 3, 10)
         const gridDivisions = 20
@@ -163,6 +174,10 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
         camera.lookAt(center)
         controls.target.copy(center)
         controls.update()
+        
+        // Guardar posición inicial para reset
+        initialCameraPos.current = camera.position.clone()
+        initialTarget.current = center.clone()
         
         console.log('✅ Cámara ajustada - Posición:', {
           x: camera.position.x.toFixed(2),
@@ -227,6 +242,57 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
     }
   }, [file])
 
+  // Control functions
+  const resetView = () => {
+    if (controlsRef.current && cameraRef.current && initialCameraPos.current && initialTarget.current) {
+      cameraRef.current.position.copy(initialCameraPos.current)
+      controlsRef.current.target.copy(initialTarget.current)
+      controlsRef.current.update()
+    }
+  }
+
+  const zoomIn = () => {
+    if (cameraRef.current && controlsRef.current) {
+      const direction = new THREE.Vector3()
+      cameraRef.current.getWorldDirection(direction)
+      cameraRef.current.position.addScaledVector(direction, 10)
+      controlsRef.current.update()
+    }
+  }
+
+  const zoomOut = () => {
+    if (cameraRef.current && controlsRef.current) {
+      const direction = new THREE.Vector3()
+      cameraRef.current.getWorldDirection(direction)
+      cameraRef.current.position.addScaledVector(direction, -10)
+      controlsRef.current.update()
+    }
+  }
+
+  const viewTop = () => {
+    if (cameraRef.current && controlsRef.current && initialTarget.current) {
+      const distance = cameraRef.current.position.distanceTo(initialTarget.current)
+      cameraRef.current.position.set(initialTarget.current.x, initialTarget.current.y + distance, initialTarget.current.z)
+      controlsRef.current.update()
+    }
+  }
+
+  const viewFront = () => {
+    if (cameraRef.current && controlsRef.current && initialTarget.current) {
+      const distance = cameraRef.current.position.distanceTo(initialTarget.current)
+      cameraRef.current.position.set(initialTarget.current.x, initialTarget.current.y, initialTarget.current.z + distance)
+      controlsRef.current.update()
+    }
+  }
+
+  const viewSide = () => {
+    if (cameraRef.current && controlsRef.current && initialTarget.current) {
+      const distance = cameraRef.current.position.distanceTo(initialTarget.current)
+      cameraRef.current.position.set(initialTarget.current.x + distance, initialTarget.current.y, initialTarget.current.z)
+      controlsRef.current.update()
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col">
@@ -262,6 +328,72 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
                 <p className="text-gray-600 text-sm">{loadError}</p>
               </div>
             </div>
+          )}
+          
+          {/* View Controls */}
+          {!loadingModel && !loadError && (
+            <>
+              {/* Dimensions Panel */}
+              {modelDimensions && (
+                <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg p-3 text-xs shadow-lg z-10 space-y-2">
+                  <p className="font-semibold text-gray-900 border-b pb-1">📐 Dimensiones</p>
+                  <div className="space-y-1">
+                    <p className="text-gray-600">Ancho (X): <span className="font-bold text-indigo-600">{modelDimensions.x.toFixed(2)} mm</span></p>
+                    <p className="text-gray-600">Altura (Y): <span className="font-bold text-indigo-600">{modelDimensions.y.toFixed(2)} mm</span></p>
+                    <p className="text-gray-600">Profundidad (Z): <span className="font-bold text-indigo-600">{modelDimensions.z.toFixed(2)} mm</span></p>
+                  </div>
+                </div>
+              )}
+              
+              {/* Control Buttons */}
+              <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-sm rounded-lg p-2 shadow-lg z-10 space-y-2">
+                <p className="font-semibold text-gray-900 text-xs mb-2 px-1">🎮 Controles</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    onClick={resetView}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded transition"
+                    title="Restaurar vista inicial"
+                  >
+                    🔄 Reset
+                  </button>
+                  <button
+                    onClick={zoomIn}
+                    className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition"
+                    title="Acercar"
+                  >
+                    🔍+
+                  </button>
+                  <button
+                    onClick={zoomOut}
+                    className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition"
+                    title="Alejar"
+                  >
+                    🔍-
+                  </button>
+                  <button
+                    onClick={viewTop}
+                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition"
+                    title="Vista superior"
+                  >
+                    ⬆️ Top
+                  </button>
+                  <button
+                    onClick={viewFront}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition"
+                    title="Vista frontal"
+                  >
+                    👁️ Front
+                  </button>
+                  <button
+                    onClick={viewSide}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition"
+                    title="Vista lateral"
+                  >
+                    ↔️ Side
+                  </button>
+                </div>
+              </div>
+            </>
           )}
           
           <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs space-y-1 shadow-lg z-10">

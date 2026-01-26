@@ -283,6 +283,38 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
             </div>
           </div>
 
+          {/* Profitability Analysis */}
+          <div className="bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-400 rounded-lg p-5 space-y-4 shadow-sm">
+            <h4 className="text-lg font-bold text-emerald-900 flex items-center gap-2">
+              💰 Análisis de Rentabilidad
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white rounded-lg p-3 border border-emerald-200">
+                <p className="text-xs text-gray-600 mb-1">Costo Total</p>
+                <p className="text-lg font-bold text-red-600">{formatCurrency(breakdown.subtotal)}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-emerald-200">
+                <p className="text-xs text-gray-600 mb-1">Precio Sugerido</p>
+                <p className="text-lg font-bold text-indigo-600">{formatCurrency(breakdown.unit_price)}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-emerald-200">
+                <p className="text-xs text-gray-600 mb-1">Ganancia Neta</p>
+                <p className="text-lg font-bold text-green-600">+{formatCurrency(breakdown.profit_margin)}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-emerald-200">
+                <p className="text-xs text-gray-600 mb-1">ROI por Pieza</p>
+                <p className="text-lg font-bold text-emerald-600">
+                  {((breakdown.profit_margin / breakdown.subtotal) * 100).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+            <div className="bg-emerald-100 rounded-lg p-3 border border-emerald-300">
+              <p className="text-xs font-semibold text-emerald-800">
+                📊 Por cada ${formatCurrency(breakdown.subtotal)} invertido, ganas ${formatCurrency(breakdown.profit_margin)}
+              </p>
+            </div>
+          </div>
+
           {/* Final Prices */}
           <div className="bg-white rounded-lg p-4 space-y-2 border-2 border-green-300">
             <div className="flex justify-between items-center">
