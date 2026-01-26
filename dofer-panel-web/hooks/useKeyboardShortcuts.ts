@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface ShortcutConfig {
@@ -64,9 +64,7 @@ export function useGlobalShortcuts() {
 
 // Hook para mostrar ayuda de atajos
 export function useShortcutHelp(shortcuts: ShortcutConfig[]) {
-  const [isOpen, setIsOpen] = useCallback(() => {
-    // Lógica para mostrar modal de ayuda
-  }, [])
+  const [isOpen, setIsOpen] = useState(false)
 
   return { isOpen, setIsOpen, shortcuts }
 }
