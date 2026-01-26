@@ -128,11 +128,6 @@
     background: hsl(var(--muted));
     border-radius: 3px;
   }
-}
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
-  }
 
   /* Animation keyframes */
   @keyframes fade-in {
