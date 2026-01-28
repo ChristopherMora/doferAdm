@@ -435,9 +435,9 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
   doc.text(order.platform.toUpperCase(), col1X + 25, yPosition)
 
   const priorityLabels: { [key: string]: string } = {
-    urgent: '🔴 URGENTE',
-    normal: '🟡 NORMAL',
-    low: '🟢 BAJA'
+    urgent: 'URGENTE',
+    normal: 'NORMAL',
+    low: 'BAJA'
   }
   doc.setTextColor(100, 100, 100)
   doc.setFont('helvetica', 'normal')
@@ -475,19 +475,6 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
     doc.setFont('helvetica', 'bold')
     doc.text(order.assigned_to, col1X + 25, yPosition)
     yPosition += 5
-  }
-
-  // Notas (si existen)
-  if (order.notes) {
-    doc.setTextColor(100, 100, 100)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
-    doc.text('Notas:', col1X, yPosition)
-    yPosition += 3
-    const splitNotes = doc.splitTextToSize(order.notes, pageWidth - 2 * margin - 25)
-    doc.setTextColor(0, 0, 0)
-    doc.text(splitNotes, col1X + 25, yPosition)
-    yPosition += splitNotes.length * 3 + 2
   }
 
   yPosition += 5
@@ -567,7 +554,7 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
   doc.setFontSize(8)
   doc.setFont('helvetica', 'italic')
   doc.setTextColor(100, 100, 100)
-  const paymentStatus = order.balance <= 0 ? '✅ Pagado completamente' : '⚠️ Pago pendiente'
+  const paymentStatus = order.balance <= 0 ? 'Pagado completamente' : 'Pago pendiente'
   doc.text(paymentStatus, totalsX, yPosition)
 
   // Lista de pagos (si existen)
@@ -576,7 +563,7 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
     doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(0, 0, 0)
-    doc.text('💰 Historial de Pagos Realizados:', margin, yPosition)
+    doc.text('HISTORIAL DE PAGOS REALIZADOS', margin, yPosition)
     yPosition += 1
     
     doc.setDrawColor(colorDark.r, colorDark.g, colorDark.b)
@@ -591,8 +578,7 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
     doc.setTextColor(100, 100, 100)
     doc.text('Fecha', margin + 5, yPosition)
     doc.text('Monto', margin + 55, yPosition)
-    doc.text('Método', margin + 105, yPosition)
-    doc.text('Notas', margin + 145, yPosition)
+    doc.text('Metodo', margin + 105, yPosition)
     yPosition += 5
     
     // Linea separadora
@@ -624,13 +610,6 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
       doc.setTextColor(0, 0, 0)
       doc.setFont('helvetica', 'normal')
       doc.text((payment.payment_method || 'N/A').toUpperCase(), margin + 105, yPosition)
-      
-      if (payment.notes) {
-        const notesText = doc.splitTextToSize(payment.notes, 50)
-        doc.text(notesText[0], margin + 145, yPosition)
-      } else {
-        doc.text('-', margin + 145, yPosition)
-      }
       
       yPosition += 5
     })
