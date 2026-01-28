@@ -571,15 +571,20 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
     doc.line(margin, yPosition, pageWidth - margin, yPosition)
     yPosition += 5
 
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
     
-    // Encabezado de tabla de pagos
-    doc.setTextColor(100, 100, 100)
-    doc.text('Fecha', margin + 5, yPosition)
-    doc.text('Monto', margin + 55, yPosition)
-    doc.text('Metodo', margin + 105, yPosition)
-    yPosition += 5
+    // Encabezado de tabla de pagos con fondo
+    doc.setFillColor(240, 240, 240)
+    doc.rect(margin, yPosition - 3, pageWidth - 2 * margin, 5, 'F')
+    
+    doc.setTextColor(80, 80, 80)
+    const colWidth1 = 70
+    const colWidth2 = 60
+    doc.text('Fecha', margin + 2, yPosition)
+    doc.text('Monto', margin + colWidth1, yPosition)
+    doc.text('Metodo', margin + colWidth1 + colWidth2, yPosition)
+    yPosition += 6
     
     // Linea separadora
     doc.setDrawColor(200, 200, 200)
@@ -587,11 +592,14 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
     doc.line(margin, yPosition - 1, pageWidth - margin, yPosition - 1)
     
     doc.setTextColor(0, 0, 0)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    
     payments.forEach((payment, index) => {
       // Fondo alternado
       if (index % 2 === 0) {
         doc.setFillColor(248, 250, 252)
-        doc.rect(margin, yPosition - 2, pageWidth - 2 * margin, 5, 'F')
+        doc.rect(margin, yPosition - 2, pageWidth - 2 * margin, 4, 'F')
       }
       
       const paymentDate = new Date(payment.payment_date).toLocaleDateString('es-MX', {
@@ -600,18 +608,19 @@ export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: a
         day: 'numeric'
       })
       
+      doc.setTextColor(0, 0, 0)
       doc.setFont('helvetica', 'normal')
-      doc.text(paymentDate, margin + 5, yPosition)
+      doc.text(paymentDate, margin + 2, yPosition)
       
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(22, 163, 74)  // Verde para el monto
-      doc.text(formatCurrency(payment.amount), margin + 55, yPosition)
+      doc.text(formatCurrency(payment.amount), margin + colWidth1, yPosition)
       
       doc.setTextColor(0, 0, 0)
       doc.setFont('helvetica', 'normal')
-      doc.text((payment.payment_method || 'N/A').toUpperCase(), margin + 105, yPosition)
+      doc.text((payment.payment_method || 'N/A').toUpperCase(), margin + colWidth1 + colWidth2, yPosition)
       
-      yPosition += 5
+      yPosition += 4
     })
     
     // Total de pagos realizados
