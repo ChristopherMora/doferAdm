@@ -8,6 +8,7 @@ import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
 import OrderLabel from '@/components/OrderLabel'
+import { generateOrderPDF } from '@/lib/pdfGenerator'
 import { Plus, X, DollarSign, Package, Trash2 } from 'lucide-react'
 
 interface HistoryEntry {
@@ -194,6 +195,12 @@ export default function OrderDetailPage() {
 
   const getTotalItems = () => {
     return items.reduce((sum, item) => sum + item.total, 0)
+  }
+
+  const handleGeneratePDF = () => {
+    if (order) {
+      generateOrderPDF(order, items, payments)
+    }
   }
 
   if (loading) {
@@ -745,6 +752,12 @@ export default function OrderDetailPage() {
               🖨️ Imprimir Etiqueta
             </button>
           )}
+          <button
+            onClick={handleGeneratePDF}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            📄 Descargar PDF
+          </button>
           <a
             href={`/track/${order.public_id}`}
             target="_blank"
