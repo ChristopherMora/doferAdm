@@ -660,11 +660,11 @@ function drawOrderItemsTable(doc: jsPDF, items: OrderItem[], startY: number): nu
   const availableWidth = pageWidth - 2 * margin
   
   // Distribuir el ancho disponible
-  const colWidth1 = availableWidth * 0.35  // Producto: 35%
+  const colWidth1 = availableWidth * 0.30  // Producto: 30%
   const colWidth2 = availableWidth * 0.25  // Descripción: 25%
-  const colWidth3 = availableWidth * 0.10  // Cantidad: 10%
-  const colWidth4 = availableWidth * 0.15  // Precio Unit: 15%
-  const colWidth5 = availableWidth * 0.15  // Total: 15%
+  const colWidth3 = availableWidth * 0.12  // Cantidad: 12%
+  const colWidth4 = availableWidth * 0.17  // Precio Unit: 17%
+  const colWidth5 = availableWidth * 0.16  // Total: 16%
   
   let yPosition = startY
   const rowHeight = 8
