@@ -6,24 +6,25 @@ import (
 )
 
 type Quote struct {
-	ID                 string    `json:"id"`
-	QuoteNumber        string    `json:"quote_number"`
-	CustomerName       string    `json:"customer_name"`
-	CustomerEmail      string    `json:"customer_email"`
-	CustomerPhone      string    `json:"customer_phone"`
-	Status             string    `json:"status"` // pending, approved, rejected, expired
-	Subtotal           float64   `json:"subtotal"`
-	Discount           float64   `json:"discount"`
-	Tax                float64   `json:"tax"`
-	Total              float64   `json:"total"`
-	AmountPaid         float64   `json:"amount_paid"`
-	Balance            float64   `json:"balance"`
-	Notes              string    `json:"notes"`
-	ValidUntil         time.Time `json:"valid_until"`
-	CreatedBy          string    `json:"created_by"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
-	ConvertedToOrderID string    `json:"converted_to_order_id,omitempty"`
+	ID                 string       `json:"id"`
+	QuoteNumber        string       `json:"quote_number"`
+	CustomerName       string       `json:"customer_name"`
+	CustomerEmail      string       `json:"customer_email"`
+	CustomerPhone      string       `json:"customer_phone"`
+	Status             string       `json:"status"` // pending, approved, rejected, expired
+	Subtotal           float64      `json:"subtotal"`
+	Discount           float64      `json:"discount"`
+	Tax                float64      `json:"tax"`
+	Total              float64      `json:"total"`
+	AmountPaid         float64      `json:"amount_paid"`
+	Balance            float64      `json:"balance"`
+	Notes              string       `json:"notes"`
+	ValidUntil         time.Time    `json:"valid_until"`
+	CreatedBy          string       `json:"created_by"`
+	CreatedAt          time.Time    `json:"created_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
+	ConvertedToOrderID string       `json:"converted_to_order_id,omitempty"`
+	Items              []*QuoteItem `json:"items,omitempty"`
 }
 
 type QuoteItem struct {

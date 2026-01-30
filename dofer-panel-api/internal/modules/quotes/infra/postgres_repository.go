@@ -109,7 +109,7 @@ func (r *PostgresQuoteRepository) FindByID(id string) (*domain.Quote, error) {
 func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*domain.Quote, error) {
 	query := `
 		SELECT id, quote_number, customer_name, customer_email, customer_phone,
-		       status, subtotal, discount, tax, total, notes, valid_until,
+		       status, subtotal, discount, tax, total, amount_paid, balance, notes, valid_until,
 		       created_by, created_at, updated_at,
 		       COALESCE(converted_to_order_id::text, '') as converted_to_order_id
 		FROM quotes
@@ -140,6 +140,8 @@ func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*do
 			&quote.Discount,
 			&quote.Tax,
 			&quote.Total,
+			&quote.AmountPaid,
+			&quote.Balance,
 			&notes,
 			&validUntil,
 			&quote.CreatedBy,
@@ -165,6 +167,12 @@ func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*do
 		quote.ValidUntil = validUntil
 		quote.CreatedAt = createdAt
 		quote.UpdatedAt = updatedAt
+
+		// Cargar items de la cotización
+		items, err := r.GetItems(quote.ID)
+		if err == nil {
+			quote.Items = items
+		}
 
 		quotes = append(quotes, &quote)
 	}

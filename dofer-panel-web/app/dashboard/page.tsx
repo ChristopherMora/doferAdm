@@ -452,13 +452,14 @@ export default function DashboardPage() {
                     <th className="text-left py-4 px-6 text-xs font-medium text-muted-foreground"># Orden</th>
                     <th className="text-left py-4 px-6 text-xs font-medium text-muted-foreground">Cliente</th>
                     <th className="text-left py-4 px-6 text-xs font-medium text-muted-foreground hidden sm:table-cell">Producto</th>
+                    <th className="text-left py-4 px-6 text-xs font-medium text-muted-foreground">Piezas</th>
                     <th className="text-left py-4 px-6 text-xs font-medium text-muted-foreground">Estado</th>
                     <th className="text-left py-4 px-6 text-xs font-medium text-muted-foreground hidden md:table-cell">Fecha</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {recentOrders.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-12">
+                    <tr><td colSpan={6} className="text-center py-12">
                       <div className="flex flex-col items-center gap-2">
                         <Package className="h-10 w-10 text-muted-foreground" />
                         <p className="text-sm text-muted-foreground">No hay órdenes registradas</p>
@@ -472,6 +473,9 @@ export default function DashboardPage() {
                         </td>
                         <td className="py-4 px-6 font-medium">{order.customer_name}</td>
                         <td className="py-4 px-6 text-muted-foreground hidden sm:table-cell">{order.product_name}</td>
+                        <td className="py-4 px-6">
+                          <span className="font-semibold tabular-nums">{order.quantity || 0}</span>
+                        </td>
                         <td className="py-4 px-6">
                           <Badge variant={statusConfig[order.status]?.variant || 'outline'}>{order.status}</Badge>
                         </td>

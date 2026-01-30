@@ -250,7 +250,12 @@ export default function QuoteDetailPage() {
 
       {/* Items */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">📦 Items de la Cotización</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">📦 Items de la Cotización</h2>
+          <div className="text-sm text-gray-600">
+            <span className="font-semibold">{quote.items?.reduce((sum, item) => sum + item.quantity, 0) || 0}</span> piezas totales
+          </div>
+        </div>
         
         {quote.items && quote.items.length > 0 ? (
           <div className="overflow-x-auto">

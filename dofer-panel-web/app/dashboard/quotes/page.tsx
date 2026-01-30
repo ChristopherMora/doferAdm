@@ -136,6 +136,7 @@ export default function QuotesPage() {
                   <tr className="border-b">
                     <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider"># Cotización</th>
                     <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cliente</th>
+                    <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Piezas</th>
                     <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Total</th>
                     <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</th>
                     <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider hidden md:table-cell">Válida hasta</th>
@@ -144,7 +145,9 @@ export default function QuotesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredQuotes.map((quote) => (
+                  {filteredQuotes.map((quote) => {
+                    const totalPieces = quote.items?.reduce((sum, item) => sum + item.quantity, 0) || 0
+                    return (
                     <tr key={quote.id} className="border-b hover:bg-accent transition-colors cursor-pointer" onClick={() => router.push(`/dashboard/quotes/${quote.id}`)}>
                       <td className="py-3 px-4">
                         <span className="font-mono text-sm">{quote.quote_number}</span>
@@ -152,6 +155,10 @@ export default function QuotesPage() {
                       <td className="py-3 px-4">
                         <div className="font-medium">{quote.customer_name}</div>
                         <div className="text-xs text-muted-foreground">{quote.customer_email}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-semibold tabular-nums">{totalPieces}</span>
+                        <span className="text-xs text-muted-foreground ml-1">pza{totalPieces !== 1 ? 's' : ''}</span>
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-bold tabular-nums">{formatCurrency(quote.total)}</span>
@@ -210,7 +217,8 @@ export default function QuotesPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
