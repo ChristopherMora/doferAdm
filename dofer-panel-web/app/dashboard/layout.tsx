@@ -280,7 +280,7 @@ export default function DashboardLayout({
     // Cargar stats de órdenes
     const loadOrderStats = async () => {
       try {
-        const data = await apiClient.get('/orders/stats')
+        const data = await apiClient.get<any>('/orders/stats')
         setOrderStats({
           urgent: data.urgent_orders || 0,
           new: data.orders_by_status?.new || 0,
