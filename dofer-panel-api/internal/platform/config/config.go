@@ -11,8 +11,10 @@ type Config struct {
 	Env                    string
 	DatabaseURL            string
 	SupabaseURL            string
+	SupabaseJWKSURL        string
 	SupabaseAnonKey        string
 	SupabaseServiceRoleKey string
+	JWTValidationMode      string
 	JWTSecret              string
 	CORSAllowedOrigins     []string
 }
@@ -25,7 +27,7 @@ func Load() (*Config, error) {
 		"http://localhost:3002",
 		"http://localhost:5173",
 	}
-	
+
 	if envOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); envOrigins != "" {
 		corsOrigins = strings.Split(envOrigins, ",")
 		// Trim whitespace from each origin
@@ -33,15 +35,20 @@ func Load() (*Config, error) {
 			corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
 		}
 	}
-	
+
+	supabaseURL := strings.TrimSpace(os.Getenv("SUPABASE_URL"))
+	jwtValidationMode := strings.ToLower(strings.TrimSpace(getEnv("JWT_VALIDATION_MODE", defaultJWTValidationMode(supabaseURL))))
+
 	cfg := &Config{
 		Port:                   getEnv("API_PORT", "9000"),
 		Env:                    getEnv("ENVIRONMENT", "development"),
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
-		SupabaseURL:            os.Getenv("SUPABASE_URL"),
+		SupabaseURL:            supabaseURL,
+		SupabaseJWKSURL:        strings.TrimSpace(os.Getenv("SUPABASE_JWKS_URL")),
 		SupabaseAnonKey:        os.Getenv("SUPABASE_ANON_KEY"),
 		SupabaseServiceRoleKey: os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
-		JWTSecret:              os.Getenv("JWT_SECRET"),
+		JWTValidationMode:      jwtValidationMode,
+		JWTSecret:              strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		CORSAllowedOrigins:     corsOrigins,
 	}
 
@@ -56,9 +63,20 @@ func (c *Config) validate() error {
 	if c.DatabaseURL == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
-	if c.JWTSecret == "" {
-		return fmt.Errorf("JWT_SECRET is required")
+
+	switch c.JWTValidationMode {
+	case "hs256":
+		if c.JWTSecret == "" {
+			return fmt.Errorf("JWT_SECRET is required when JWT_VALIDATION_MODE=hs256")
+		}
+	case "jwks":
+		if c.SupabaseJWKSURL == "" && c.SupabaseURL == "" {
+			return fmt.Errorf("SUPABASE_URL or SUPABASE_JWKS_URL is required when JWT_VALIDATION_MODE=jwks")
+		}
+	default:
+		return fmt.Errorf("unsupported JWT_VALIDATION_MODE: %s", c.JWTValidationMode)
 	}
+
 	return nil
 }
 
@@ -67,4 +85,11 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func defaultJWTValidationMode(supabaseURL string) string {
+	if strings.TrimSpace(supabaseURL) != "" {
+		return "jwks"
+	}
+	return "hs256"
 }

@@ -45,10 +45,10 @@ interface Order {
 
 interface Interaction {
   id: string
-  type: 'email' | 'phone' | 'meeting' | 'note' | 'order' | 'quote'
-  subject: string
-  description: string
-  created_by: string
+  interaction_type: 'email' | 'phone' | 'meeting' | 'note' | 'order' | 'quote' | string
+  subject?: string | null
+  description?: string | null
+  created_by?: string | null
   created_at: string
 }
 
@@ -59,6 +59,11 @@ interface Analytics {
   preferred_contact_method: string
   peak_order_month: string
   retention_risk: string
+}
+
+interface CustomerAnalyticsRow {
+  id: string
+  engagement_status: string
 }
 
 export default function CustomerDetailPage() {
@@ -79,9 +84,10 @@ export default function CustomerDetailPage() {
   
   const [showInteractionModal, setShowInteractionModal] = useState(false)
   const [newInteraction, setNewInteraction] = useState({
-    type: 'note' as const,
+    interaction_type: 'note',
     subject: '',
-    description: ''
+    description: '',
+    priority: 'normal'
   })
 
   useEffect(() => {
@@ -93,16 +99,36 @@ export default function CustomerDetailPage() {
       setLoading(true)
       const [customerData, analyticsData] = await Promise.all([
         apiClient.get<Customer>(`/customers/${customerId}`),
-        apiClient.get<Analytics>(`/customers/${customerId}/analytics`)
+        apiClient.get<{ analytics: CustomerAnalyticsRow[] }>('/customers/analytics', { params: { limit: 500 } })
       ])
       
       setCustomer(customerData)
-      setAnalytics(analyticsData)
       setEditForm(customerData)
+
+      const customerAnalytics = analyticsData.analytics?.find((item) => item.id === customerId)
+      if (customerAnalytics) {
+        const status = customerAnalytics.engagement_status || 'inactive'
+        const engagementScore =
+          status === 'active' ? 85 :
+          status === 'dormant' ? 55 :
+          status === 'at_risk' ? 35 :
+          20
+
+        setAnalytics({
+          engagement_score: engagementScore,
+          engagement_status: status,
+          avg_days_between_orders: 0,
+          preferred_contact_method: 'N/A',
+          peak_order_month: 'N/A',
+          retention_risk: status === 'active' ? 'low' : status === 'dormant' ? 'medium' : 'high',
+        })
+      } else {
+        setAnalytics(null)
+      }
       
       // Cargar interacciones
-      const interactionsData = await apiClient.get<Interaction[]>(`/customers/${customerId}/interactions`)
-      setInteractions(interactionsData)
+      const interactionsData = await apiClient.get<{ interactions: Interaction[] }>(`/customers/${customerId}/interactions`)
+      setInteractions(interactionsData.interactions || [])
       
     } catch (error) {
       console.error('Error loading customer:', error)
@@ -129,7 +155,7 @@ export default function CustomerDetailPage() {
       await apiClient.post(`/customers/${customerId}/interactions`, newInteraction)
       showToast('Interacción registrada', 'success')
       setShowInteractionModal(false)
-      setNewInteraction({ type: 'note', subject: '', description: '' })
+      setNewInteraction({ interaction_type: 'note', subject: '', description: '', priority: 'normal' })
       loadCustomerData()
     } catch (error) {
       console.error('Error adding interaction:', error)
@@ -515,10 +541,10 @@ export default function CustomerDetailPage() {
               interactions.map((interaction) => (
                 <div key={interaction.id} className="bg-card rounded-lg border border-border p-4">
                   <div className="flex items-start gap-4">
-                    <span className="text-2xl">{getInteractionIcon(interaction.type)}</span>
+                    <span className="text-2xl">{getInteractionIcon(interaction.interaction_type)}</span>
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold">{interaction.subject}</h3>
+                        <h3 className="font-semibold">{interaction.subject || 'Sin asunto'}</h3>
                         <span className="text-sm text-muted-foreground">
                           {new Date(interaction.created_at).toLocaleDateString('es-MX', {
                             year: 'numeric',
@@ -529,8 +555,8 @@ export default function CustomerDetailPage() {
                           })}
                         </span>
                       </div>
-                      <p className="text-muted-foreground text-sm">{interaction.description}</p>
-                      <p className="text-xs text-muted-foreground mt-2">Por: {interaction.created_by}</p>
+                      <p className="text-muted-foreground text-sm">{interaction.description || 'Sin descripción'}</p>
+                      <p className="text-xs text-muted-foreground mt-2">Por: {interaction.created_by || 'sistema'}</p>
                     </div>
                   </div>
                 </div>
@@ -581,8 +607,8 @@ export default function CustomerDetailPage() {
             <div>
               <label className="text-sm text-muted-foreground">Tipo</label>
               <select
-                value={newInteraction.type}
-                onChange={(e) => setNewInteraction({ ...newInteraction, type: e.target.value as any })}
+                value={newInteraction.interaction_type}
+                onChange={(e) => setNewInteraction({ ...newInteraction, interaction_type: e.target.value })}
                 className="w-full mt-1 px-3 py-2 bg-background border border-border rounded-lg"
               >
                 <option value="note">📝 Nota</option>
@@ -624,7 +650,7 @@ export default function CustomerDetailPage() {
               <button
                 onClick={() => {
                   setShowInteractionModal(false)
-                  setNewInteraction({ type: 'note', subject: '', description: '' })
+                  setNewInteraction({ interaction_type: 'note', subject: '', description: '', priority: 'normal' })
                 }}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:opacity-90"
               >

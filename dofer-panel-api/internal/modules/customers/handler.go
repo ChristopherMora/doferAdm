@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/dofer/panel-api/internal/platform/httpserver/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -20,6 +21,8 @@ func NewHandler(repo *Repository) *Handler {
 // RegisterRoutes registers customer routes
 func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Route("/customers", func(r chi.Router) {
+		r.Use(middleware.RequireAuth)
+
 		r.Get("/", h.GetAll)
 		r.Get("/stats", h.GetStats)
 		r.Get("/analytics", h.GetAnalytics)
@@ -40,7 +43,7 @@ func (h *Handler) GetAll(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	tier := r.URL.Query().Get("tier")
 	segment := r.URL.Query().Get("segment")
-	
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit == 0 {
 		limit = 50
@@ -88,8 +91,17 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Get user ID from auth context
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
+	userIDValue, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDValue)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	customer, err := h.repo.Create(r.Context(), req, userID)
 	if err != nil {
@@ -223,8 +235,17 @@ func (h *Handler) CreateInteraction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Get user ID from auth context
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
+	userIDValue, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDValue)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	interaction, err := h.repo.CreateInteraction(r.Context(), id, req, userID)
 	if err != nil {

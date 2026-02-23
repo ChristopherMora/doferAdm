@@ -6,31 +6,32 @@ import (
 	"time"
 
 	"github.com/dofer/panel-api/internal/modules/orders/app"
+	"github.com/dofer/panel-api/internal/platform/httpserver/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
 type OrderHandler struct {
-	createHandler          *app.CreateOrderHandler
-	getHandler             *app.GetOrderHandler
-	listHandler            *app.ListOrdersHandler
-	updateStatusHandler    *app.UpdateOrderStatusHandler
-	assignHandler          *app.AssignOrderHandler
-	historyHandler         *app.GetOrderHistoryHandler
-	statsHandler           *app.GetOrderStatsHandler
-	searchHandler          *app.SearchOrdersHandler
-	startTimerHandler      *app.StartTimerHandler
-	pauseTimerHandler      *app.PauseTimerHandler
-	stopTimerHandler       *app.StopTimerHandler
-	getTimerHandler        *app.GetTimerHandler
-	updateEstimatedHandler *app.UpdateEstimatedTimeHandler
-	operatorStatsHandler   *app.GetOperatorStatsHandler
-	getItemsHandler        *app.GetOrderItemsHandler
-	updateItemStatusHandler *app.UpdateOrderItemStatusHandler
-	addItemHandler         *app.AddOrderItemHandler
-	deleteItemHandler      *app.DeleteOrderItemHandler
-	addPaymentHandler      *app.AddOrderPaymentHandler
-	getPaymentsHandler     *app.GetOrderPaymentsHandler
-	deletePaymentHandler   *app.DeleteOrderPaymentHandler
+	createHandler            *app.CreateOrderHandler
+	getHandler               *app.GetOrderHandler
+	listHandler              *app.ListOrdersHandler
+	updateStatusHandler      *app.UpdateOrderStatusHandler
+	assignHandler            *app.AssignOrderHandler
+	historyHandler           *app.GetOrderHistoryHandler
+	statsHandler             *app.GetOrderStatsHandler
+	searchHandler            *app.SearchOrdersHandler
+	startTimerHandler        *app.StartTimerHandler
+	pauseTimerHandler        *app.PauseTimerHandler
+	stopTimerHandler         *app.StopTimerHandler
+	getTimerHandler          *app.GetTimerHandler
+	updateEstimatedHandler   *app.UpdateEstimatedTimeHandler
+	operatorStatsHandler     *app.GetOperatorStatsHandler
+	getItemsHandler          *app.GetOrderItemsHandler
+	updateItemStatusHandler  *app.UpdateOrderItemStatusHandler
+	addItemHandler           *app.AddOrderItemHandler
+	deleteItemHandler        *app.DeleteOrderItemHandler
+	addPaymentHandler        *app.AddOrderPaymentHandler
+	getPaymentsHandler       *app.GetOrderPaymentsHandler
+	deletePaymentHandler     *app.DeleteOrderPaymentHandler
 	recalculateTotalsHandler *app.RecalculateOrderTotalsHandler
 }
 
@@ -59,27 +60,27 @@ func NewOrderHandler(
 	recalculateTotalsHandler *app.RecalculateOrderTotalsHandler,
 ) *OrderHandler {
 	return &OrderHandler{
-		createHandler:          createHandler,
-		getHandler:             getHandler,
-		listHandler:            listHandler,
-		updateStatusHandler:    updateStatusHandler,
-		assignHandler:          assignHandler,
-		historyHandler:         historyHandler,
-		statsHandler:           statsHandler,
-		searchHandler:          searchHandler,
-		startTimerHandler:      startTimerHandler,
-		pauseTimerHandler:      pauseTimerHandler,
-		stopTimerHandler:       stopTimerHandler,
-		getTimerHandler:        getTimerHandler,
-		updateEstimatedHandler: updateEstimatedHandler,
-		operatorStatsHandler:   operatorStatsHandler,
-		getItemsHandler:        getItemsHandler,
-		updateItemStatusHandler: updateItemStatusHandler,
-		addItemHandler:         addItemHandler,
-		deleteItemHandler:      deleteItemHandler,
-		addPaymentHandler:      addPaymentHandler,
-		deletePaymentHandler:   deletePaymentHandler,
-		getPaymentsHandler:     getPaymentsHandler,
+		createHandler:            createHandler,
+		getHandler:               getHandler,
+		listHandler:              listHandler,
+		updateStatusHandler:      updateStatusHandler,
+		assignHandler:            assignHandler,
+		historyHandler:           historyHandler,
+		statsHandler:             statsHandler,
+		searchHandler:            searchHandler,
+		startTimerHandler:        startTimerHandler,
+		pauseTimerHandler:        pauseTimerHandler,
+		stopTimerHandler:         stopTimerHandler,
+		getTimerHandler:          getTimerHandler,
+		updateEstimatedHandler:   updateEstimatedHandler,
+		operatorStatsHandler:     operatorStatsHandler,
+		getItemsHandler:          getItemsHandler,
+		updateItemStatusHandler:  updateItemStatusHandler,
+		addItemHandler:           addItemHandler,
+		deleteItemHandler:        deleteItemHandler,
+		addPaymentHandler:        addPaymentHandler,
+		deletePaymentHandler:     deletePaymentHandler,
+		getPaymentsHandler:       getPaymentsHandler,
 		recalculateTotalsHandler: recalculateTotalsHandler,
 	}
 }
@@ -541,50 +542,51 @@ func (h *OrderHandler) GetOperatorStats(w http.ResponseWriter, r *http.Request) 
 
 // GetOrderItems obtiene los items de una orden
 func (h *OrderHandler) GetOrderItems(w http.ResponseWriter, r *http.Request) {
-orderID := chi.URLParam(r, "id")
+	orderID := chi.URLParam(r, "id")
 
-query := app.GetOrderItemsQuery{
-OrderID: orderID,
-}
+	query := app.GetOrderItemsQuery{
+		OrderID: orderID,
+	}
 
-items, err := h.getItemsHandler.Handle(r.Context(), query)
-if err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
+	items, err := h.getItemsHandler.Handle(r.Context(), query)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]interface{}{
-"items": items,
-"total": len(items),
-})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": items,
+		"total": len(items),
+	})
 }
 
 // UpdateOrderItemStatus actualiza el estado de un item
 func (h *OrderHandler) UpdateOrderItemStatus(w http.ResponseWriter, r *http.Request) {
-itemID := chi.URLParam(r, "itemId")
+	itemID := chi.URLParam(r, "itemId")
 
-var req struct {
-IsCompleted bool `json:"is_completed"`
-}
-if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-http.Error(w, err.Error(), http.StatusBadRequest)
-return
+	var req struct {
+		IsCompleted bool `json:"is_completed"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cmd := app.UpdateOrderItemStatusCommand{
+		ItemID:      itemID,
+		IsCompleted: req.IsCompleted,
+	}
+
+	if err := h.updateItemStatusHandler.Handle(r.Context(), cmd); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Item status updated"})
 }
 
-cmd := app.UpdateOrderItemStatusCommand{
-ItemID:      itemID,
-IsCompleted: req.IsCompleted,
-}
-
-if err := h.updateItemStatusHandler.Handle(r.Context(), cmd); err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
-
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]string{"message": "Item status updated"})
-}
 // AddOrderItem agrega un nuevo item a una orden
 func (h *OrderHandler) AddOrderItem(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
@@ -636,6 +638,7 @@ func (h *OrderHandler) DeleteOrderItem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Item deleted successfully"})
 }
+
 // RecalculateOrderTotals recalcula los totales de una orden desde sus items y pagos
 func (h *OrderHandler) RecalculateOrderTotals(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
@@ -659,6 +662,7 @@ func (h *OrderHandler) RecalculateOrderTotals(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(order)
 }
+
 // AddOrderPayment agrega un pago a una orden
 func (h *OrderHandler) AddOrderPayment(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
@@ -668,7 +672,6 @@ func (h *OrderHandler) AddOrderPayment(w http.ResponseWriter, r *http.Request) {
 		PaymentMethod string  `json:"payment_method"`
 		PaymentDate   string  `json:"payment_date"`
 		Notes         string  `json:"notes"`
-		CreatedBy     string  `json:"created_by"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -684,13 +687,19 @@ func (h *OrderHandler) AddOrderPayment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	createdBy, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	cmd := app.AddOrderPaymentCommand{
 		OrderID:       orderID,
 		Amount:        req.Amount,
 		PaymentMethod: req.PaymentMethod,
 		PaymentDate:   paymentDate,
 		Notes:         req.Notes,
-		CreatedBy:     req.CreatedBy,
+		CreatedBy:     createdBy,
 	}
 
 	payment, err := h.addPaymentHandler.Handle(r.Context(), cmd)

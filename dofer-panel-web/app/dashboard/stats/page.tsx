@@ -41,12 +41,12 @@ export default function StatsPage() {
     try {
       setLoading(true)
       const [statsResponse, ordersResponse] = await Promise.all([
-        apiClient.get('/orders/stats'),
-        apiClient.get('/orders?limit=100')
-      ]) as [{ data: OrderStats }, { data: { orders: Order[] } }]
+        apiClient.get<OrderStats>('/orders/stats'),
+        apiClient.get<{ orders: Order[]; total: number }>('/orders', { params: { limit: 100 } })
+      ])
       
-      setStats(statsResponse.data)
-      setRecentOrders(ordersResponse.data?.orders || [])
+      setStats(statsResponse)
+      setRecentOrders(ordersResponse.orders || [])
     } catch (err: any) {
       console.error('Error fetching stats:', err)
       setError(err.message || 'Error al cargar estadísticas')

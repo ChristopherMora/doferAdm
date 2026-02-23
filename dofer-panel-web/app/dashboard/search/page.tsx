@@ -60,11 +60,17 @@ export default function SearchPage() {
       }
 
       const endpoint = searchType === 'orders' ? '/orders/search' : '/quotes/search';
-      const response = await apiClient.get(`${endpoint}?${params.toString()}`) as any;
-      
-      const data = searchType === 'orders' ? response.data.orders : response.data.quotes;
-      setResults(data || []);
-      setTotalResults(response.data.total || 0);
+      const searchPath = params.toString() ? `${endpoint}?${params.toString()}` : endpoint;
+
+      if (searchType === 'orders') {
+        const response = await apiClient.get<{ orders: Order[]; total: number }>(searchPath);
+        setResults(response.orders || []);
+        setTotalResults(response.total || 0);
+      } else {
+        const response = await apiClient.get<{ quotes: Quote[]; total: number }>(searchPath);
+        setResults(response.quotes || []);
+        setTotalResults(response.total || 0);
+      }
     } catch (error) {
       console.error('Error searching:', error);
       setResults([]);

@@ -1,8 +1,92 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/api/v1'
+const DEV_TEST_TOKEN = 'test-auth-token'
 
 interface RequestConfig extends RequestInit {
   token?: string
   params?: Record<string, any>
+}
+
+function parseSupabaseToken(rawValue: string): string | undefined {
+  if (!rawValue) return undefined
+
+  try {
+    const parsed = JSON.parse(rawValue)
+
+    if (typeof parsed === 'string' && parsed.trim()) {
+      return parsed
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const directToken = (parsed as { access_token?: unknown }).access_token
+      if (typeof directToken === 'string' && directToken.trim()) {
+        return directToken
+      }
+
+      const currentSession = (parsed as { currentSession?: { access_token?: unknown } }).currentSession
+      if (currentSession && typeof currentSession.access_token === 'string' && currentSession.access_token.trim()) {
+        return currentSession.access_token
+      }
+
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && typeof item === 'object') {
+            const token = (item as { access_token?: unknown }).access_token
+            if (typeof token === 'string' && token.trim()) {
+              return token
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // El valor puede venir como texto plano en algunos entornos de desarrollo.
+    if (rawValue.trim()) {
+      return rawValue.trim()
+    }
+  }
+
+  return undefined
+}
+
+function getCookieToken(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined
+
+  const match = document.cookie
+    .split('; ')
+    .find((entry) => entry.startsWith(`${name}=`))
+
+  if (!match) return undefined
+
+  const value = decodeURIComponent(match.split('=').slice(1).join('=')).trim()
+  return value || undefined
+}
+
+function getBrowserAuthToken(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+
+  const explicitTestToken = localStorage.getItem('test-token')
+  if (explicitTestToken && explicitTestToken.trim()) {
+    return explicitTestToken.trim()
+  }
+
+  const cookieToken = getCookieToken('sb-access-token') || getCookieToken('sb-localhost-auth-token')
+  if (cookieToken) {
+    return cookieToken
+  }
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key) continue
+    if (!key.startsWith('sb-') || !key.endsWith('-auth-token')) continue
+
+    const rawValue = localStorage.getItem(key)
+    if (!rawValue) continue
+
+    const token = parseSupabaseToken(rawValue)
+    if (token) return token
+  }
+
+  return undefined
 }
 
 async function apiRequest<T>(
@@ -15,15 +99,23 @@ async function apiRequest<T>(
     'Content-Type': 'application/json',
   }
 
-  // Use test-token for development
-  const authToken = token || 'test-token'
-  headers['Authorization'] = `Bearer ${authToken}`
+  const resolvedToken =
+    token ||
+    getBrowserAuthToken() ||
+    (process.env.NODE_ENV === 'development' ? DEV_TEST_TOKEN : undefined)
+
+  if (resolvedToken) {
+    headers['Authorization'] = `Bearer ${resolvedToken}`
+  }
 
   // Build query string from params
   let url = `${API_URL}${endpoint}`
   if (params) {
     const queryString = new URLSearchParams(params).toString()
-    url = `${url}?${queryString}`
+    if (queryString) {
+      const separator = url.includes('?') ? '&' : '?'
+      url = `${url}${separator}${queryString}`
+    }
   }
 
   const response = await fetch(url, {

@@ -4,25 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dofer/panel-api/internal/modules/quotes/app"
+	"github.com/dofer/panel-api/internal/platform/httpserver/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
 type QuoteHandler struct {
-	createHandler       *app.CreateQuoteHandler
-	getHandler          *app.GetQuoteHandler
-	listHandler         *app.ListQuotesHandler
-	addItemHandler      *app.AddQuoteItemHandler
-	updateHandler       *app.UpdateQuoteHandler
-	updateStatusHandler *app.UpdateQuoteStatusHandler
-	deleteItemHandler   *app.DeleteQuoteItemHandler
-	deleteQuoteHandler  *app.DeleteQuoteHandler
-	searchHandler       *app.SearchQuotesHandler
+	createHandler         *app.CreateQuoteHandler
+	getHandler            *app.GetQuoteHandler
+	listHandler           *app.ListQuotesHandler
+	addItemHandler        *app.AddQuoteItemHandler
+	updateHandler         *app.UpdateQuoteHandler
+	updateStatusHandler   *app.UpdateQuoteStatusHandler
+	deleteItemHandler     *app.DeleteQuoteItemHandler
+	deleteQuoteHandler    *app.DeleteQuoteHandler
+	searchHandler         *app.SearchQuotesHandler
 	convertToOrderHandler *app.ConvertToOrderHandler
-	addPaymentHandler   *app.AddPaymentHandler
-	syncItemsHandler    *app.SyncItemsToOrderHandler
+	addPaymentHandler     *app.AddPaymentHandler
+	syncItemsHandler      *app.SyncItemsToOrderHandler
 }
 
 func NewQuoteHandler(
@@ -40,18 +42,18 @@ func NewQuoteHandler(
 	syncItemsHandler *app.SyncItemsToOrderHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
-		createHandler:       createHandler,
-		getHandler:          getHandler,
-		listHandler:         listHandler,
-		addItemHandler:      addItemHandler,
-		updateHandler:       updateHandler,
-		updateStatusHandler: updateStatusHandler,
-		deleteItemHandler:   deleteItemHandler,
-		deleteQuoteHandler:  deleteQuoteHandler,
-		searchHandler:       searchHandler,
+		createHandler:         createHandler,
+		getHandler:            getHandler,
+		listHandler:           listHandler,
+		addItemHandler:        addItemHandler,
+		updateHandler:         updateHandler,
+		updateStatusHandler:   updateStatusHandler,
+		deleteItemHandler:     deleteItemHandler,
+		deleteQuoteHandler:    deleteQuoteHandler,
+		searchHandler:         searchHandler,
 		convertToOrderHandler: convertToOrderHandler,
-		addPaymentHandler:   addPaymentHandler,
-		syncItemsHandler:    syncItemsHandler,
+		addPaymentHandler:     addPaymentHandler,
+		syncItemsHandler:      syncItemsHandler,
 	}
 }
 
@@ -100,13 +102,19 @@ func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
 		validDays = 15 // Por defecto 15 días
 	}
 
+	createdBy, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(createdBy) == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	cmd := app.CreateQuoteCommand{
 		CustomerName:  req.CustomerName,
 		CustomerEmail: req.CustomerEmail,
 		CustomerPhone: req.CustomerPhone,
 		Notes:         req.Notes,
 		ValidUntil:    time.Now().AddDate(0, 0, validDays),
-		CreatedBy:     "11111111-1111-1111-1111-111111111111", // Admin user UUID
+		CreatedBy:     createdBy,
 	}
 
 	quote, err := h.createHandler.Handle(r.Context(), cmd)
@@ -208,7 +216,7 @@ func (h *QuoteHandler) UpdateQuoteStatus(w http.ResponseWriter, r *http.Request)
 
 func (h *QuoteHandler) UpdateQuote(w http.ResponseWriter, r *http.Request) {
 	quoteID := chi.URLParam(r, "id")
-	
+
 	var req UpdateQuoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -331,7 +339,7 @@ func (h *QuoteHandler) ConvertToOrder(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"order": order,
+		"order":   order,
 		"message": "Cotización convertida a pedido exitosamente",
 	})
 }
@@ -366,27 +374,27 @@ func (h *QuoteHandler) AddPayment(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"quote": quote,
+		"quote":   quote,
 		"message": "Pago registrado exitosamente",
 	})
 }
 
 // SyncItemsToOrder sincroniza items de cotización a pedido existente
 func (h *QuoteHandler) SyncItemsToOrder(w http.ResponseWriter, r *http.Request) {
-quoteID := chi.URLParam(r, "id")
+	quoteID := chi.URLParam(r, "id")
 
-cmd := app.SyncItemsToOrderCommand{
-QuoteID: quoteID,
-}
+	cmd := app.SyncItemsToOrderCommand{
+		QuoteID: quoteID,
+	}
 
-err := h.syncItemsHandler.Handle(r.Context(), cmd)
-if err != nil {
-http.Error(w, err.Error(), http.StatusInternalServerError)
-return
-}
+	err := h.syncItemsHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]interface{}{
-"message": "Items sincronizados al pedido exitosamente",
-})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Items sincronizados al pedido exitosamente",
+	})
 }
