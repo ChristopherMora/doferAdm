@@ -34,7 +34,8 @@ export default function TrackOrderPage() {
   useEffect(() => {
     if (!publicId) return;
 
-    fetch(`http://localhost:9000/api/v1/public/orders/${publicId}`)
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/api/v1'
+    fetch(`${apiUrl}/public/orders/${publicId}`)
       .then(res => {
         if (!res.ok) throw new Error('Orden no encontrada');
         return res.json();
