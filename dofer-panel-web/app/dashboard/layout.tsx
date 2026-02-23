@@ -4,6 +4,7 @@ import { useEffect, useState, memo, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { apiClient } from '@/lib/api'
 import ThemeToggle from '@/components/ThemeToggle'
 import ShortcutsHelper from '@/components/ShortcutsHelper'
 
@@ -279,15 +280,12 @@ export default function DashboardLayout({
     // Cargar stats de órdenes
     const loadOrderStats = async () => {
       try {
-        const response = await fetch('/api/orders/stats')
-        if (response.ok) {
-          const data = await response.json()
-          setOrderStats({
-            urgent: data.urgent_orders || 0,
-            new: data.orders_by_status?.new || 0,
-            total: data.total_orders || 0
-          })
-        }
+        const data = await apiClient.get('/orders/stats')
+        setOrderStats({
+          urgent: data.urgent_orders || 0,
+          new: data.orders_by_status?.new || 0,
+          total: data.total_orders || 0
+        })
       } catch (error) {
         console.error('Error loading order stats:', error)
       }
