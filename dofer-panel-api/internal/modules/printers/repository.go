@@ -21,6 +21,8 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
+const printerSelectColumns = "id, name, model, material, status, created_at, updated_at"
+
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
@@ -39,7 +41,7 @@ func normalizePrinterStatus(raw string) (string, error) {
 }
 
 func (r *Repository) List(ctx context.Context, status string, limit, offset int) ([]Printer, error) {
-	query := "SELECT * FROM printers WHERE 1=1"
+	query := "SELECT " + printerSelectColumns + " FROM printers WHERE 1=1"
 	args := []interface{}{}
 	argNum := 1
 
@@ -77,7 +79,7 @@ func (r *Repository) List(ctx context.Context, status string, limit, offset int)
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Printer, error) {
-	rows, err := r.db.Query(ctx, "SELECT * FROM printers WHERE id = $1", id)
+	rows, err := r.db.Query(ctx, "SELECT "+printerSelectColumns+" FROM printers WHERE id = $1", id)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +109,7 @@ func (r *Repository) Create(ctx context.Context, req CreatePrinterRequest) (*Pri
 	query := `
 		INSERT INTO printers (name, model, material, status)
 		VALUES ($1, $2, $3, $4)
-		RETURNING *
+		RETURNING id, name, model, material, status, created_at, updated_at
 	`
 
 	rows, err := r.db.Query(ctx, query, strings.TrimSpace(req.Name), req.Model, req.Material, status)
@@ -163,6 +165,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdatePrinter
 
 	query += fmt.Sprintf(" WHERE id = $%d RETURNING *", argNum)
 	args = append(args, id)
+	query = strings.Replace(query, "RETURNING *", "RETURNING "+printerSelectColumns, 1)
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -185,7 +188,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status stri
 	}
 
 	rows, err := r.db.Query(ctx,
-		"UPDATE printers SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
+		"UPDATE printers SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING "+printerSelectColumns,
 		normalizedStatus,
 		id,
 	)
