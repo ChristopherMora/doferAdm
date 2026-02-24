@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
+import { useToast } from '@/components/ui/toast'
 import { Quote, QuoteItem } from '@/types'
 import { generateQuotePDF } from '@/lib/pdfGenerator'
 
@@ -19,6 +20,7 @@ export default function QuoteDetailPage() {
   const router = useRouter()
   const params = useParams()
   const quoteId = params.id as string
+  const { addToast } = useToast()
 
   const [quote, setQuote] = useState<Quote | null>(null)
   const [loading, setLoading] = useState(true)
@@ -37,11 +39,15 @@ export default function QuoteDetailPage() {
       setQuote({ ...response.quote, items: response.items || [] })
     } catch (error) {
       console.error('Error loading quote:', error)
-      alert('Error al cargar cotización')
+      addToast({
+        title: 'Error al cargar cotizacion',
+        description: getErrorMessage(error, 'No se pudo cargar la cotizacion.'),
+        variant: 'error',
+      })
     } finally {
       setLoading(false)
     }
-  }, [quoteId])
+  }, [addToast, quoteId])
 
   useEffect(() => {
     loadQuote()
@@ -52,10 +58,18 @@ export default function QuoteDetailPage() {
       setUpdating(true)
       await apiClient.patch(`/quotes/${quoteId}/status`, { status: newStatus })
       await loadQuote()
-      alert('✅ Estado actualizado')
+      addToast({
+        title: 'Estado actualizado',
+        description: 'La cotizacion se actualizo correctamente.',
+        variant: 'success',
+      })
     } catch (error) {
       console.error('Error updating status:', error)
-      alert('Error al actualizar estado')
+      addToast({
+        title: 'Error al actualizar estado',
+        description: getErrorMessage(error, 'No se pudo actualizar el estado.'),
+        variant: 'error',
+      })
     } finally {
       setUpdating(false)
     }
@@ -110,11 +124,19 @@ export default function QuoteDetailPage() {
     
     try {
       await apiClient.delete(`/quotes/${quoteId}/items/${pendingDeleteItemID}`)
-      alert('✅ Item eliminado')
+      addToast({
+        title: 'Item eliminado',
+        description: 'El item fue eliminado de la cotizacion.',
+        variant: 'success',
+      })
       await loadQuote()
     } catch (error) {
       console.error('Error deleting item:', error)
-      alert('Error al eliminar item')
+      addToast({
+        title: 'Error al eliminar item',
+        description: getErrorMessage(error, 'No se pudo eliminar el item.'),
+        variant: 'error',
+      })
     } finally {
       setPendingDeleteItemID(null)
     }
@@ -127,11 +149,19 @@ export default function QuoteDetailPage() {
   const confirmDeleteQuote = async () => {
     try {
       await apiClient.delete(`/quotes/${quoteId}`)
-      alert('✅ Cotización eliminada')
+      addToast({
+        title: 'Cotizacion eliminada',
+        description: 'La cotizacion se elimino correctamente.',
+        variant: 'success',
+      })
       router.push('/dashboard/quotes')
     } catch (error) {
       console.error('Error deleting quote:', error)
-      alert('Error al eliminar cotización')
+      addToast({
+        title: 'Error al eliminar cotizacion',
+        description: getErrorMessage(error, 'No se pudo eliminar la cotizacion.'),
+        variant: 'error',
+      })
     } finally {
       setConfirmDeleteQuoteOpen(false)
     }
@@ -145,15 +175,27 @@ export default function QuoteDetailPage() {
     try {
       setUpdating(true)
       const response = await apiClient.post<ConvertToOrderResponse>(`/quotes/${quoteId}/convert-to-order`, {})
-      alert(`✅ Cotización convertida a pedido: ${response.order.order_number}`)
+      addToast({
+        title: 'Cotizacion convertida',
+        description: `Se creo el pedido ${response.order.order_number}.`,
+        variant: 'success',
+      })
       router.push(`/dashboard/orders`)
     } catch (error: unknown) {
       console.error('Error converting to order:', error)
       const message = getErrorMessage(error, 'Error desconocido')
       if (message.includes('debe estar aprobada')) {
-        alert('❌ La cotización debe estar aprobada para convertirla en pedido')
+        addToast({
+          title: 'Accion no permitida',
+          description: 'La cotizacion debe estar aprobada para convertirla en pedido.',
+          variant: 'warning',
+        })
       } else {
-        alert(`Error al convertir cotización: ${message}`)
+        addToast({
+          title: 'Error al convertir cotizacion',
+          description: message,
+          variant: 'error',
+        })
       }
     } finally {
       setUpdating(false)
@@ -169,11 +211,19 @@ export default function QuoteDetailPage() {
     try {
       setUpdating(true)
       await apiClient.post(`/quotes/${quoteId}/sync-items`, {})
-      alert('✅ Items sincronizados al pedido exitosamente')
+      addToast({
+        title: 'Items sincronizados',
+        description: 'Los items se copiaron al pedido vinculado.',
+        variant: 'success',
+      })
       loadQuote()
     } catch (error: unknown) {
       console.error('Error syncing items:', error)
-      alert(`Error: ${getErrorMessage(error, 'No se pudieron sincronizar los items')}`)
+      addToast({
+        title: 'Error al sincronizar items',
+        description: getErrorMessage(error, 'No se pudieron sincronizar los items.'),
+        variant: 'error',
+      })
     } finally {
       setUpdating(false)
       setConfirmSyncOpen(false)
@@ -183,20 +233,32 @@ export default function QuoteDetailPage() {
   const addPayment = async () => {
     const amount = parseFloat(paymentAmount)
     if (!amount || amount <= 0) {
-      alert('Ingresa un monto válido')
+      addToast({
+        title: 'Monto invalido',
+        description: 'Ingresa un monto valido para registrar el pago.',
+        variant: 'warning',
+      })
       return
     }
 
     try {
       setUpdating(true)
       await apiClient.post(`/quotes/${quoteId}/payments`, { amount })
-      alert('✅ Pago registrado')
+      addToast({
+        title: 'Pago registrado',
+        description: 'El pago se registro correctamente.',
+        variant: 'success',
+      })
       setPaymentAmount('')
       setShowPaymentModal(false)
       await loadQuote()
     } catch (error: unknown) {
       console.error('Error adding payment:', error)
-      alert(`Error al registrar pago: ${getErrorMessage(error, 'Error desconocido')}`)
+      addToast({
+        title: 'Error al registrar pago',
+        description: getErrorMessage(error, 'No se pudo registrar el pago.'),
+        variant: 'error',
+      })
     } finally {
       setUpdating(false)
     }

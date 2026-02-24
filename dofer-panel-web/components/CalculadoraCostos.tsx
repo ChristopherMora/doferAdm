@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
 import STLUploader from './STLUploader'
 import type { STLMetrics } from '@/lib/stlParser'
+import { useToast } from '@/components/ui/toast'
 
 interface Material {
   id: string
@@ -37,6 +38,7 @@ interface CalculadoraCostosProps {
 }
 
 export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosProps) {
+  const { addToast } = useToast()
   const [settings, setSettings] = useState<CostSettings | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [selectedMaterial, setSelectedMaterial] = useState<string>('PLA')
@@ -74,7 +76,11 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
 
   const calculateCost = async () => {
     if (!weightGrams || !printTimeHours || !quantity) {
-      alert('Por favor completa peso, tiempo y cantidad')
+      addToast({
+        title: 'Datos incompletos',
+        description: 'Por favor completa peso, tiempo y cantidad.',
+        variant: 'warning',
+      })
       return
     }
 
@@ -92,7 +98,11 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
       }
     } catch (error) {
       console.error('Error calculating cost:', error)
-      alert('Error al calcular costos')
+      addToast({
+        title: 'Error al calcular',
+        description: 'No se pudieron calcular los costos.',
+        variant: 'error',
+      })
     } finally {
       setLoading(false)
     }

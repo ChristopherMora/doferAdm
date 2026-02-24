@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api'
 import { OrderItem, OrderPayment, Order as OrderType } from '@/types'
 import { getErrorMessage } from '@/lib/errors'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
+import { useToast } from '@/components/ui/toast'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
@@ -27,6 +28,7 @@ interface HistoryEntry {
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { addToast } = useToast()
   const [order, setOrder] = useState<OrderType | null>(null)
   const [items, setItems] = useState<OrderItem[]>([])
   const [payments, setPayments] = useState<OrderPayment[]>([])
@@ -94,13 +96,21 @@ export default function OrderDetailPage() {
       ))
     } catch (err: unknown) {
       console.error('Error updating item status:', err)
-      alert('Error al actualizar el estado del item')
+      addToast({
+        title: 'Error al actualizar item',
+        description: getErrorMessage(err, 'No se pudo actualizar el estado del item.'),
+        variant: 'error',
+      })
     }
   }
 
   const handleAddItem = async () => {
     if (!newItem.product_name || newItem.quantity <= 0 || newItem.unit_price <= 0) {
-      alert('Por favor completa todos los campos')
+      addToast({
+        title: 'Campos incompletos',
+        description: 'Por favor completa todos los campos del item.',
+        variant: 'warning',
+      })
       return
     }
 
@@ -113,7 +123,11 @@ export default function OrderDetailPage() {
       await loadOrder()
     } catch (err: unknown) {
       console.error('Error adding item:', err)
-      alert('Error al agregar el item')
+      addToast({
+        title: 'Error al agregar item',
+        description: getErrorMessage(err, 'No se pudo agregar el item.'),
+        variant: 'error',
+      })
     }
   }
 
@@ -130,7 +144,11 @@ export default function OrderDetailPage() {
       await loadOrder()
     } catch (err: unknown) {
       console.error('Error deleting item:', err)
-      alert('Error al eliminar el item')
+      addToast({
+        title: 'Error al eliminar item',
+        description: getErrorMessage(err, 'No se pudo eliminar el item.'),
+        variant: 'error',
+      })
     } finally {
       setPendingDeleteItemID(null)
     }
@@ -138,7 +156,11 @@ export default function OrderDetailPage() {
 
   const handleAddPayment = async () => {
     if (newPayment.amount <= 0) {
-      alert('El monto debe ser mayor a 0')
+      addToast({
+        title: 'Monto invalido',
+        description: 'El monto debe ser mayor a 0.',
+        variant: 'warning',
+      })
       return
     }
 
@@ -155,7 +177,11 @@ export default function OrderDetailPage() {
       await loadOrder()
     } catch (err: unknown) {
       console.error('Error adding payment:', err)
-      alert('Error al agregar el pago')
+      addToast({
+        title: 'Error al agregar pago',
+        description: getErrorMessage(err, 'No se pudo registrar el pago.'),
+        variant: 'error',
+      })
     }
   }
 
@@ -172,7 +198,11 @@ export default function OrderDetailPage() {
       await loadOrder()
     } catch (err: unknown) {
       console.error('Error deleting payment:', err)
-      alert('Error al eliminar el pago')
+      addToast({
+        title: 'Error al eliminar pago',
+        description: getErrorMessage(err, 'No se pudo eliminar el pago.'),
+        variant: 'error',
+      })
     } finally {
       setPendingDeletePaymentID(null)
     }
@@ -209,6 +239,30 @@ export default function OrderDetailPage() {
 
   const getTotalItems = () => {
     return items.reduce((sum, item) => sum + item.total, 0)
+  }
+
+  const getHistoryMeta = (changeType: string) => {
+    switch (changeType) {
+      case 'status_change':
+        return { icon: '📊', title: 'Cambio de estado' }
+      case 'bulk_status_change':
+        return { icon: '📚', title: 'Cambio masivo de estado' }
+      case 'priority_change':
+        return { icon: '⚡', title: 'Cambio de prioridad' }
+      case 'bulk_priority_change':
+        return { icon: '🚀', title: 'Cambio masivo de prioridad' }
+      case 'assignment':
+        return { icon: '👤', title: 'Asignacion' }
+      default:
+        return { icon: '📝', title: 'Cambio registrado' }
+    }
+  }
+
+  const formatChangedBy = (changedBy: string) => {
+    const [actor, batch] = changedBy.split('|batch:')
+    const normalizedActor = actor?.trim() || 'sistema'
+    if (!batch) return normalizedActor
+    return `${normalizedActor} (lote ${batch.slice(0, 8)})`
   }
 
   const handleGeneratePDF = () => {
@@ -357,14 +411,18 @@ export default function OrderDetailPage() {
                     const updatedOrder = await apiClient.post<OrderType>(`/orders/${params.id}/recalculate`)
                     console.log('Orden actualizada recibida:', updatedOrder)
                     setOrder(updatedOrder)
-                    const msg = `✅ Totales recalculados:\n\n` +
-                      `Monto Total: ${formatCurrency(updatedOrder.amount)}\n` +
-                      `Pagado: ${formatCurrency(updatedOrder.amount_paid)}\n` +
-                      `Balance: ${formatCurrency(updatedOrder.balance)}`
-                    alert(msg)
+                    addToast({
+                      title: 'Totales recalculados',
+                      description: `Total ${formatCurrency(updatedOrder.amount)} | Pagado ${formatCurrency(updatedOrder.amount_paid)} | Balance ${formatCurrency(updatedOrder.balance)}.`,
+                      variant: 'success',
+                    })
                   } catch (err: unknown) {
                     console.error('Error completo al recalcular:', err)
-                    alert(`❌ Error al recalcular totales:\n${getErrorMessage(err, 'Error desconocido')}`)
+                    addToast({
+                      title: 'Error al recalcular',
+                      description: getErrorMessage(err, 'No se pudieron recalcular los totales.'),
+                      variant: 'error',
+                    })
                   }
                 }}
                 className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
@@ -817,13 +875,13 @@ export default function OrderDetailPage() {
               <div key={entry.id} className="flex gap-4 pb-4 border-b last:border-b-0">
                 <div className="flex-shrink-0">
                   <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                    {entry.change_type === 'status_change' ? '📊' : '👤'}
+                    {getHistoryMeta(entry.change_type).icon}
                   </div>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-gray-900">
-                      {entry.change_type === 'status_change' ? 'Cambio de estado' : 'Asignación'}
+                      {getHistoryMeta(entry.change_type).title}
                     </p>
                     <span className="text-sm text-gray-500">
                       {new Date(entry.created_at).toLocaleString('es-MX', {
@@ -836,7 +894,7 @@ export default function OrderDetailPage() {
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    <span className="font-semibold">{entry.changed_by}</span> cambió{' '}
+                    <span className="font-semibold">{formatChangedBy(entry.changed_by)}</span> cambió{' '}
                     <span className="text-gray-900">{entry.field_name}</span> de{' '}
                     <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{entry.old_value || 'vacío'}</span>
                     {' a '}

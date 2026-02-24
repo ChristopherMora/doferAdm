@@ -11,29 +11,31 @@ import (
 )
 
 type OrderHandler struct {
-	createHandler            *app.CreateOrderHandler
-	getHandler               *app.GetOrderHandler
-	listHandler              *app.ListOrdersHandler
-	updateStatusHandler      *app.UpdateOrderStatusHandler
-	updatePriorityHandler    *app.UpdateOrderPriorityHandler
-	assignHandler            *app.AssignOrderHandler
-	historyHandler           *app.GetOrderHistoryHandler
-	statsHandler             *app.GetOrderStatsHandler
-	searchHandler            *app.SearchOrdersHandler
-	startTimerHandler        *app.StartTimerHandler
-	pauseTimerHandler        *app.PauseTimerHandler
-	stopTimerHandler         *app.StopTimerHandler
-	getTimerHandler          *app.GetTimerHandler
-	updateEstimatedHandler   *app.UpdateEstimatedTimeHandler
-	operatorStatsHandler     *app.GetOperatorStatsHandler
-	getItemsHandler          *app.GetOrderItemsHandler
-	updateItemStatusHandler  *app.UpdateOrderItemStatusHandler
-	addItemHandler           *app.AddOrderItemHandler
-	deleteItemHandler        *app.DeleteOrderItemHandler
-	addPaymentHandler        *app.AddOrderPaymentHandler
-	getPaymentsHandler       *app.GetOrderPaymentsHandler
-	deletePaymentHandler     *app.DeleteOrderPaymentHandler
-	recalculateTotalsHandler *app.RecalculateOrderTotalsHandler
+	createHandler             *app.CreateOrderHandler
+	getHandler                *app.GetOrderHandler
+	listHandler               *app.ListOrdersHandler
+	updateStatusHandler       *app.UpdateOrderStatusHandler
+	updatePriorityHandler     *app.UpdateOrderPriorityHandler
+	bulkUpdateStatusHandler   *app.BulkUpdateOrderStatusHandler
+	bulkUpdatePriorityHandler *app.BulkUpdateOrderPriorityHandler
+	assignHandler             *app.AssignOrderHandler
+	historyHandler            *app.GetOrderHistoryHandler
+	statsHandler              *app.GetOrderStatsHandler
+	searchHandler             *app.SearchOrdersHandler
+	startTimerHandler         *app.StartTimerHandler
+	pauseTimerHandler         *app.PauseTimerHandler
+	stopTimerHandler          *app.StopTimerHandler
+	getTimerHandler           *app.GetTimerHandler
+	updateEstimatedHandler    *app.UpdateEstimatedTimeHandler
+	operatorStatsHandler      *app.GetOperatorStatsHandler
+	getItemsHandler           *app.GetOrderItemsHandler
+	updateItemStatusHandler   *app.UpdateOrderItemStatusHandler
+	addItemHandler            *app.AddOrderItemHandler
+	deleteItemHandler         *app.DeleteOrderItemHandler
+	addPaymentHandler         *app.AddOrderPaymentHandler
+	getPaymentsHandler        *app.GetOrderPaymentsHandler
+	deletePaymentHandler      *app.DeleteOrderPaymentHandler
+	recalculateTotalsHandler  *app.RecalculateOrderTotalsHandler
 }
 
 func NewOrderHandler(
@@ -42,6 +44,8 @@ func NewOrderHandler(
 	listHandler *app.ListOrdersHandler,
 	updateStatusHandler *app.UpdateOrderStatusHandler,
 	updatePriorityHandler *app.UpdateOrderPriorityHandler,
+	bulkUpdateStatusHandler *app.BulkUpdateOrderStatusHandler,
+	bulkUpdatePriorityHandler *app.BulkUpdateOrderPriorityHandler,
 	assignHandler *app.AssignOrderHandler,
 	historyHandler *app.GetOrderHistoryHandler,
 	statsHandler *app.GetOrderStatsHandler,
@@ -62,29 +66,31 @@ func NewOrderHandler(
 	recalculateTotalsHandler *app.RecalculateOrderTotalsHandler,
 ) *OrderHandler {
 	return &OrderHandler{
-		createHandler:            createHandler,
-		getHandler:               getHandler,
-		listHandler:              listHandler,
-		updateStatusHandler:      updateStatusHandler,
-		updatePriorityHandler:    updatePriorityHandler,
-		assignHandler:            assignHandler,
-		historyHandler:           historyHandler,
-		statsHandler:             statsHandler,
-		searchHandler:            searchHandler,
-		startTimerHandler:        startTimerHandler,
-		pauseTimerHandler:        pauseTimerHandler,
-		stopTimerHandler:         stopTimerHandler,
-		getTimerHandler:          getTimerHandler,
-		updateEstimatedHandler:   updateEstimatedHandler,
-		operatorStatsHandler:     operatorStatsHandler,
-		getItemsHandler:          getItemsHandler,
-		updateItemStatusHandler:  updateItemStatusHandler,
-		addItemHandler:           addItemHandler,
-		deleteItemHandler:        deleteItemHandler,
-		addPaymentHandler:        addPaymentHandler,
-		deletePaymentHandler:     deletePaymentHandler,
-		getPaymentsHandler:       getPaymentsHandler,
-		recalculateTotalsHandler: recalculateTotalsHandler,
+		createHandler:             createHandler,
+		getHandler:                getHandler,
+		listHandler:               listHandler,
+		updateStatusHandler:       updateStatusHandler,
+		updatePriorityHandler:     updatePriorityHandler,
+		bulkUpdateStatusHandler:   bulkUpdateStatusHandler,
+		bulkUpdatePriorityHandler: bulkUpdatePriorityHandler,
+		assignHandler:             assignHandler,
+		historyHandler:            historyHandler,
+		statsHandler:              statsHandler,
+		searchHandler:             searchHandler,
+		startTimerHandler:         startTimerHandler,
+		pauseTimerHandler:         pauseTimerHandler,
+		stopTimerHandler:          stopTimerHandler,
+		getTimerHandler:           getTimerHandler,
+		updateEstimatedHandler:    updateEstimatedHandler,
+		operatorStatsHandler:      operatorStatsHandler,
+		getItemsHandler:           getItemsHandler,
+		updateItemStatusHandler:   updateItemStatusHandler,
+		addItemHandler:            addItemHandler,
+		deleteItemHandler:         deleteItemHandler,
+		addPaymentHandler:         addPaymentHandler,
+		deletePaymentHandler:      deletePaymentHandler,
+		getPaymentsHandler:        getPaymentsHandler,
+		recalculateTotalsHandler:  recalculateTotalsHandler,
 	}
 }
 
@@ -280,6 +286,16 @@ type UpdatePriorityRequest struct {
 	Priority string `json:"priority"`
 }
 
+type BulkUpdateStatusRequest struct {
+	OrderIDs []string `json:"order_ids"`
+	Status   string   `json:"status"`
+}
+
+type BulkUpdatePriorityRequest struct {
+	OrderIDs []string `json:"order_ids"`
+	Priority string   `json:"priority"`
+}
+
 func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
 
@@ -341,6 +357,58 @@ func (h *OrderHandler) UpdateOrderPriority(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *OrderHandler) BulkUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
+	var req BulkUpdateStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	changedBy := "admin"
+	if userID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		changedBy = userID
+	}
+
+	result, err := h.bulkUpdateStatusHandler.Handle(r.Context(), app.BulkUpdateOrderStatusCommand{
+		OrderIDs:  req.OrderIDs,
+		NewStatus: req.Status,
+		ChangedBy: changedBy,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (h *OrderHandler) BulkUpdateOrderPriority(w http.ResponseWriter, r *http.Request) {
+	var req BulkUpdatePriorityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	changedBy := "admin"
+	if userID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		changedBy = userID
+	}
+
+	result, err := h.bulkUpdatePriorityHandler.Handle(r.Context(), app.BulkUpdateOrderPriorityCommand{
+		OrderIDs:    req.OrderIDs,
+		NewPriority: req.Priority,
+		ChangedBy:   changedBy,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 type AssignOrderRequest struct {

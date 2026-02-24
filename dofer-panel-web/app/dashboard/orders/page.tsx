@@ -32,6 +32,18 @@ interface Order {
   delivery_deadline?: string
 }
 
+interface BulkUpdateResponse {
+  batch_id: string
+  requested: number
+  updated: number
+  skipped: number
+  failed: number
+  errors?: Array<{
+    order_id: string
+    error: string
+  }>
+}
+
 const passthroughImageLoader = ({ src }: ImageLoaderProps) => src
 const SAVED_ORDER_VIEWS_KEY = 'dofer_orders_saved_views_v1'
 
@@ -400,24 +412,23 @@ export default function OrdersPage() {
 
     try {
       setBulkProcessing(true)
-      const results = await Promise.allSettled(
-        selectedOrderIDs.map((orderID) => apiClient.patch(`/orders/${orderID}/status`, { status: bulkStatus })),
-      )
-      const successCount = results.filter((result) => result.status === 'fulfilled').length
-      const failedCount = results.length - successCount
+      const result = await apiClient.post<BulkUpdateResponse>('/orders/bulk/status', {
+        order_ids: selectedOrderIDs,
+        status: bulkStatus,
+      })
 
-      if (successCount > 0) {
+      if (result.updated > 0) {
         await loadOrders()
-        setSelectedOrderIDs([])
       }
+      setSelectedOrderIDs([])
 
       addToast({
         title: 'Actualizacion masiva completada',
         description:
-          failedCount === 0
-            ? `${successCount} ordenes actualizadas a ${bulkStatus}.`
-            : `${successCount} actualizadas, ${failedCount} con error.`,
-        variant: failedCount === 0 ? 'success' : 'warning',
+          result.failed === 0
+            ? `${result.updated} ordenes actualizadas a ${bulkStatus}${result.skipped > 0 ? ` (${result.skipped} sin cambios)` : ''}.`
+            : `${result.updated} actualizadas, ${result.failed} con error y ${result.skipped} sin cambios.`,
+        variant: result.failed === 0 ? 'success' : 'warning',
       })
     } catch {
       addToast({
@@ -435,24 +446,23 @@ export default function OrdersPage() {
 
     try {
       setBulkProcessing(true)
-      const results = await Promise.allSettled(
-        selectedOrderIDs.map((orderID) => apiClient.patch(`/orders/${orderID}/priority`, { priority: bulkPriority })),
-      )
-      const successCount = results.filter((result) => result.status === 'fulfilled').length
-      const failedCount = results.length - successCount
+      const result = await apiClient.post<BulkUpdateResponse>('/orders/bulk/priority', {
+        order_ids: selectedOrderIDs,
+        priority: bulkPriority,
+      })
 
-      if (successCount > 0) {
+      if (result.updated > 0) {
         await loadOrders()
-        setSelectedOrderIDs([])
       }
+      setSelectedOrderIDs([])
 
       addToast({
         title: 'Prioridad masiva completada',
         description:
-          failedCount === 0
-            ? `${successCount} ordenes actualizadas a prioridad ${bulkPriority}.`
-            : `${successCount} actualizadas, ${failedCount} con error.`,
-        variant: failedCount === 0 ? 'success' : 'warning',
+          result.failed === 0
+            ? `${result.updated} ordenes actualizadas a prioridad ${bulkPriority}${result.skipped > 0 ? ` (${result.skipped} sin cambios)` : ''}.`
+            : `${result.updated} actualizadas, ${result.failed} con error y ${result.skipped} sin cambios.`,
+        variant: result.failed === 0 ? 'success' : 'warning',
       })
     } catch {
       addToast({

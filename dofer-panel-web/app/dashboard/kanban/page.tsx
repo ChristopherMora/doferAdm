@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { RefreshCw, User, Package, GripVertical } from 'lucide-react'
 import { Order } from '@/types'
 import {
@@ -89,6 +90,7 @@ function OrderCard({ order, isDragging, isDragOverlay }: { order: Order; isDragg
 }
 
 export default function KanbanPage() {
+  const { addToast } = useToast()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
@@ -166,7 +168,11 @@ export default function KanbanPage() {
       setOrders(orders.map(o => 
         o.id === orderId ? { ...o, status: order.status } : o
       ))
-      alert('❌ Error al actualizar el estado. Intenta de nuevo.')
+      addToast({
+        title: 'Error al actualizar estado',
+        description: 'No se pudo actualizar la orden. Se revirtio el cambio.',
+        variant: 'error',
+      })
     } finally {
       setIsUpdating(false)
     }
