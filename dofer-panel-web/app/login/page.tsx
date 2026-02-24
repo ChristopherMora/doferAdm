@@ -17,16 +17,6 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      // MODO DE PRUEBA: Credenciales temporales
-      if (email === 'admin@test.com' && password === 'test123') {
-        // Guardar token de prueba en localStorage y cookie
-        localStorage.setItem('test-token', 'test-auth-token')
-        // Crear cookie de sesión para el middleware
-        document.cookie = 'sb-localhost-auth-token=test-auth-token; path=/; max-age=86400'
-        router.push('/dashboard')
-        return
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -35,6 +25,8 @@ export default function LoginPage() {
       if (error) throw error
 
       if (data.session) {
+        // Guardar token en cookie para que el middleware pueda validar la sesión
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`
         router.push('/dashboard')
       }
     } catch (err: any) {
@@ -102,11 +94,7 @@ export default function LoginPage() {
             {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
           </button>
 
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-xs text-blue-800 font-medium mb-1">Credenciales de prueba:</p>
-            <p className="text-xs text-blue-600">📧 admin@test.com</p>
-            <p className="text-xs text-blue-600">🔒 test123</p>
-          </div>
+
         </form>
 
         <div className="mt-6 text-center">

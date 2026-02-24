@@ -23,7 +23,9 @@ export function middleware(request: NextRequest) {
 
   // Check for session token (Supabase)
   const token = request.cookies.get('sb-access-token')?.value ||
-                request.cookies.get('sb-localhost-auth-token')?.value
+                request.cookies.get('sb-localhost-auth-token')?.value ||
+                // Supabase JS v2 stores session in cookies with project ref
+                [...request.cookies.getAll()].find(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'))?.value
 
   // Redirect to login if accessing protected route without token
   if (isProtectedRoute && !token) {
