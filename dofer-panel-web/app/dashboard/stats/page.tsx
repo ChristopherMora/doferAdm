@@ -1,6 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import EmptyState from '@/components/dashboard/EmptyState'
+import LoadingState from '@/components/dashboard/LoadingState'
+import PageHeader from '@/components/dashboard/PageHeader'
+import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -118,32 +122,22 @@ export default function StatsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-        <p className="text-sm text-muted-foreground mt-3 ml-3">Cargando estadísticas...</p>
-      </div>
-    )
+    return <LoadingState label="Cargando estadisticas..." />
   }
 
   if (error) {
     return (
-      <Card className="border-destructive">
-        <CardContent className="py-6">
+      <PanelCard className="border-destructive">
+        <CardContent className="py-2 px-0">
           <p className="text-sm text-destructive">{error}</p>
         </CardContent>
-      </Card>
+      </PanelCard>
     )
   }
 
   if (!stats) {
     return (
-      <Card>
-        <CardContent className="py-16 text-center">
-          <Target className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">No hay estadísticas disponibles</p>
-        </CardContent>
-      </Card>
+      <EmptyState title="No hay estadisticas disponibles" description="Aun no hay datos para mostrar." />
     )
   }
 
@@ -157,15 +151,23 @@ export default function StatsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">📊 Estadísticas del Negocio</h1>
-        <p className="text-sm text-muted-foreground mt-1">Análisis general de órdenes y rendimiento</p>
-      </div>
+      <PageHeader
+        title="Estadisticas del Negocio"
+        badge="Analitica"
+        description="Analisis general de ordenes, ingresos y rendimiento operativo."
+        actions={
+          <button
+            onClick={fetchStats}
+            className="px-4 py-2 bg-white/15 text-white rounded-xl hover:bg-white/25"
+          >
+            Actualizar
+          </button>
+        }
+      />
 
       {/* Métricas principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Órdenes</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
@@ -178,7 +180,7 @@ export default function StatsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Ingresos Realizados</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -191,7 +193,7 @@ export default function StatsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Pendiente de Cobro</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
@@ -204,7 +206,7 @@ export default function StatsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Tasa de Completado</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
@@ -219,7 +221,7 @@ export default function StatsPage() {
       </div>
 
       {/* Órdenes por estado */}
-      <Card>
+      <Card className="panel-surface rounded-xl border-border/70 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
@@ -248,7 +250,7 @@ export default function StatsPage() {
       {/* Gráfica semanal y plataformas */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Órdenes por semana */}
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5" />
@@ -276,7 +278,7 @@ export default function StatsPage() {
         </Card>
 
         {/* Órdenes por plataforma */}
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
@@ -306,7 +308,7 @@ export default function StatsPage() {
 
       {/* Métricas adicionales */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Promedio Diario</CardTitle>
             <Target className="h-4 w-4 text-muted-foreground" />
@@ -317,7 +319,7 @@ export default function StatsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Urgentes</CardTitle>
             <AlertCircle className="h-4 w-4 text-destructive" />
@@ -328,7 +330,7 @@ export default function StatsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="panel-surface rounded-xl border-border/70 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Completadas Hoy</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-green-600" />

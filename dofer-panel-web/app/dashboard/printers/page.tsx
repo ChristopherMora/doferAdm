@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import EmptyState from '@/components/dashboard/EmptyState'
+import LoadingState from '@/components/dashboard/LoadingState'
+import PageHeader from '@/components/dashboard/PageHeader'
+import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 
@@ -248,26 +252,24 @@ export default function PrintersPage() {
   }
 
   if (loading) {
-    return <div className="p-8">Cargando...</div>
+    return <LoadingState label="Cargando impresoras..." />
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Impresoras y Auto-Asignación</h1>
-          <p className="text-muted-foreground mt-1">
-            CRUD de impresoras, cola activa y asignación persistente en backend.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowCreateForm((prev) => !prev)}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
-        >
-          {showCreateForm ? 'Cancelar' : '+ Nueva Impresora'}
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Impresoras y Auto-Asignacion"
+        badge="Produccion"
+        description="CRUD de impresoras, cola activa y auto-asignacion persistente en backend."
+        actions={
+          <button
+            onClick={() => setShowCreateForm((prev) => !prev)}
+            className="px-4 py-2 bg-white/15 text-white rounded-xl hover:bg-white/25"
+          >
+            {showCreateForm ? 'Cancelar' : '+ Nueva Impresora'}
+          </button>
+        }
+      />
 
       {apiError && (
         <div className="p-3 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm">
@@ -276,13 +278,13 @@ export default function PrintersPage() {
       )}
 
       {showCreateForm && (
-        <form onSubmit={handleCreatePrinter} className="bg-card border rounded-lg p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+        <form onSubmit={handleCreatePrinter} className="panel-surface rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
           <input
             type="text"
             value={createForm.name}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
             placeholder="Nombre"
-            className="px-3 py-2 border rounded-lg"
+            className="px-3 py-2 border rounded-xl bg-background"
             required
           />
           <input
@@ -290,19 +292,19 @@ export default function PrintersPage() {
             value={createForm.model}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, model: e.target.value }))}
             placeholder="Modelo"
-            className="px-3 py-2 border rounded-lg"
+            className="px-3 py-2 border rounded-xl bg-background"
           />
           <input
             type="text"
             value={createForm.material}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, material: e.target.value }))}
             placeholder="Materiales (PLA,PETG)"
-            className="px-3 py-2 border rounded-lg"
+            className="px-3 py-2 border rounded-xl bg-background"
           />
           <select
             value={createForm.status}
             onChange={(e) => setCreateForm((prev) => ({ ...prev, status: e.target.value as PrinterStatus }))}
-            className="px-3 py-2 border rounded-lg"
+            className="px-3 py-2 border rounded-xl bg-background"
           >
             <option value="available">Disponible</option>
             <option value="busy">Ocupada</option>
@@ -312,7 +314,7 @@ export default function PrintersPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-60"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-60"
           >
             Guardar
           </button>
@@ -327,38 +329,38 @@ export default function PrintersPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section>
+        <PanelCard>
           <h2 className="text-xl font-bold mb-4">Impresoras</h2>
           <div className="space-y-3">
             {printers.map((printer) => {
               const isEditing = editingPrinterID === printer.id
 
               return (
-                <div key={printer.id} className="bg-card border rounded-lg p-4 space-y-3">
+                <div key={printer.id} className="rounded-xl border border-border/70 bg-background/70 p-4 space-y-3">
                   {isEditing ? (
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
                       <input
                         type="text"
                         value={editForm.name}
                         onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
-                        className="px-3 py-2 border rounded-lg"
+                        className="px-3 py-2 border rounded-xl bg-background"
                       />
                       <input
                         type="text"
                         value={editForm.model}
                         onChange={(e) => setEditForm((prev) => ({ ...prev, model: e.target.value }))}
-                        className="px-3 py-2 border rounded-lg"
+                        className="px-3 py-2 border rounded-xl bg-background"
                       />
                       <input
                         type="text"
                         value={editForm.material}
                         onChange={(e) => setEditForm((prev) => ({ ...prev, material: e.target.value }))}
-                        className="px-3 py-2 border rounded-lg"
+                        className="px-3 py-2 border rounded-xl bg-background"
                       />
                       <select
                         value={editForm.status}
                         onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value as PrinterStatus }))}
-                        className="px-3 py-2 border rounded-lg"
+                        className="px-3 py-2 border rounded-xl bg-background"
                       >
                         <option value="available">Disponible</option>
                         <option value="busy">Ocupada</option>
@@ -368,14 +370,14 @@ export default function PrintersPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleSaveEdit(printer.id)}
-                          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                          className="px-3 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700"
                           disabled={submitting}
                         >
                           Guardar
                         </button>
                         <button
                           onClick={cancelEdit}
-                          className="px-3 py-2 border rounded-lg hover:bg-accent"
+                          className="px-3 py-2 border rounded-xl hover:bg-accent"
                         >
                           Cancelar
                         </button>
@@ -399,7 +401,7 @@ export default function PrintersPage() {
                       </div>
 
                       {printer.current_job && (
-                        <div className="p-3 bg-muted/40 border rounded-lg text-sm space-y-1">
+                        <div className="p-3 bg-muted/40 border rounded-xl text-sm space-y-1">
                           <p>
                             Trabajo actual: <strong>#{printer.current_job.order_id.slice(0, 8)}</strong>
                           </p>
@@ -456,18 +458,16 @@ export default function PrintersPage() {
             })}
 
             {printers.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground border rounded-lg">
-                No hay impresoras registradas
-              </div>
+              <EmptyState title="No hay impresoras registradas" description="Agrega una impresora para iniciar la asignacion." />
             )}
           </div>
-        </section>
+        </PanelCard>
 
-        <section>
+        <PanelCard>
           <h2 className="text-xl font-bold mb-4">Órdenes Pendientes</h2>
           <div className="space-y-3">
             {pendingOrders.map((order) => (
-              <div key={order.id} className="bg-card border rounded-lg p-4 space-y-3">
+              <div key={order.id} className="rounded-xl border border-border/70 bg-background/70 p-4 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-bold">Orden #{order.id.slice(0, 8)}</h3>
@@ -496,12 +496,13 @@ export default function PrintersPage() {
             ))}
 
             {pendingOrders.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground border rounded-lg">
-                No hay órdenes pendientes por asignar
-              </div>
+              <EmptyState
+                title="No hay ordenes pendientes por asignar"
+                description="Cuando exista una orden nueva aparecera aqui."
+              />
             )}
           </div>
-        </section>
+        </PanelCard>
       </div>
     </div>
   )
@@ -577,7 +578,7 @@ function statusTextClass(status: string): string {
 
 function StatCard({ label, value, valueClass }: { label: string; value: number; valueClass?: string }) {
   return (
-    <div className="bg-card border rounded-lg p-4">
+    <div className="panel-surface rounded-xl p-4">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className={`text-2xl font-bold ${valueClass || ''}`}>{value}</div>
     </div>

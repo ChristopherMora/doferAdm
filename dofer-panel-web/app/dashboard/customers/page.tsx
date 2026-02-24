@@ -1,6 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import EmptyState from '@/components/dashboard/EmptyState'
+import LoadingState from '@/components/dashboard/LoadingState'
+import PageHeader from '@/components/dashboard/PageHeader'
+import PanelCard from '@/components/dashboard/PanelCard'
+import TableShell from '@/components/dashboard/TableShell'
 import { apiClient } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import Link from 'next/link'
@@ -160,50 +165,58 @@ export default function CustomersPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Cargando clientes...</p>
-        </div>
-      </div>
-    )
+    return <LoadingState label="Cargando clientes..." />
   }
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Clientes"
+        badge="CRM"
+        description="Gestiona clientes, segmentos y valor comercial con una vista central."
+        actions={
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-4 py-2 bg-white/15 text-white rounded-xl hover:bg-white/25 flex items-center gap-2"
+          >
+            <span>+</span>
+            <span>Nuevo Cliente</span>
+          </button>
+        }
+      />
+
       {/* Header con Stats */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <div className="panel-surface rounded-xl p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <span>👥</span>
               <span className="text-sm">Total Clientes</span>
             </div>
             <p className="text-2xl font-bold">{stats.total_customers}</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <div className="panel-surface rounded-xl p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <span>✅</span>
               <span className="text-sm">Activos</span>
             </div>
             <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.active_customers}</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <div className="panel-surface rounded-xl p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <span>👑</span>
               <span className="text-sm">VIP</span>
             </div>
             <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.vip_customers}</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <div className="panel-surface rounded-xl p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <span>💰</span>
               <span className="text-sm">Valor Promedio</span>
             </div>
             <p className="text-2xl font-bold">${stats.avg_lifetime_value.toFixed(2)}</p>
           </div>
-          <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <div className="panel-surface rounded-xl p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <span>📊</span>
               <span className="text-sm">Ingresos Totales</span>
@@ -214,8 +227,9 @@ export default function CustomersPage() {
       )}
 
       {/* Barra de acciones */}
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-        <div className="flex-1 flex gap-4">
+      <PanelCard>
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+          <div className="flex-1 flex gap-4">
           {/* Búsqueda */}
           <form onSubmit={handleSearch} className="flex-1 max-w-md">
             <div className="flex gap-2">
@@ -239,23 +253,16 @@ export default function CustomersPage() {
           <select
             value={filterTier}
             onChange={(e) => setFilterTier(e.target.value)}
-            className="px-4 py-2 border border-border rounded-lg bg-background"
+            className="px-4 py-2 border border-border rounded-xl bg-background"
           >
             <option value="">Todos los tiers</option>
             <option value="vip">VIP</option>
             <option value="frequent">Frecuentes</option>
             <option value="regular">Regulares</option>
           </select>
+          </div>
         </div>
-
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 shadow-sm"
-        >
-          <span>➕</span>
-          <span>Nuevo Cliente</span>
-        </button>
-      </div>
+      </PanelCard>
 
       {/* Modal de formulario */}
       {showForm && (
@@ -346,9 +353,8 @@ export default function CustomersPage() {
       )}
 
       {/* Tabla de clientes */}
-      <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      <TableShell>
+        <table className="w-full">
             <thead className="bg-muted/50 border-b border-border">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium">Cliente</th>
@@ -419,14 +425,16 @@ export default function CustomersPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-          {customers.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">No se encontraron clientes</p>
-            </div>
-          )}
-        </div>
-      </div>
+        </table>
+        {customers.length === 0 && (
+          <div className="p-4">
+            <EmptyState
+              title="No se encontraron clientes"
+              description="Prueba con otra busqueda o agrega tu primer cliente."
+            />
+          </div>
+        )}
+      </TableShell>
     </div>
   )
 }

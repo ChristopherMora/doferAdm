@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image, { type ImageLoaderProps } from 'next/image'
+import EmptyState from '@/components/dashboard/EmptyState'
+import PageHeader from '@/components/dashboard/PageHeader'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -318,29 +320,27 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header operativo */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">Órdenes</h1>
-          <p className="text-base text-muted-foreground mt-2 font-medium">
-            <span className="text-2xl font-bold text-foreground">{totalOrders}</span> {totalOrders === 1 ? 'orden registrada' : 'órdenes registradas'}
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Button onClick={exportToExcel} variant="outline" size="sm" className="h-9">
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Excel
-          </Button>
-          <Button onClick={exportToPDF} variant="outline" size="sm" className="h-9">
-            <FileDown className="h-4 w-4 mr-2" />
-            PDF
-          </Button>
-          <Button onClick={() => setIsCreateModalOpen(true)} size="default" className="h-10 px-6 text-base font-semibold elevated-md hover:elevated-lg transition-all">
-            <Plus className="h-5 w-5 mr-2" />
-            Nueva Orden
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Ordenes"
+        badge="Operaciones"
+        description={`${totalOrders} ${totalOrders === 1 ? 'orden registrada' : 'ordenes registradas'} en el sistema.`}
+        actions={
+          <>
+            <Button onClick={exportToExcel} variant="outline" size="sm" className="h-9 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+            <Button onClick={exportToPDF} variant="outline" size="sm" className="h-9 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+              <FileDown className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
+            <Button onClick={() => setIsCreateModalOpen(true)} size="default" className="h-10 px-6 text-base font-semibold bg-white text-slate-900 hover:bg-slate-100">
+              <Plus className="h-5 w-5 mr-2" />
+              Nueva Orden
+            </Button>
+          </>
+        }
+      />
 
       {/* Filtros avanzados */}
       <Card className="elevated-md">
@@ -486,24 +486,24 @@ export default function OrdersPage() {
               ))}
             </div>
           ) : getFilteredOrders().length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">
-                {searchQuery || activeFiltersCount > 0
-                  ? 'No se encontraron órdenes con los filtros aplicados'
-                  : 'No hay órdenes registradas'
+            <div className="p-4">
+              <EmptyState
+                title={searchQuery || activeFiltersCount > 0 ? 'Sin resultados con filtros' : 'No hay ordenes registradas'}
+                description="Prueba limpiando filtros o creando una nueva orden."
+                icon={<Package className="h-5 w-5" />}
+                action={
+                  activeFiltersCount > 0 ? (
+                    <Button
+                      variant="outline"
+                      onClick={clearFilters}
+                      className="mt-2 gap-2"
+                    >
+                      <X className="h-4 w-4" />
+                      Limpiar filtros
+                    </Button>
+                  ) : undefined
                 }
-              </p>
-              {activeFiltersCount > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={clearFilters}
-                  className="mt-4 gap-2"
-                >
-                  <X className="h-4 w-4" />
-                  Limpiar filtros
-                </Button>
-              )}
+              />
             </div>
           ) : (
             <>

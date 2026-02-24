@@ -2,6 +2,10 @@
 
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react'
 
+import EmptyState from '@/components/dashboard/EmptyState'
+import LoadingState from '@/components/dashboard/LoadingState'
+import PageHeader from '@/components/dashboard/PageHeader'
+import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 
@@ -180,51 +184,51 @@ export default function ProductsPage() {
   }
 
   if (loading) {
-    return <div className="p-8">Cargando productos...</div>
+    return <LoadingState label="Cargando productos..." />
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Productos</h1>
-          <p className="text-muted-foreground mt-1">
-            Catálogo operativo conectado a API (crear, editar, activar y eliminar).
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowCreateForm((prev) => !prev)}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
-        >
-          {showCreateForm ? 'Cancelar' : '+ Nuevo Producto'}
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Productos"
+        badge="Catalogo"
+        description="Catalogo operativo conectado a API para crear, editar, activar y eliminar."
+        actions={
+          <button
+            onClick={() => setShowCreateForm((prev) => !prev)}
+            className="px-4 py-2 bg-white/15 text-white rounded-xl hover:bg-white/25"
+          >
+            {showCreateForm ? 'Cancelar' : '+ Nuevo Producto'}
+          </button>
+        }
+      />
 
       {error && <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-red-800 text-sm">{error}</div>}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Buscar por SKU, nombre o material"
-          className="px-3 py-2 border rounded-lg"
-        />
-        <select
-          value={activeFilter}
-          onChange={(e) => setActiveFilter(e.target.value as 'all' | 'active' | 'inactive')}
-          className="px-3 py-2 border rounded-lg"
-        >
-          <option value="all">Todos</option>
-          <option value="active">Activos</option>
-          <option value="inactive">Inactivos</option>
-        </select>
-        <div className="text-sm text-muted-foreground self-center">Total: {filteredProducts.length}</div>
-      </div>
+      <PanelCard>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar por SKU, nombre o material"
+            className="px-3 py-2 border rounded-xl bg-background"
+          />
+          <select
+            value={activeFilter}
+            onChange={(e) => setActiveFilter(e.target.value as 'all' | 'active' | 'inactive')}
+            className="px-3 py-2 border rounded-xl bg-background"
+          >
+            <option value="all">Todos</option>
+            <option value="active">Activos</option>
+            <option value="inactive">Inactivos</option>
+          </select>
+          <div className="text-sm text-muted-foreground self-center">Total: {filteredProducts.length}</div>
+        </div>
+      </PanelCard>
 
       {showCreateForm && (
-        <form onSubmit={handleCreate} className="bg-card border rounded-lg p-4">
+        <form onSubmit={handleCreate} className="panel-surface rounded-xl p-4">
           <ProductForm form={createForm} setForm={setCreateForm} />
           <div className="mt-3">
             <button
@@ -238,12 +242,12 @@ export default function ProductsPage() {
         </form>
       )}
 
-      <div className="space-y-3">
+      <PanelCard className="space-y-3">
         {filteredProducts.map((product) => {
           const isEditing = editingID === product.id
 
           return (
-            <div key={product.id} className="bg-card border rounded-lg p-4">
+            <div key={product.id} className="rounded-xl border border-border/70 bg-background/70 p-4">
               {isEditing ? (
                 <>
                   <ProductForm form={editForm} setForm={setEditForm} />
@@ -313,11 +317,12 @@ export default function ProductsPage() {
         })}
 
         {filteredProducts.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground border rounded-lg">
-            No hay productos que coincidan con los filtros.
-          </div>
+          <EmptyState
+            title="No hay productos con esos filtros"
+            description="Ajusta la busqueda o crea un producto nuevo."
+          />
         )}
-      </div>
+      </PanelCard>
     </div>
   )
 }
