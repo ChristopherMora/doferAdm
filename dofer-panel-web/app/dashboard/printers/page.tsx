@@ -64,12 +64,21 @@ export default function PrintersPage() {
   }, [])
 
   const loadData = async () => {
+    let printersFromAPI = false
+
     try {
       const printersData = await apiClient.get<{ printers: BackendPrinter[] }>('/printers')
       const mappedPrinters = (printersData.printers || []).map(mapBackendPrinter)
       setPrinters(mappedPrinters.length > 0 ? mappedPrinters : DEFAULT_PRINTERS)
       setUsingLocalFallback(mappedPrinters.length === 0)
+      printersFromAPI = true
+    } catch (error) {
+      console.error('Error loading printers:', error)
+      setPrinters(DEFAULT_PRINTERS)
+      setUsingLocalFallback(true)
+    }
 
+    try {
       const ordersData = await apiClient.get<{ orders: BackendOrder[] }>('/orders', {
         params: { status: 'new' },
       })
@@ -83,9 +92,11 @@ export default function PrintersPage() {
       }))
       setPendingOrders(mappedOrders)
     } catch (error) {
-      console.error('Error loading data:', error)
-      setPrinters(DEFAULT_PRINTERS)
-      setUsingLocalFallback(true)
+      console.error('Error loading orders:', error)
+      setPendingOrders([])
+      if (!printersFromAPI) {
+        setUsingLocalFallback(true)
+      }
     } finally {
       setLoading(false)
     }

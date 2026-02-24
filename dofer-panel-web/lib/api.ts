@@ -63,6 +63,22 @@ function getCookieToken(name: string): string | undefined {
   return value || undefined
 }
 
+function getProjectCookieToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined
+
+  const match = document.cookie
+    .split('; ')
+    .find((entry) => {
+      const name = entry.split('=')[0]
+      return name.startsWith('sb-') && name.endsWith('-auth-token')
+    })
+
+  if (!match) return undefined
+
+  const value = decodeURIComponent(match.split('=').slice(1).join('=')).trim()
+  return value || undefined
+}
+
 function getBrowserAuthToken(): string | undefined {
   if (typeof window === 'undefined') return undefined
 
@@ -71,9 +87,15 @@ function getBrowserAuthToken(): string | undefined {
     return explicitTestToken.trim()
   }
 
-  const cookieToken = getCookieToken('sb-access-token') || getCookieToken('sb-localhost-auth-token')
+  const cookieToken =
+    getCookieToken('sb-access-token') ||
+    getCookieToken('sb-localhost-auth-token') ||
+    getProjectCookieToken()
   if (cookieToken) {
-    return cookieToken
+    const parsedCookieToken = parseSupabaseToken(cookieToken)
+    if (parsedCookieToken) {
+      return parsedCookieToken
+    }
   }
 
   for (let i = 0; i < localStorage.length; i++) {
