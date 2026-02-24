@@ -111,7 +111,7 @@ export default function KanbanPage() {
 
   useEffect(() => {
     loadOrders()
-    const interval = setInterval(loadOrders, 30000)
+    const interval = setInterval(loadOrders, 60000)
     return () => clearInterval(interval)
   }, [])
 

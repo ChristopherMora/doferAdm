@@ -110,7 +110,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadDashboardData()
-    const interval = setInterval(loadDashboardData, 30000)
+    const interval = setInterval(loadDashboardData, 60000)
     return () => clearInterval(interval)
   }, [loadDashboardData])
 

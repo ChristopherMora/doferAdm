@@ -28,7 +28,7 @@ const UserRoleKey contextKey = "user_role"
 const (
 	testAuthUserID         = "11111111-1111-1111-1111-111111111111"
 	testAuthUserRole       = "admin"
-	defaultJWKSCacheTTL    = 5 * time.Minute
+	defaultJWKSCacheTTL    = 60 * time.Minute
 	defaultJWKSHTTPTimeout = 5 * time.Second
 	jwtValidationModeHS256 = "hs256"
 	jwtValidationModeJWKS  = "jwks"

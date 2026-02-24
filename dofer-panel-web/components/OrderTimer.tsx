@@ -44,7 +44,7 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
   // Initial load and periodic refresh
   useEffect(() => {
     fetchTimerState()
-    const interval = setInterval(fetchTimerState, 5000) // Refresh every 5 seconds
+    const interval = setInterval(fetchTimerState, 30000) // Refresh every 30 seconds
     return () => clearInterval(interval)
   }, [fetchTimerState])
 
