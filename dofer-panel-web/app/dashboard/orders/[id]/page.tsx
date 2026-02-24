@@ -277,6 +277,8 @@ export default function OrderDetailPage() {
         return { icon: '🚀', title: 'Cambio masivo de prioridad' }
       case 'assignment':
         return { icon: '👤', title: 'Asignacion' }
+      case 'sla_reminder_sent':
+        return { icon: '🔔', title: 'Recordatorio SLA enviado' }
       default:
         return { icon: '📝', title: 'Cambio registrado' }
     }

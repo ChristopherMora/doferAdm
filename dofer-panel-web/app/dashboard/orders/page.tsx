@@ -44,6 +44,17 @@ interface BulkUpdateResponse {
   }>
 }
 
+interface SLARemindersResponse {
+  horizon_hours: number
+  dry_run: boolean
+  scanned: number
+  candidates: number
+  risk: number
+  overdue: number
+  notified: number
+  failed: number
+}
+
 const passthroughImageLoader = ({ src }: ImageLoaderProps) => src
 const SAVED_ORDER_VIEWS_KEY = 'dofer_orders_saved_views_v1'
 
@@ -54,6 +65,7 @@ interface SavedOrderView {
   priority: string
   platform: string
   range: string
+  sla: string
   q: string
   showFilters: boolean
 }
@@ -109,6 +121,7 @@ export default function OrdersPage() {
   const [filterPriority, setFilterPriority] = useState<string>('all')
   const [filterPlatform, setFilterPlatform] = useState<string>('all')
   const [filterDateRange, setFilterDateRange] = useState<string>('all')
+  const [filterSla, setFilterSla] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -118,6 +131,7 @@ export default function OrdersPage() {
   const [bulkStatus, setBulkStatus] = useState<string>('new')
   const [bulkPriority, setBulkPriority] = useState<string>('normal')
   const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [slaReminderProcessing, setSlaReminderProcessing] = useState(false)
   const [savedViews, setSavedViews] = useState<SavedOrderView[]>([])
   const [savingView, setSavingView] = useState(false)
   const [newViewName, setNewViewName] = useState('')
@@ -134,6 +148,7 @@ export default function OrdersPage() {
     const priority = sanitizeFilterValue(searchParams.get('priority'), ['all', 'urgent', 'normal', 'low'])
     const platform = sanitizeFilterValue(searchParams.get('platform'), ['all', 'WhatsApp', 'Instagram', 'Facebook', 'Website', 'Phone', 'Other'])
     const range = sanitizeFilterValue(searchParams.get('range'), ['all', 'today', 'week', 'month'])
+    const sla = sanitizeFilterValue(searchParams.get('sla'), ['all', 'on_time', 'risk', 'overdue', 'none', 'closed'])
     const query = searchParams.get('q') || ''
     const page = Number.parseInt(searchParams.get('page') || '1', 10)
 
@@ -141,6 +156,7 @@ export default function OrdersPage() {
     setFilterPriority(priority)
     setFilterPlatform(platform)
     setFilterDateRange(range)
+    setFilterSla(sla)
     setSearchQuery(query)
     setDebouncedSearch(query)
     setShowFilters(searchParams.get('filters') === '1')
@@ -242,6 +258,7 @@ export default function OrdersPage() {
     if (filterPriority !== 'all') params.set('priority', filterPriority)
     if (filterPlatform !== 'all') params.set('platform', filterPlatform)
     if (filterDateRange !== 'all') params.set('range', filterDateRange)
+    if (filterSla !== 'all') params.set('sla', filterSla)
     if (searchQuery.trim()) params.set('q', searchQuery.trim())
     if (currentPage > 1) params.set('page', String(currentPage))
     if (showFilters) params.set('filters', '1')
@@ -254,6 +271,7 @@ export default function OrdersPage() {
     filterDateRange,
     filterPlatform,
     filterPriority,
+    filterSla,
     filterStatus,
     filtersReady,
     pathname,
@@ -319,6 +337,15 @@ export default function OrdersPage() {
     { value: 'month', label: 'Último mes' },
   ]
 
+  const slaOptions = [
+    { value: 'all', label: 'Todos los SLA' },
+    { value: 'on_time', label: 'En tiempo' },
+    { value: 'risk', label: 'En riesgo' },
+    { value: 'overdue', label: 'Atrasadas' },
+    { value: 'none', label: 'Sin fecha' },
+    { value: 'closed', label: 'SLA cerrado' },
+  ]
+
   const getFilteredOrders = () => {
     let filtered = orders
     
@@ -347,6 +374,10 @@ export default function OrdersPage() {
         }
       })
     }
+
+    if (filterSla !== 'all') {
+      filtered = filtered.filter((order) => getOrderSlaState(order) === filterSla)
+    }
     
     return filtered
   }
@@ -356,6 +387,7 @@ export default function OrdersPage() {
     setFilterPriority('all')
     setFilterPlatform('all')
     setFilterDateRange('all')
+    setFilterSla('all')
     setSearchQuery('')
     setCurrentPage(1)
     setShowFilters(false)
@@ -386,6 +418,7 @@ export default function OrdersPage() {
       priority: filterPriority,
       platform: filterPlatform,
       range: filterDateRange,
+      sla: filterSla,
       q: searchQuery.trim(),
       showFilters,
     }
@@ -405,6 +438,7 @@ export default function OrdersPage() {
     setFilterPriority(view.priority)
     setFilterPlatform(view.platform)
     setFilterDateRange(view.range)
+    setFilterSla(view.sla || 'all')
     setSearchQuery(view.q)
     setCurrentPage(1)
     setShowFilters(view.showFilters)
@@ -562,11 +596,38 @@ export default function OrdersPage() {
     })
   }
 
+  const runSLAReminders = async (dryRun: boolean) => {
+    try {
+      setSlaReminderProcessing(true)
+      const result = await apiClient.post<SLARemindersResponse>('/orders/sla-reminders', {
+        horizon_hours: 24,
+        dry_run: dryRun,
+      })
+
+      addToast({
+        title: dryRun ? 'Vista previa SLA' : 'Recordatorios SLA ejecutados',
+        description: dryRun
+          ? `${result.candidates} candidatas (${result.risk} en riesgo, ${result.overdue} atrasadas).`
+          : `${result.notified} enviados, ${result.failed} con error (${result.risk} riesgo / ${result.overdue} atrasadas).`,
+        variant: result.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (error) {
+      addToast({
+        title: 'Error al procesar SLA',
+        description: error instanceof Error ? error.message : 'No se pudo ejecutar el proceso SLA.',
+        variant: 'error',
+      })
+    } finally {
+      setSlaReminderProcessing(false)
+    }
+  }
+
   const activeFiltersCount = [
     filterStatus !== 'all',
     filterPriority !== 'all',
     filterPlatform !== 'all',
     filterDateRange !== 'all',
+    filterSla !== 'all',
     searchQuery !== ''
   ].filter(Boolean).length
 
@@ -743,7 +804,7 @@ export default function OrdersPage() {
 
             {/* Filtros expandibles */}
             {showFilters && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 animate-in fade-in slide-in-from-top-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2 animate-in fade-in slide-in-from-top-2">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-2 block">Estado</label>
                   <select
@@ -801,6 +862,22 @@ export default function OrdersPage() {
                     className="w-full px-3 py-2 bg-background border-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer"
                   >
                     {dateRangeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">SLA</label>
+                  <select
+                    value={filterSla}
+                    onChange={(e) => setFilterSla(e.target.value)}
+                    aria-label="Filtrar por SLA"
+                    className="w-full px-3 py-2 bg-background border-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all cursor-pointer"
+                  >
+                    {slaOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -905,6 +982,29 @@ export default function OrdersPage() {
 
       <Card className="elevated-md">
         <CardContent className="py-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Semaforo SLA</p>
+              <p className="text-xs text-muted-foreground">Basado en `delivery_deadline` y estado de orden.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => runSLAReminders(true)}
+                disabled={slaReminderProcessing}
+              >
+                Previsualizar recordatorios
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => runSLAReminders(false)}
+                disabled={slaReminderProcessing}
+              >
+                Enviar recordatorios
+              </Button>
+            </div>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               <p className="text-xs uppercase tracking-wide text-emerald-700">En tiempo</p>

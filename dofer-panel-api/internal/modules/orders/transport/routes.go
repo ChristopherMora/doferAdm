@@ -17,6 +17,7 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 		r.Get("/operator-stats", handler.GetOperatorStats)
 		r.Post("/bulk/status", handler.BulkUpdateOrderStatus)
 		r.Post("/bulk/priority", handler.BulkUpdateOrderPriority)
+		r.Post("/sla-reminders", handler.SendSLAReminders)
 		r.Get("/{id}/history", handler.GetOrderHistory)
 		r.Patch("/{id}/status", handler.UpdateOrderStatus)
 		r.Patch("/{id}/priority", handler.UpdateOrderPriority)

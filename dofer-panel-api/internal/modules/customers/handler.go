@@ -27,6 +27,7 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Get("/stats", h.GetStats)
 		r.Get("/analytics", h.GetAnalytics)
 		r.Get("/search", h.Search)
+		r.Get("/{id}/profile-360", h.GetProfile360)
 		r.Get("/{id}", h.GetByID)
 		r.Post("/", h.Create)
 		r.Put("/{id}", h.Update)
@@ -36,6 +37,29 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Get("/{id}/interactions", h.GetInteractions)
 		r.Post("/{id}/interactions", h.CreateInteraction)
 	})
+}
+
+// GetProfile360 returns a consolidated customer profile with orders, quotes, payments, notes and last contact.
+func (h *Handler) GetProfile360(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "invalid customer ID", http.StatusBadRequest)
+		return
+	}
+
+	profile, err := h.repo.GetProfile360(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if profile == nil {
+		http.Error(w, "customer not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profile)
 }
 
 // GetAll retrieves all customers

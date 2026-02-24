@@ -20,6 +20,7 @@ type OrderHandler struct {
 	updatePriorityHandler     *app.UpdateOrderPriorityHandler
 	bulkUpdateStatusHandler   *app.BulkUpdateOrderStatusHandler
 	bulkUpdatePriorityHandler *app.BulkUpdateOrderPriorityHandler
+	sendSLARemindersHandler   *app.SendSLARemindersHandler
 	assignHandler             *app.AssignOrderHandler
 	historyHandler            *app.GetOrderHistoryHandler
 	statsHandler              *app.GetOrderStatsHandler
@@ -48,6 +49,7 @@ func NewOrderHandler(
 	updatePriorityHandler *app.UpdateOrderPriorityHandler,
 	bulkUpdateStatusHandler *app.BulkUpdateOrderStatusHandler,
 	bulkUpdatePriorityHandler *app.BulkUpdateOrderPriorityHandler,
+	sendSLARemindersHandler *app.SendSLARemindersHandler,
 	assignHandler *app.AssignOrderHandler,
 	historyHandler *app.GetOrderHistoryHandler,
 	statsHandler *app.GetOrderStatsHandler,
@@ -75,6 +77,7 @@ func NewOrderHandler(
 		updatePriorityHandler:     updatePriorityHandler,
 		bulkUpdateStatusHandler:   bulkUpdateStatusHandler,
 		bulkUpdatePriorityHandler: bulkUpdatePriorityHandler,
+		sendSLARemindersHandler:   sendSLARemindersHandler,
 		assignHandler:             assignHandler,
 		historyHandler:            historyHandler,
 		statsHandler:              statsHandler,
@@ -333,6 +336,11 @@ type BulkUpdatePriorityRequest struct {
 	Priority string   `json:"priority"`
 }
 
+type SendSLARemindersRequest struct {
+	HorizonHours int  `json:"horizon_hours"`
+	DryRun       bool `json:"dry_run"`
+}
+
 func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
 
@@ -441,6 +449,32 @@ func (h *OrderHandler) BulkUpdateOrderPriority(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (h *OrderHandler) SendSLAReminders(w http.ResponseWriter, r *http.Request) {
+	var req SendSLARemindersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	triggeredBy := "admin"
+	if userID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		triggeredBy = userID
+	}
+
+	result, err := h.sendSLARemindersHandler.Handle(r.Context(), app.SendSLARemindersCommand{
+		HorizonHours: req.HorizonHours,
+		DryRun:       req.DryRun,
+		TriggeredBy:  triggeredBy,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
