@@ -16,6 +16,7 @@ import (
 	ordersInfra "github.com/dofer/panel-api/internal/modules/orders/infra"
 	ordersTransport "github.com/dofer/panel-api/internal/modules/orders/transport"
 	"github.com/dofer/panel-api/internal/modules/printers"
+	"github.com/dofer/panel-api/internal/modules/products"
 	quotesApp "github.com/dofer/panel-api/internal/modules/quotes/app"
 	quotesInfra "github.com/dofer/panel-api/internal/modules/quotes/infra"
 	quotesTransport "github.com/dofer/panel-api/internal/modules/quotes/transport"
@@ -185,6 +186,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	printerRepo := printers.NewRepository(db)
 	printerHandler := printers.NewHandler(printerRepo)
 
+	// Setup products handler
+	productRepo := products.NewRepository(db)
+	productHandler := products.NewHandler(productRepo)
+
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// Ping test
@@ -201,6 +206,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		tracking.RegisterRoutes(r, trackingHandler)
 		customers.RegisterRoutes(r, customerHandler)
 		printers.RegisterRoutes(r, printerHandler)
+		products.RegisterRoutes(r, productHandler)
 	})
 
 	return r

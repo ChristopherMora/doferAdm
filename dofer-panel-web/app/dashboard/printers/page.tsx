@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { autoAssignOrder, type Printer, type Order, type AssignmentResult } from '@/lib/autoAssignment'
-import { apiClient } from '@/lib/api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
-interface BackendOrder {
-  id: string
-  priority: 'low' | 'normal' | 'high' | 'urgent' | string
-  created_at: string
+import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
+
+interface BackendPrinterCurrentJob {
+  order_id: string
+  assigned_at: string
+  estimated_completion?: string
 }
 
 interface BackendPrinter {
@@ -15,119 +16,234 @@ interface BackendPrinter {
   name: string
   model?: string
   material?: string
-  status: string
+  status: 'available' | 'busy' | 'maintenance' | 'offline' | string
+  queue_jobs?: number
+  current_job?: BackendPrinterCurrentJob
 }
 
-const DEFAULT_PRINTERS: Printer[] = [
-  {
-    id: 'printer-1',
-    name: 'Dofer FDM 01',
-    type: 'FDM',
-    status: 'available',
-    buildVolume: { width: 220, height: 250, depth: 220 },
-    materials: ['PLA', 'PETG', 'TPU'],
-    capabilities: {
-      maxLayerHeight: 0.3,
-      minLayerHeight: 0.08,
-      maxPrintSpeed: 120,
-    },
-  },
-  {
-    id: 'printer-2',
-    name: 'Dofer FDM 02',
-    type: 'FDM',
-    status: 'busy',
-    buildVolume: { width: 300, height: 300, depth: 300 },
-    materials: ['PLA', 'ABS', 'PETG'],
-    currentJob: {
-      orderId: 'job-sample-001',
-      estimatedCompletion: new Date(Date.now() + 2 * 60 * 60 * 1000),
-    },
-    capabilities: {
-      maxLayerHeight: 0.3,
-      minLayerHeight: 0.1,
-      maxPrintSpeed: 100,
-    },
-  },
-]
+interface BackendOrder {
+  id: string
+  priority: 'low' | 'normal' | 'high' | 'urgent' | string
+  created_at: string
+  product_name?: string
+}
+
+interface AutoAssignResponse {
+  assignment: {
+    assignment_id: string
+    order_id: string
+    printer_id: string
+    printer_name: string
+    queue_position: number
+    estimated_start: string
+    estimated_completion: string
+  }
+}
+
+type PrinterStatus = 'available' | 'busy' | 'maintenance' | 'offline'
+
+interface PrinterFormState {
+  name: string
+  model: string
+  material: string
+  status: PrinterStatus
+}
+
+const initialPrinterForm: PrinterFormState = {
+  name: '',
+  model: '',
+  material: 'PLA',
+  status: 'available',
+}
 
 export default function PrintersPage() {
-  const [printers, setPrinters] = useState<Printer[]>(DEFAULT_PRINTERS)
-  const [pendingOrders, setPendingOrders] = useState<Order[]>([])
+  const [printers, setPrinters] = useState<BackendPrinter[]>([])
+  const [pendingOrders, setPendingOrders] = useState<BackendOrder[]>([])
   const [loading, setLoading] = useState(true)
-  const [usingLocalFallback, setUsingLocalFallback] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [createForm, setCreateForm] = useState<PrinterFormState>(initialPrinterForm)
+  const [editingPrinterID, setEditingPrinterID] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<PrinterFormState>(initialPrinterForm)
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null)
-  const [assignmentResult, setAssignmentResult] = useState<AssignmentResult | null>(null)
+  const [assignmentMessage, setAssignmentMessage] = useState<string | null>(null)
+  const [apiError, setApiError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadData()
+  const stats = useMemo(() => {
+    const available = printers.filter((p) => p.status === 'available').length
+    const busy = printers.filter((p) => p.status === 'busy').length
+    return {
+      total: printers.length,
+      available,
+      busy,
+      pendingOrders: pendingOrders.length,
+    }
+  }, [printers, pendingOrders])
+
+  const loadPrinters = useCallback(async () => {
+    try {
+      const response = await apiClient.get<{ printers: BackendPrinter[] }>('/printers')
+      setPrinters(response.printers || [])
+    } catch (error: unknown) {
+      setApiError(`Error cargando impresoras: ${getErrorMessage(error, 'Error desconocido')}`)
+      setPrinters([])
+    }
   }, [])
 
-  const loadData = async () => {
-    let printersFromAPI = false
-
+  const loadPendingOrders = useCallback(async () => {
     try {
-      const printersData = await apiClient.get<{ printers: BackendPrinter[] }>('/printers')
-      const mappedPrinters = (printersData.printers || []).map(mapBackendPrinter)
-      setPrinters(mappedPrinters.length > 0 ? mappedPrinters : DEFAULT_PRINTERS)
-      setUsingLocalFallback(mappedPrinters.length === 0)
-      printersFromAPI = true
-    } catch (error) {
-      console.error('Error loading printers:', error)
-      setPrinters(DEFAULT_PRINTERS)
-      setUsingLocalFallback(true)
-    }
-
-    try {
-      const ordersData = await apiClient.get<{ orders: BackendOrder[] }>('/orders', {
+      const response = await apiClient.get<{ orders: BackendOrder[] }>('/orders', {
         params: { status: 'new' },
       })
-      const mappedOrders: Order[] = (ordersData.orders || []).map((order) => ({
-        id: order.id,
-        material: 'PLA',
-        priority: toPriority(order.priority),
-        dimensions: { width: 100, height: 100, depth: 100 },
-        estimatedTime: 4,
-        created_at: new Date(order.created_at),
-      }))
-      setPendingOrders(mappedOrders)
-    } catch (error) {
-      console.error('Error loading orders:', error)
+      setPendingOrders(response.orders || [])
+    } catch (error: unknown) {
+      setApiError((prev) => {
+        const message = `Error cargando órdenes: ${getErrorMessage(error, 'Error desconocido')}`
+        return prev ? `${prev} | ${message}` : message
+      })
       setPendingOrders([])
-      if (!printersFromAPI) {
-        setUsingLocalFallback(true)
-      }
+    }
+  }, [])
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setApiError(null)
+
+    await Promise.all([loadPrinters(), loadPendingOrders()])
+
+    setLoading(false)
+  }, [loadPendingOrders, loadPrinters])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const handleCreatePrinter = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setApiError(null)
+
+    try {
+      await apiClient.post('/printers', {
+        name: createForm.name,
+        model: createForm.model,
+        material: createForm.material,
+        status: createForm.status,
+      })
+
+      setCreateForm(initialPrinterForm)
+      setShowCreateForm(false)
+      await loadPrinters()
+    } catch (error: unknown) {
+      setApiError(`Error creando impresora: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
-  const handleAutoAssign = async (orderId: string) => {
-    const order = pendingOrders.find(o => o.id === orderId)
-    if (!order) return
-
-    const result = await autoAssignOrder(order, printers)
-    setAssignmentResult(result)
-    setSelectedOrder(orderId)
+  const startEdit = (printer: BackendPrinter) => {
+    setEditingPrinterID(printer.id)
+    setEditForm({
+      name: printer.name,
+      model: printer.model || '',
+      material: printer.material || 'PLA',
+      status: normalizeStatus(printer.status),
+    })
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'available': return 'bg-green-500'
-      case 'busy': return 'bg-yellow-500'
-      case 'maintenance': return 'bg-orange-500'
-      case 'offline': return 'bg-red-500'
-      default: return 'bg-gray-500'
+  const cancelEdit = () => {
+    setEditingPrinterID(null)
+    setEditForm(initialPrinterForm)
+  }
+
+  const handleSaveEdit = async (printerID: string) => {
+    setSubmitting(true)
+    setApiError(null)
+
+    try {
+      await apiClient.put(`/printers/${printerID}`, {
+        name: editForm.name,
+        model: editForm.model,
+        material: editForm.material,
+        status: editForm.status,
+      })
+      setEditingPrinterID(null)
+      await loadPrinters()
+    } catch (error: unknown) {
+      setApiError(`Error actualizando impresora: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'available': return 'Disponible'
-      case 'busy': return 'Ocupada'
-      case 'maintenance': return 'Mantenimiento'
-      case 'offline': return 'Desconectada'
-      default: return status
+  const handleDeletePrinter = async (printerID: string) => {
+    if (!confirm('¿Eliminar esta impresora?')) return
+
+    setSubmitting(true)
+    setApiError(null)
+
+    try {
+      await apiClient.delete(`/printers/${printerID}`)
+      await loadPrinters()
+    } catch (error: unknown) {
+      setApiError(`Error eliminando impresora: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleStatusChange = async (printerID: string, status: PrinterStatus) => {
+    setSubmitting(true)
+    setApiError(null)
+
+    try {
+      await apiClient.patch(`/printers/${printerID}/status`, { status })
+      await loadPrinters()
+    } catch (error: unknown) {
+      setApiError(`Error cambiando estado: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleAutoAssign = async (order: BackendOrder) => {
+    setSubmitting(true)
+    setApiError(null)
+    setSelectedOrder(order.id)
+    setAssignmentMessage(null)
+
+    try {
+      const response = await apiClient.post<AutoAssignResponse>('/printers/auto-assign', {
+        order_id: order.id,
+        material: inferOrderMaterial(order),
+        estimated_time_hours: 4,
+      })
+
+      const assignment = response.assignment
+      setAssignmentMessage(
+        `Impresora: ${assignment.printer_name} | Inicio: ${new Date(assignment.estimated_start).toLocaleString()} | Fin: ${new Date(assignment.estimated_completion).toLocaleString()}`,
+      )
+
+      await loadData()
+    } catch (error: unknown) {
+      setAssignmentMessage(null)
+      setApiError(`Error auto-asignando orden: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleCompleteAssignment = async (orderID: string) => {
+    setSubmitting(true)
+    setApiError(null)
+
+    try {
+      await apiClient.post('/printers/complete-assignment', { order_id: orderID })
+      await loadPrinters()
+    } catch (error: unknown) {
+      setApiError(`Error completando asignación: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -136,209 +252,334 @@ export default function PrintersPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-8 space-y-6">
+      <div className="flex flex-col lg:flex-row justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Impresoras y Auto-Asignación</h1>
           <p className="text-muted-foreground mt-1">
-            Gestiona tus impresoras y asigna órdenes automáticamente
+            CRUD de impresoras, cola activa y asignación persistente en backend.
           </p>
         </div>
-        <span className="text-sm text-muted-foreground">
-          {usingLocalFallback
-            ? 'Modo fallback: inventario local de impresoras'
-            : 'Inventario sincronizado con backend'}
-        </span>
+
+        <button
+          onClick={() => setShowCreateForm((prev) => !prev)}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+        >
+          {showCreateForm ? 'Cancelar' : '+ Nueva Impresora'}
+        </button>
       </div>
 
-      {/* Resumen de capacidad */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-card border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">Total Impresoras</div>
-          <div className="text-2xl font-bold">{printers.length}</div>
+      {apiError && (
+        <div className="p-3 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm">
+          {apiError}
         </div>
-        <div className="bg-card border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">Disponibles</div>
-          <div className="text-2xl font-bold text-green-600">
-            {printers.filter(p => p.status === 'available').length}
-          </div>
-        </div>
-        <div className="bg-card border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">Ocupadas</div>
-          <div className="text-2xl font-bold text-yellow-600">
-            {printers.filter(p => p.status === 'busy').length}
-          </div>
-        </div>
-        <div className="bg-card border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground">Órdenes Pendientes</div>
-          <div className="text-2xl font-bold text-blue-600">{pendingOrders.length}</div>
-        </div>
+      )}
+
+      {showCreateForm && (
+        <form onSubmit={handleCreatePrinter} className="bg-card border rounded-lg p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+          <input
+            type="text"
+            value={createForm.name}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
+            placeholder="Nombre"
+            className="px-3 py-2 border rounded-lg"
+            required
+          />
+          <input
+            type="text"
+            value={createForm.model}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, model: e.target.value }))}
+            placeholder="Modelo"
+            className="px-3 py-2 border rounded-lg"
+          />
+          <input
+            type="text"
+            value={createForm.material}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, material: e.target.value }))}
+            placeholder="Materiales (PLA,PETG)"
+            className="px-3 py-2 border rounded-lg"
+          />
+          <select
+            value={createForm.status}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, status: e.target.value as PrinterStatus }))}
+            className="px-3 py-2 border rounded-lg"
+          >
+            <option value="available">Disponible</option>
+            <option value="busy">Ocupada</option>
+            <option value="maintenance">Mantenimiento</option>
+            <option value="offline">Desconectada</option>
+          </select>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-60"
+          >
+            Guardar
+          </button>
+        </form>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard label="Total Impresoras" value={stats.total} />
+        <StatCard label="Disponibles" value={stats.available} valueClass="text-green-600" />
+        <StatCard label="Ocupadas" value={stats.busy} valueClass="text-yellow-600" />
+        <StatCard label="Órdenes Pendientes" value={stats.pendingOrders} valueClass="text-blue-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Lista de impresoras */}
-        <div>
+        <section>
           <h2 className="text-xl font-bold mb-4">Impresoras</h2>
           <div className="space-y-3">
-            {printers.map((printer) => (
-              <div key={printer.id} className="bg-card border rounded-lg p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-bold text-lg">{printer.name}</h3>
-                    <div className="text-sm text-muted-foreground">{printer.type}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-full ${getStatusColor(printer.status)}`} />
-                    <span className="text-sm">{getStatusText(printer.status)}</span>
-                  </div>
-                </div>
+            {printers.map((printer) => {
+              const isEditing = editingPrinterID === printer.id
 
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Volumen:</span>
-                    <div className="font-medium">
-                      {printer.buildVolume.width} × {printer.buildVolume.height} × {printer.buildVolume.depth} mm
+              return (
+                <div key={printer.id} className="bg-card border rounded-lg p-4 space-y-3">
+                  {isEditing ? (
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                      <input
+                        type="text"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                        className="px-3 py-2 border rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        value={editForm.model}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, model: e.target.value }))}
+                        className="px-3 py-2 border rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        value={editForm.material}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, material: e.target.value }))}
+                        className="px-3 py-2 border rounded-lg"
+                      />
+                      <select
+                        value={editForm.status}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value as PrinterStatus }))}
+                        className="px-3 py-2 border rounded-lg"
+                      >
+                        <option value="available">Disponible</option>
+                        <option value="busy">Ocupada</option>
+                        <option value="maintenance">Mantenimiento</option>
+                        <option value="offline">Desconectada</option>
+                      </select>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveEdit(printer.id)}
+                          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                          disabled={submitting}
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="px-3 py-2 border rounded-lg hover:bg-accent"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Materiales:</span>
-                    <div className="font-medium">{printer.materials.join(', ')}</div>
-                  </div>
-                </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-bold text-lg">{printer.name}</h3>
+                          <p className="text-sm text-muted-foreground">Modelo: {printer.model || 'Sin modelo'}</p>
+                          <p className="text-sm text-muted-foreground">Materiales: {printer.material || 'Sin definir'}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className={`inline-flex items-center gap-2 text-sm ${statusTextClass(printer.status)}`}>
+                            <span className={`w-2.5 h-2.5 rounded-full ${statusDotClass(printer.status)}`} />
+                            {statusLabel(printer.status)}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">En cola: {printer.queue_jobs || 0}</p>
+                        </div>
+                      </div>
 
-                {printer.currentJob && (
-                  <div className="mt-3 pt-3 border-t text-sm">
-                    <div className="text-muted-foreground">Trabajo actual:</div>
-                    <div className="font-medium">Orden #{printer.currentJob.orderId.slice(0, 8)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Completa: {new Date(printer.currentJob.estimatedCompletion).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                      {printer.current_job && (
+                        <div className="p-3 bg-muted/40 border rounded-lg text-sm space-y-1">
+                          <p>
+                            Trabajo actual: <strong>#{printer.current_job.order_id.slice(0, 8)}</strong>
+                          </p>
+                          <p>Inicio: {new Date(printer.current_job.assigned_at).toLocaleString()}</p>
+                          {printer.current_job.estimated_completion && (
+                            <p>Fin estimado: {new Date(printer.current_job.estimated_completion).toLocaleString()}</p>
+                          )}
+                          <button
+                            onClick={() => handleCompleteAssignment(printer.current_job!.order_id)}
+                            className="mt-2 px-3 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20"
+                            disabled={submitting}
+                          >
+                            Marcar trabajo como completado
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => startEdit(printer)}
+                          className="px-3 py-1 text-sm border rounded hover:bg-accent"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(printer.id, 'available')}
+                          className="px-3 py-1 text-sm border rounded hover:bg-accent"
+                        >
+                          Disponible
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(printer.id, 'maintenance')}
+                          className="px-3 py-1 text-sm border rounded hover:bg-accent"
+                        >
+                          Mantenimiento
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(printer.id, 'offline')}
+                          className="px-3 py-1 text-sm border rounded hover:bg-accent"
+                        >
+                          Offline
+                        </button>
+                        <button
+                          onClick={() => handleDeletePrinter(printer.id)}
+                          className="px-3 py-1 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
 
             {printers.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="text-center py-8 text-muted-foreground border rounded-lg">
                 No hay impresoras registradas
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Órdenes pendientes */}
-        <div>
+        <section>
           <h2 className="text-xl font-bold mb-4">Órdenes Pendientes</h2>
           <div className="space-y-3">
             {pendingOrders.map((order) => (
-              <div key={order.id} className="bg-card border rounded-lg p-4">
-                <div className="flex items-start justify-between mb-3">
+              <div key={order.id} className="bg-card border rounded-lg p-4 space-y-3">
+                <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-bold">Orden #{order.id.slice(0, 8)}</h3>
-                    <div className="text-sm text-muted-foreground">
-                      {order.material} - Prioridad: {order.priority}
-                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {order.product_name || 'Producto'} - Prioridad: {toPriority(order.priority)}
+                    </p>
                   </div>
                   <button
-                    onClick={() => handleAutoAssign(order.id)}
+                    onClick={() => handleAutoAssign(order)}
                     className="px-3 py-1 bg-primary/10 text-primary rounded hover:bg-primary/20 text-sm font-medium"
+                    disabled={submitting}
                   >
                     Auto-Asignar
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Dimensiones:</span>
-                    <div className="font-medium">
-                      {order.dimensions.width} × {order.dimensions.height} × {order.dimensions.depth} mm
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Tiempo estimado:</span>
-                    <div className="font-medium">{order.estimatedTime}h</div>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground">Creada: {new Date(order.created_at).toLocaleString()}</p>
 
-                {order.deadline && (
-                  <div className="mt-2 text-sm">
-                    <span className="text-muted-foreground">Deadline:</span>
-                    <span className="font-medium ml-2">
-                      {new Date(order.deadline).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
-
-                {selectedOrder === order.id && assignmentResult && (
-                  <div className={`mt-3 p-3 rounded-lg ${assignmentResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'} border`}>
-                    {assignmentResult.success ? (
-                      <div className="text-sm">
-                        <div className="font-medium text-green-700 mb-1">✓ Asignado exitosamente</div>
-                        <div className="text-green-600">
-                          Impresora: {assignmentResult.printerName}
-                        </div>
-                        <div className="text-green-600 text-xs mt-1">
-                          Inicio: {assignmentResult.estimatedStart?.toLocaleString()}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-red-700">
-                        <div className="font-medium mb-1">✗ No se pudo asignar</div>
-                        <div>{assignmentResult.reason}</div>
-                      </div>
-                    )}
+                {selectedOrder === order.id && assignmentMessage && (
+                  <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
+                    <div className="font-medium mb-1">Asignada exitosamente</div>
+                    <div>{assignmentMessage}</div>
                   </div>
                 )}
               </div>
             ))}
 
             {pendingOrders.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                No hay órdenes pendientes
+              <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                No hay órdenes pendientes por asignar
               </div>
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )
 }
 
-function toPriority(value: string): Order['priority'] {
-  if (value === 'low' || value === 'normal' || value === 'high' || value === 'urgent') {
-    return value
-  }
+function toPriority(value: string): string {
+  if (value === 'low') return 'baja'
+  if (value === 'high') return 'alta'
+  if (value === 'urgent') return 'urgente'
   return 'normal'
 }
 
-function mapBackendPrinter(printer: BackendPrinter): Printer {
-  const material = (printer.material || '').trim()
-  const upperMaterial = material.toUpperCase()
-  const printerType: Printer['type'] =
-    upperMaterial.includes('RESIN') || upperMaterial.includes('SLA') ? 'SLA' : 'FDM'
-
-  const materials = material
-    ? material.split(',').map((item) => item.trim()).filter(Boolean)
-    : ['PLA']
-
-  return {
-    id: printer.id,
-    name: printer.name,
-    type: printerType,
-    status: normalizePrinterStatus(printer.status),
-    buildVolume: { width: 220, height: 250, depth: 220 },
-    materials,
-    capabilities: {
-      maxLayerHeight: 0.3,
-      minLayerHeight: 0.08,
-      maxPrintSpeed: 120,
-    },
-  }
+function inferOrderMaterial(order: BackendOrder): string {
+  const product = (order.product_name || '').toUpperCase()
+  if (product.includes('RESIN') || product.includes('RESINA')) return 'RESIN'
+  if (product.includes('ABS')) return 'ABS'
+  if (product.includes('PETG')) return 'PETG'
+  if (product.includes('TPU')) return 'TPU'
+  return 'PLA'
 }
 
-function normalizePrinterStatus(status: string): Printer['status'] {
+function normalizeStatus(status: string): PrinterStatus {
   if (status === 'available' || status === 'busy' || status === 'maintenance' || status === 'offline') {
     return status
   }
   return 'offline'
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'available':
+      return 'Disponible'
+    case 'busy':
+      return 'Ocupada'
+    case 'maintenance':
+      return 'Mantenimiento'
+    case 'offline':
+      return 'Offline'
+    default:
+      return status
+  }
+}
+
+function statusDotClass(status: string): string {
+  switch (status) {
+    case 'available':
+      return 'bg-green-500'
+    case 'busy':
+      return 'bg-yellow-500'
+    case 'maintenance':
+      return 'bg-orange-500'
+    case 'offline':
+      return 'bg-red-500'
+    default:
+      return 'bg-gray-500'
+  }
+}
+
+function statusTextClass(status: string): string {
+  switch (status) {
+    case 'available':
+      return 'text-green-700'
+    case 'busy':
+      return 'text-yellow-700'
+    case 'maintenance':
+      return 'text-orange-700'
+    case 'offline':
+      return 'text-red-700'
+    default:
+      return 'text-gray-700'
+  }
+}
+
+function StatCard({ label, value, valueClass }: { label: string; value: number; valueClass?: string }) {
+  return (
+    <div className="bg-card border rounded-lg p-4">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className={`text-2xl font-bold ${valueClass || ''}`}>{value}</div>
+    </div>
+  )
 }

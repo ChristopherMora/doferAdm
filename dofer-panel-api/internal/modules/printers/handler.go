@@ -29,6 +29,8 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Put("/{id}", h.Update)
 		r.Patch("/{id}/status", h.UpdateStatus)
 		r.Delete("/{id}", h.Delete)
+		r.Post("/auto-assign", h.AutoAssign)
+		r.Post("/complete-assignment", h.CompleteAssignment)
 	})
 }
 
@@ -158,4 +160,71 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "printer deleted successfully"})
+}
+
+func (h *Handler) AutoAssign(w http.ResponseWriter, r *http.Request) {
+	var req AutoAssignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.repo.AutoAssign(r.Context(), req)
+	if err != nil {
+		switch err {
+		case ErrInvalidOrderID:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		case ErrOrderNotFound:
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		case ErrOrderAlreadyAssigned:
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		case ErrNoCompatiblePrinter, ErrPrinterUnavailable:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		case ErrPrinterNotFound:
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"assignment": result,
+		"message":    "order assigned successfully",
+	})
+}
+
+func (h *Handler) CompleteAssignment(w http.ResponseWriter, r *http.Request) {
+	var req CompleteAssignmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	printer, err := h.repo.CompleteAssignment(r.Context(), req)
+	if err != nil {
+		switch err {
+		case ErrInvalidOrderID:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		case ErrAssignmentNotFound:
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"printer": printer,
+		"message": "assignment completed successfully",
+	})
 }
