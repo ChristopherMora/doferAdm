@@ -3,6 +3,7 @@ package router
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/dofer/panel-api/internal/modules/auth/app"
 	authInfra "github.com/dofer/panel-api/internal/modules/auth/infra"
@@ -36,7 +37,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	r.Use(chiMiddleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(chiMiddleware.Recoverer)
-	r.Use(chiMiddleware.Timeout(60))
+	r.Use(chiMiddleware.Timeout(60 * time.Second))
 
 	// CORS
 	r.Use(cors.Handler(cors.Options{
