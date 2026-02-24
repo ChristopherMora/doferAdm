@@ -11,7 +11,7 @@ interface CreateOrderModalProps {
   onSuccess: () => void
 }
 
-interface OrderFormErrors {
+ interface OrderFormErrors {
   customer_name?: string
   customer_email?: string
   product_name?: string

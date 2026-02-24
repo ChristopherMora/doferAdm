@@ -33,6 +33,18 @@ interface Order {
 }
 
 const passthroughImageLoader = ({ src }: ImageLoaderProps) => src
+const SAVED_ORDER_VIEWS_KEY = 'dofer_orders_saved_views_v1'
+
+interface SavedOrderView {
+  id: string
+  name: string
+  status: string
+  priority: string
+  platform: string
+  range: string
+  q: string
+  showFilters: boolean
+}
 
 function sanitizeFilterValue(value: string | null, allowed: string[], fallback = 'all'): string {
   if (!value) return fallback
@@ -55,6 +67,13 @@ export default function OrdersPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [filtersReady, setFiltersReady] = useState(false)
+  const [selectedOrderIDs, setSelectedOrderIDs] = useState<string[]>([])
+  const [bulkStatus, setBulkStatus] = useState<string>('new')
+  const [bulkPriority, setBulkPriority] = useState<string>('normal')
+  const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [savedViews, setSavedViews] = useState<SavedOrderView[]>([])
+  const [savingView, setSavingView] = useState(false)
+  const [newViewName, setNewViewName] = useState('')
   
   // Paginación
   const [currentPage, setCurrentPage] = useState(1)
@@ -81,6 +100,21 @@ export default function OrdersPage() {
     setCurrentPage(Number.isFinite(page) && page > 0 ? page : 1)
     setFiltersReady(true)
   }, [filtersReady, searchParams])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = window.localStorage.getItem(SAVED_ORDER_VIEWS_KEY)
+    if (!raw) return
+
+    try {
+      const parsed = JSON.parse(raw) as SavedOrderView[]
+      if (Array.isArray(parsed)) {
+        setSavedViews(parsed)
+      }
+    } catch {
+      window.localStorage.removeItem(SAVED_ORDER_VIEWS_KEY)
+    }
+  }, [])
 
   // Atajos de teclado para página de órdenes
   useEffect(() => {
@@ -277,6 +311,196 @@ export default function OrdersPage() {
     setFilterDateRange('all')
     setSearchQuery('')
     setCurrentPage(1)
+    setShowFilters(false)
+  }
+
+  const persistSavedViews = (views: SavedOrderView[]) => {
+    setSavedViews(views)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SAVED_ORDER_VIEWS_KEY, JSON.stringify(views))
+    }
+  }
+
+  const handleSaveCurrentView = () => {
+    const trimmedName = newViewName.trim()
+    if (!trimmedName) {
+      addToast({
+        title: 'Nombre requerido',
+        description: 'Escribe un nombre para guardar la vista.',
+        variant: 'warning',
+      })
+      return
+    }
+
+    const view: SavedOrderView = {
+      id: crypto.randomUUID(),
+      name: trimmedName,
+      status: filterStatus,
+      priority: filterPriority,
+      platform: filterPlatform,
+      range: filterDateRange,
+      q: searchQuery.trim(),
+      showFilters,
+    }
+
+    persistSavedViews([view, ...savedViews].slice(0, 12))
+    setSavingView(false)
+    setNewViewName('')
+    addToast({
+      title: 'Vista guardada',
+      description: `Se guardo la vista "${trimmedName}".`,
+      variant: 'success',
+    })
+  }
+
+  const handleApplySavedView = (view: SavedOrderView) => {
+    setFilterStatus(view.status)
+    setFilterPriority(view.priority)
+    setFilterPlatform(view.platform)
+    setFilterDateRange(view.range)
+    setSearchQuery(view.q)
+    setCurrentPage(1)
+    setShowFilters(view.showFilters)
+  }
+
+  const handleDeleteSavedView = (viewID: string) => {
+    persistSavedViews(savedViews.filter((view) => view.id !== viewID))
+  }
+
+  const visibleOrders = getFilteredOrders()
+  const visibleOrderIDs = visibleOrders.map((order) => order.id)
+  const isAllVisibleSelected =
+    visibleOrderIDs.length > 0 && visibleOrderIDs.every((id) => selectedOrderIDs.includes(id))
+
+  useEffect(() => {
+    setSelectedOrderIDs((prev) => prev.filter((id) => orders.some((order) => order.id === id)))
+  }, [orders])
+
+  const toggleSelectOrder = (orderID: string) => {
+    setSelectedOrderIDs((prev) => (prev.includes(orderID) ? prev.filter((id) => id !== orderID) : [...prev, orderID]))
+  }
+
+  const toggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      setSelectedOrderIDs((prev) => prev.filter((id) => !visibleOrderIDs.includes(id)))
+      return
+    }
+
+    setSelectedOrderIDs((prev) => {
+      const next = [...prev]
+      for (const id of visibleOrderIDs) {
+        if (!next.includes(id)) next.push(id)
+      }
+      return next
+    })
+  }
+
+  const runBulkStatusUpdate = async () => {
+    if (selectedOrderIDs.length === 0) return
+
+    try {
+      setBulkProcessing(true)
+      const results = await Promise.allSettled(
+        selectedOrderIDs.map((orderID) => apiClient.patch(`/orders/${orderID}/status`, { status: bulkStatus })),
+      )
+      const successCount = results.filter((result) => result.status === 'fulfilled').length
+      const failedCount = results.length - successCount
+
+      if (successCount > 0) {
+        await loadOrders()
+        setSelectedOrderIDs([])
+      }
+
+      addToast({
+        title: 'Actualizacion masiva completada',
+        description:
+          failedCount === 0
+            ? `${successCount} ordenes actualizadas a ${bulkStatus}.`
+            : `${successCount} actualizadas, ${failedCount} con error.`,
+        variant: failedCount === 0 ? 'success' : 'warning',
+      })
+    } catch {
+      addToast({
+        title: 'Error en actualizacion masiva',
+        description: 'No se pudieron actualizar las ordenes seleccionadas.',
+        variant: 'error',
+      })
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
+  const runBulkPriorityUpdate = async () => {
+    if (selectedOrderIDs.length === 0) return
+
+    try {
+      setBulkProcessing(true)
+      const results = await Promise.allSettled(
+        selectedOrderIDs.map((orderID) => apiClient.patch(`/orders/${orderID}/priority`, { priority: bulkPriority })),
+      )
+      const successCount = results.filter((result) => result.status === 'fulfilled').length
+      const failedCount = results.length - successCount
+
+      if (successCount > 0) {
+        await loadOrders()
+        setSelectedOrderIDs([])
+      }
+
+      addToast({
+        title: 'Prioridad masiva completada',
+        description:
+          failedCount === 0
+            ? `${successCount} ordenes actualizadas a prioridad ${bulkPriority}.`
+            : `${successCount} actualizadas, ${failedCount} con error.`,
+        variant: failedCount === 0 ? 'success' : 'warning',
+      })
+    } catch {
+      addToast({
+        title: 'Error en prioridad masiva',
+        description: 'No se pudieron actualizar las prioridades seleccionadas.',
+        variant: 'error',
+      })
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
+  const exportSelectedToCSV = () => {
+    const selectedOrders = orders.filter((order) => selectedOrderIDs.includes(order.id))
+    if (selectedOrders.length === 0) {
+      addToast({
+        title: 'Sin seleccion',
+        description: 'Selecciona al menos una orden para exportar.',
+        variant: 'warning',
+      })
+      return
+    }
+
+    const headers = ['# Orden', 'Cliente', 'Email', 'Producto', 'Cantidad', 'Estado', 'Prioridad', 'Plataforma', 'Fecha']
+    const rows = selectedOrders.map((order) => [
+      order.order_number,
+      order.customer_name,
+      order.customer_email || '',
+      order.product_name,
+      order.quantity,
+      order.status,
+      order.priority,
+      order.platform,
+      new Date(order.created_at).toLocaleDateString('es-MX'),
+    ])
+
+    const csvContent = [headers.join(','), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `ordenes_seleccionadas_${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+
+    addToast({
+      title: 'Exportacion lista',
+      description: `${selectedOrders.length} ordenes exportadas.`,
+      variant: 'success',
+    })
   }
 
   const activeFiltersCount = [
@@ -530,6 +754,96 @@ export default function OrdersPage() {
         </CardContent>
       </Card>
 
+      <Card className="elevated-md">
+        <CardContent className="pt-4 pb-4 space-y-4">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button variant="outline" size="sm" onClick={toggleSelectAllVisible}>
+                {isAllVisibleSelected ? 'Deseleccionar visibles' : 'Seleccionar visibles'}
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {selectedOrderIDs.length} seleccionadas
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={bulkStatus}
+                onChange={(e) => setBulkStatus(e.target.value)}
+                className="px-3 py-2 bg-background border rounded-lg text-sm"
+              >
+                <option value="new">Estado: nueva</option>
+                <option value="printing">Estado: impresion</option>
+                <option value="post">Estado: post</option>
+                <option value="packed">Estado: empacada</option>
+                <option value="ready">Estado: lista</option>
+                <option value="delivered">Estado: entregada</option>
+                <option value="cancelled">Estado: cancelada</option>
+              </select>
+              <Button variant="outline" size="sm" onClick={runBulkStatusUpdate} disabled={bulkProcessing || selectedOrderIDs.length === 0}>
+                Aplicar estado
+              </Button>
+              <select
+                value={bulkPriority}
+                onChange={(e) => setBulkPriority(e.target.value)}
+                className="px-3 py-2 bg-background border rounded-lg text-sm"
+              >
+                <option value="urgent">Prioridad: urgente</option>
+                <option value="normal">Prioridad: normal</option>
+                <option value="low">Prioridad: baja</option>
+              </select>
+              <Button variant="outline" size="sm" onClick={runBulkPriorityUpdate} disabled={bulkProcessing || selectedOrderIDs.length === 0}>
+                Aplicar prioridad
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportSelectedToCSV} disabled={selectedOrderIDs.length === 0}>
+                Exportar seleccionadas
+              </Button>
+            </div>
+          </div>
+
+          <div className="border-t pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {savingView ? (
+                <>
+                  <input
+                    type="text"
+                    value={newViewName}
+                    onChange={(e) => setNewViewName(e.target.value)}
+                    placeholder="Nombre de la vista"
+                    className="px-3 py-2 border rounded-lg text-sm"
+                  />
+                  <Button size="sm" onClick={handleSaveCurrentView}>Guardar</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSavingView(false)
+                      setNewViewName('')
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setSavingView(true)}>
+                  Guardar vista actual
+                </Button>
+              )}
+
+              {savedViews.map((view) => (
+                <div key={view.id} className="inline-flex items-center rounded-full border px-2 py-1 text-xs">
+                  <button className="hover:underline" onClick={() => handleApplySavedView(view)}>
+                    {view.name}
+                  </button>
+                  <button className="ml-2 text-muted-foreground hover:text-foreground" onClick={() => handleDeleteSavedView(view.id)}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Vista responsive: Cards en móvil, Tabla en desktop */}
       <Card className="elevated-lg overflow-hidden">
         <CardContent className="p-0">
@@ -544,7 +858,7 @@ export default function OrdersPage() {
                 </div>
               ))}
             </div>
-          ) : getFilteredOrders().length === 0 ? (
+          ) : visibleOrders.length === 0 ? (
             <div className="p-4">
               <EmptyState
                 title={searchQuery || activeFiltersCount > 0 ? 'Sin resultados con filtros' : 'No hay ordenes registradas'}
@@ -568,7 +882,7 @@ export default function OrdersPage() {
             <>
               {/* Vista de Cards para móvil */}
               <div className="md:hidden divide-y">
-                {getFilteredOrders().map((order) => {
+                {visibleOrders.map((order) => {
                   const isOverdue = order.delivery_deadline && new Date(order.delivery_deadline) < new Date() && !['delivered', 'cancelled'].includes(order.status)
                   
                   return (
@@ -578,6 +892,15 @@ export default function OrdersPage() {
                       className="p-4 hover:bg-muted/50 active:bg-muted transition-colors cursor-pointer"
                     >
                       <div className="space-y-3">
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedOrderIDs.includes(order.id)}
+                            onChange={() => toggleSelectOrder(order.id)}
+                            className="h-4 w-4"
+                            aria-label={`Seleccionar orden ${order.order_number}`}
+                          />
+                        </div>
                         {/* Header del card */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
@@ -641,6 +964,14 @@ export default function OrdersPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
+                      <th className="text-left py-3 px-4">
+                        <input
+                          type="checkbox"
+                          checked={isAllVisibleSelected}
+                          onChange={toggleSelectAllVisible}
+                          aria-label="Seleccionar todas las ordenes visibles"
+                        />
+                      </th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider"># Orden</th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cliente</th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Producto</th>
@@ -653,7 +984,7 @@ export default function OrdersPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {getFilteredOrders().map((order) => {
+                    {visibleOrders.map((order) => {
                       const isOverdue = order.delivery_deadline && new Date(order.delivery_deadline) < new Date() && !['delivered', 'cancelled'].includes(order.status)
                       
                       return (
@@ -662,6 +993,14 @@ export default function OrdersPage() {
                           className="border-b hover:bg-muted/50 transition-colors cursor-pointer group" 
                           onClick={() => router.push(`/dashboard/orders/${order.id}`)}
                         >
+                          <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedOrderIDs.includes(order.id)}
+                              onChange={() => toggleSelectOrder(order.id)}
+                              aria-label={`Seleccionar orden ${order.order_number}`}
+                            />
+                          </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-sm">{order.order_number}</span>

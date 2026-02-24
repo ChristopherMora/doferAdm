@@ -6,6 +6,7 @@ import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
 import PageHeader from '@/components/dashboard/PageHeader'
 import PanelCard from '@/components/dashboard/PanelCard'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 
@@ -72,6 +73,7 @@ export default function PrintersPage() {
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null)
   const [assignmentMessage, setAssignmentMessage] = useState<string | null>(null)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [pendingDeletePrinterID, setPendingDeletePrinterID] = useState<string | null>(null)
 
   const stats = useMemo(() => {
     const available = printers.filter((p) => p.status === 'available').length
@@ -181,18 +183,23 @@ export default function PrintersPage() {
   }
 
   const handleDeletePrinter = async (printerID: string) => {
-    if (!confirm('¿Eliminar esta impresora?')) return
+    setPendingDeletePrinterID(printerID)
+  }
+
+  const confirmDeletePrinter = async () => {
+    if (!pendingDeletePrinterID) return
 
     setSubmitting(true)
     setApiError(null)
 
     try {
-      await apiClient.delete(`/printers/${printerID}`)
+      await apiClient.delete(`/printers/${pendingDeletePrinterID}`)
       await loadPrinters()
     } catch (error: unknown) {
       setApiError(`Error eliminando impresora: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
       setSubmitting(false)
+      setPendingDeletePrinterID(null)
     }
   }
 
@@ -504,6 +511,17 @@ export default function PrintersPage() {
           </div>
         </PanelCard>
       </div>
+
+      <ConfirmDialog
+        open={pendingDeletePrinterID !== null}
+        title="Eliminar impresora"
+        description="Esta accion eliminara la impresora del inventario."
+        confirmLabel="Eliminar"
+        destructive
+        loading={submitting}
+        onCancel={() => setPendingDeletePrinterID(null)}
+        onConfirm={confirmDeletePrinter}
+      />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 interface QuoteTemplate {
   id: string
@@ -60,6 +61,7 @@ export default function QuoteTemplatesPage() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingTemplateID, setEditingTemplateID] = useState<string | null>(null)
   const [formData, setFormData] = useState<TemplateForm>(initialForm)
+  const [pendingDeleteTemplateID, setPendingDeleteTemplateID] = useState<string | null>(null)
 
   const loadTemplates = useCallback(async () => {
     setError(null)
@@ -150,25 +152,27 @@ export default function QuoteTemplatesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Eliminar esta plantilla?')) {
-      return
-    }
+    setPendingDeleteTemplateID(id)
+  }
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteTemplateID) return
     setSubmitting(true)
     setError(null)
     setNotice(null)
 
     try {
-      await apiClient.delete(`/quotes/templates/${id}`)
-      setTemplates((prev) => prev.filter((template) => template.id !== id))
+      await apiClient.delete(`/quotes/templates/${pendingDeleteTemplateID}`)
+      setTemplates((prev) => prev.filter((template) => template.id !== pendingDeleteTemplateID))
       setNotice('Plantilla eliminada.')
-      if (editingTemplateID === id) {
+      if (editingTemplateID === pendingDeleteTemplateID) {
         resetEditor()
       }
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Error al eliminar plantilla'))
     } finally {
       setSubmitting(false)
+      setPendingDeleteTemplateID(null)
     }
   }
 
@@ -448,6 +452,17 @@ export default function QuoteTemplatesPage() {
           No hay plantillas con esos filtros.
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteTemplateID !== null}
+        title="Eliminar plantilla"
+        description="Esta accion no se puede deshacer."
+        confirmLabel="Eliminar"
+        destructive
+        loading={submitting}
+        onCancel={() => setPendingDeleteTemplateID(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

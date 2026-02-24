@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { Quote, QuoteItem } from '@/types'
 import { generateQuotePDF } from '@/lib/pdfGenerator'
 
@@ -24,6 +25,10 @@ export default function QuoteDetailPage() {
   const [updating, setUpdating] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState<string>('')
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [pendingDeleteItemID, setPendingDeleteItemID] = useState<string | null>(null)
+  const [confirmDeleteQuoteOpen, setConfirmDeleteQuoteOpen] = useState(false)
+  const [confirmConvertOpen, setConfirmConvertOpen] = useState(false)
+  const [confirmSyncOpen, setConfirmSyncOpen] = useState(false)
 
   const loadQuote = useCallback(async () => {
     try {
@@ -97,25 +102,29 @@ export default function QuoteDetailPage() {
   }
 
   const deleteQuoteItem = async (itemId: string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este item?')) {
-      return
-    }
+    setPendingDeleteItemID(itemId)
+  }
+
+  const confirmDeleteQuoteItem = async () => {
+    if (!pendingDeleteItemID) return
     
     try {
-      await apiClient.delete(`/quotes/${quoteId}/items/${itemId}`)
+      await apiClient.delete(`/quotes/${quoteId}/items/${pendingDeleteItemID}`)
       alert('✅ Item eliminado')
       await loadQuote()
     } catch (error) {
       console.error('Error deleting item:', error)
       alert('Error al eliminar item')
+    } finally {
+      setPendingDeleteItemID(null)
     }
   }
 
   const deleteQuote = async () => {
-    if (!confirm('¿Estás seguro de que deseas eliminar esta cotización? Esta acción no se puede deshacer.')) {
-      return
-    }
-    
+    setConfirmDeleteQuoteOpen(true)
+  }
+
+  const confirmDeleteQuote = async () => {
     try {
       await apiClient.delete(`/quotes/${quoteId}`)
       alert('✅ Cotización eliminada')
@@ -123,14 +132,16 @@ export default function QuoteDetailPage() {
     } catch (error) {
       console.error('Error deleting quote:', error)
       alert('Error al eliminar cotización')
+    } finally {
+      setConfirmDeleteQuoteOpen(false)
     }
   }
 
   const convertToOrder = async () => {
-    if (!confirm('¿Deseas convertir esta cotización en un pedido? Se creará una nueva orden.')) {
-      return
-    }
+    setConfirmConvertOpen(true)
+  }
 
+  const confirmConvertToOrder = async () => {
     try {
       setUpdating(true)
       const response = await apiClient.post<ConvertToOrderResponse>(`/quotes/${quoteId}/convert-to-order`, {})
@@ -146,14 +157,15 @@ export default function QuoteDetailPage() {
       }
     } finally {
       setUpdating(false)
+      setConfirmConvertOpen(false)
     }
   }
 
   const syncItemsToOrder = async () => {
-    if (!confirm('¿Sincronizar items de esta cotización al pedido existente?')) {
-      return
-    }
+    setConfirmSyncOpen(true)
+  }
 
+  const confirmSyncItemsToOrder = async () => {
     try {
       setUpdating(true)
       await apiClient.post(`/quotes/${quoteId}/sync-items`, {})
@@ -164,6 +176,7 @@ export default function QuoteDetailPage() {
       alert(`Error: ${getErrorMessage(error, 'No se pudieron sincronizar los items')}`)
     } finally {
       setUpdating(false)
+      setConfirmSyncOpen(false)
     }
   }
 
@@ -525,6 +538,48 @@ export default function QuoteDetailPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteItemID !== null}
+        title="Eliminar item de cotizacion"
+        description="Esta accion eliminara el item seleccionado."
+        confirmLabel="Eliminar"
+        destructive
+        loading={updating}
+        onCancel={() => setPendingDeleteItemID(null)}
+        onConfirm={confirmDeleteQuoteItem}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteQuoteOpen}
+        title="Eliminar cotizacion"
+        description="Esta accion no se puede deshacer."
+        confirmLabel="Eliminar cotizacion"
+        destructive
+        loading={updating}
+        onCancel={() => setConfirmDeleteQuoteOpen(false)}
+        onConfirm={confirmDeleteQuote}
+      />
+
+      <ConfirmDialog
+        open={confirmConvertOpen}
+        title="Convertir a pedido"
+        description="Se creara una nueva orden a partir de esta cotizacion."
+        confirmLabel="Convertir"
+        loading={updating}
+        onCancel={() => setConfirmConvertOpen(false)}
+        onConfirm={confirmConvertToOrder}
+      />
+
+      <ConfirmDialog
+        open={confirmSyncOpen}
+        title="Sincronizar items al pedido"
+        description="Esto copiara los items actuales al pedido vinculado."
+        confirmLabel="Sincronizar"
+        loading={updating}
+        onCancel={() => setConfirmSyncOpen(false)}
+        onConfirm={confirmSyncItemsToOrder}
+      />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { OrderItem, OrderPayment, Order as OrderType } from '@/types'
 import { getErrorMessage } from '@/lib/errors'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
@@ -52,6 +53,8 @@ export default function OrderDetailPage() {
     payment_method: 'efectivo',
     notes: ''
   })
+  const [pendingDeleteItemID, setPendingDeleteItemID] = useState<string | null>(null)
+  const [pendingDeletePaymentID, setPendingDeletePaymentID] = useState<string | null>(null)
 
   const loadOrder = useCallback(async () => {
     try {
@@ -115,16 +118,21 @@ export default function OrderDetailPage() {
   }
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este item?')) return
+    setPendingDeleteItemID(itemId)
+  }
 
+  const confirmDeleteItem = async () => {
+    if (!pendingDeleteItemID) return
     try {
-      await apiClient.delete(`/orders/${params.id}/items/${itemId}`)
-      setItems(items.filter(item => item.id !== itemId))
+      await apiClient.delete(`/orders/${params.id}/items/${pendingDeleteItemID}`)
+      setItems(items.filter(item => item.id !== pendingDeleteItemID))
       // Recargar la orden para actualizar los totales
       await loadOrder()
     } catch (err: unknown) {
       console.error('Error deleting item:', err)
       alert('Error al eliminar el item')
+    } finally {
+      setPendingDeleteItemID(null)
     }
   }
 
@@ -152,16 +160,21 @@ export default function OrderDetailPage() {
   }
 
   const handleDeletePayment = async (paymentId: string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este pago?')) return
+    setPendingDeletePaymentID(paymentId)
+  }
 
+  const confirmDeletePayment = async () => {
+    if (!pendingDeletePaymentID) return
     try {
-      await apiClient.delete(`/orders/${params.id}/payments/${paymentId}`)
-      setPayments(payments.filter(p => p.id !== paymentId))
+      await apiClient.delete(`/orders/${params.id}/payments/${pendingDeletePaymentID}`)
+      setPayments(payments.filter(p => p.id !== pendingDeletePaymentID))
       // Recargar la orden para actualizar los totales
       await loadOrder()
     } catch (err: unknown) {
       console.error('Error deleting payment:', err)
       alert('Error al eliminar el pago')
+    } finally {
+      setPendingDeletePaymentID(null)
     }
   }
 
@@ -850,6 +863,26 @@ export default function OrderDetailPage() {
         onSuccess={loadOrder}
         orderId={order.id}
         currentAssignee={order.assigned_to}
+      />
+
+      <ConfirmDialog
+        open={pendingDeleteItemID !== null}
+        title="Eliminar item"
+        description="Se eliminara el item seleccionado de la orden."
+        confirmLabel="Eliminar"
+        destructive
+        onCancel={() => setPendingDeleteItemID(null)}
+        onConfirm={confirmDeleteItem}
+      />
+
+      <ConfirmDialog
+        open={pendingDeletePaymentID !== null}
+        title="Eliminar pago"
+        description="Se eliminara el pago seleccionado de la orden."
+        confirmLabel="Eliminar"
+        destructive
+        onCancel={() => setPendingDeletePaymentID(null)}
+        onConfirm={confirmDeletePayment}
       />
     </div>
   )

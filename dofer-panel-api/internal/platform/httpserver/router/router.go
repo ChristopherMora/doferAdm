@@ -77,6 +77,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	getOrderHandler := ordersApp.NewGetOrderHandler(orderRepo)
 	listOrdersHandler := ordersApp.NewListOrdersHandler(orderRepo)
 	updateStatusHandler := ordersApp.NewUpdateOrderStatusHandler(orderRepo, historyRepo, mailer)
+	updatePriorityHandler := ordersApp.NewUpdateOrderPriorityHandler(orderRepo, historyRepo)
 	assignOrderHandler := ordersApp.NewAssignOrderHandler(orderRepo, historyRepo)
 	getHistoryHandler := ordersApp.NewGetOrderHistoryHandler(historyRepo)
 	getStatsHandler := ordersApp.NewGetOrderStatsHandler(orderRepo)
@@ -105,6 +106,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		getOrderHandler,
 		listOrdersHandler,
 		updateStatusHandler,
+		updatePriorityHandler,
 		assignOrderHandler,
 		getHistoryHandler,
 		getStatsHandler,

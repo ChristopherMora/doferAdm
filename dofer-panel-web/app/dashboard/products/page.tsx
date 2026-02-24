@@ -6,6 +6,7 @@ import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
 import PageHeader from '@/components/dashboard/PageHeader'
 import PanelCard from '@/components/dashboard/PanelCard'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 
@@ -58,6 +59,7 @@ export default function ProductsPage() {
   const [editForm, setEditForm] = useState<ProductFormState>(initialForm)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [pendingDeleteProductID, setPendingDeleteProductID] = useState<string | null>(null)
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -168,18 +170,22 @@ export default function ProductsPage() {
   }
 
   const handleDelete = async (productID: string) => {
-    if (!confirm('¿Eliminar este producto?')) return
+    setPendingDeleteProductID(productID)
+  }
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteProductID) return
     setSubmitting(true)
     setError(null)
 
     try {
-      await apiClient.delete(`/products/${productID}`)
+      await apiClient.delete(`/products/${pendingDeleteProductID}`)
       await loadProducts()
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Error eliminando producto'))
     } finally {
       setSubmitting(false)
+      setPendingDeleteProductID(null)
     }
   }
 
@@ -323,6 +329,17 @@ export default function ProductsPage() {
           />
         )}
       </PanelCard>
+
+      <ConfirmDialog
+        open={pendingDeleteProductID !== null}
+        title="Eliminar producto"
+        description="Esta accion no se puede deshacer."
+        confirmLabel="Eliminar"
+        destructive
+        loading={submitting}
+        onCancel={() => setPendingDeleteProductID(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

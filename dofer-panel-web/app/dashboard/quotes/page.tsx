@@ -15,6 +15,7 @@ import { Plus, Filter, AlertTriangle, Edit, Search, X } from 'lucide-react'
 import { Quote } from '@/types'
 
 type QuoteStatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'expired'
+const SAVED_QUOTE_VIEWS_KEY = 'dofer_quotes_saved_views_v1'
 
 const QUOTE_STATUS_OPTIONS: Array<{ value: QuoteStatusFilter; label: string }> = [
   { value: 'all', label: 'Todas' },
@@ -31,6 +32,13 @@ function normalizeStatusFilter(value: string | null): QuoteStatusFilter {
   return 'all'
 }
 
+interface SavedQuoteView {
+  id: string
+  name: string
+  status: QuoteStatusFilter
+  q: string
+}
+
 export default function QuotesPage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -41,6 +49,9 @@ export default function QuotesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filtersReady, setFiltersReady] = useState(false)
   const [backendError, setBackendError] = useState(false)
+  const [savedViews, setSavedViews] = useState<SavedQuoteView[]>([])
+  const [savingView, setSavingView] = useState(false)
+  const [newViewName, setNewViewName] = useState('')
 
   useEffect(() => {
     if (filtersReady) return
@@ -48,6 +59,19 @@ export default function QuotesPage() {
     setSearchQuery(searchParams.get('q') || '')
     setFiltersReady(true)
   }, [filtersReady, searchParams])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = window.localStorage.getItem(SAVED_QUOTE_VIEWS_KEY)
+    if (!raw) return
+
+    try {
+      const parsed = JSON.parse(raw) as SavedQuoteView[]
+      if (Array.isArray(parsed)) setSavedViews(parsed)
+    } catch {
+      window.localStorage.removeItem(SAVED_QUOTE_VIEWS_KEY)
+    }
+  }, [])
 
   const loadQuotes = useCallback(async () => {
     try {
@@ -132,6 +156,37 @@ export default function QuotesPage() {
     setSearchQuery('')
   }
 
+  const persistSavedViews = (views: SavedQuoteView[]) => {
+    setSavedViews(views)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SAVED_QUOTE_VIEWS_KEY, JSON.stringify(views))
+    }
+  }
+
+  const handleSaveCurrentView = () => {
+    const trimmedName = newViewName.trim()
+    if (!trimmedName) return
+
+    const view: SavedQuoteView = {
+      id: crypto.randomUUID(),
+      name: trimmedName,
+      status: filterStatus,
+      q: searchQuery.trim(),
+    }
+    persistSavedViews([view, ...savedViews].slice(0, 12))
+    setSavingView(false)
+    setNewViewName('')
+  }
+
+  const handleApplySavedView = (view: SavedQuoteView) => {
+    setFilterStatus(view.status)
+    setSearchQuery(view.q)
+  }
+
+  const handleDeleteSavedView = (viewID: string) => {
+    persistSavedViews(savedViews.filter((view) => view.id !== viewID))
+  }
+
   if (loading) {
     return <LoadingState label="Cargando cotizaciones..." />
   }
@@ -173,47 +228,89 @@ export default function QuotesPage() {
       )}
 
       <PanelCard>
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px_auto] gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Buscar por folio, cliente o email"
-              className="w-full pl-10 pr-10 py-2.5 bg-background border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Limpiar búsqueda"
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px_auto] gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar por folio, cliente o email"
+                className="w-full pl-10 pr-10 py-2.5 bg-background border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="Limpiar búsqueda"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={filterStatus}
+                onChange={(event) => setFilterStatus(normalizeStatusFilter(event.target.value))}
+                className="w-full px-3 py-2.5 bg-background border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <X className="h-4 w-4" />
-              </button>
-            )}
+                {QUOTE_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center justify-between lg:justify-end gap-3 text-sm">
+              <span className="text-muted-foreground">Mostrando: {filteredQuotes.length}</span>
+              {activeFiltersCount > 0 && (
+                <button className="text-primary hover:underline" onClick={clearFilters}>
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <select
-              value={filterStatus}
-              onChange={(event) => setFilterStatus(normalizeStatusFilter(event.target.value))}
-              className="w-full px-3 py-2.5 bg-background border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              {QUOTE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center justify-between lg:justify-end gap-3 text-sm">
-            <span className="text-muted-foreground">Mostrando: {filteredQuotes.length}</span>
-            {activeFiltersCount > 0 && (
-              <button className="text-primary hover:underline" onClick={clearFilters}>
-                Limpiar filtros
-              </button>
+
+          <div className="border-t pt-3 flex flex-wrap items-center gap-2">
+            {savingView ? (
+              <>
+                <input
+                  type="text"
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  placeholder="Nombre de la vista"
+                  className="px-3 py-2 border rounded-lg text-sm"
+                />
+                <Button size="sm" onClick={handleSaveCurrentView}>Guardar</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSavingView(false)
+                    setNewViewName('')
+                  }}
+                >
+                  Cancelar
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setSavingView(true)}>
+                Guardar vista actual
+              </Button>
             )}
+
+            {savedViews.map((view) => (
+              <div key={view.id} className="inline-flex items-center rounded-full border px-2 py-1 text-xs">
+                <button className="hover:underline" onClick={() => handleApplySavedView(view)}>
+                  {view.name}
+                </button>
+                <button className="ml-2 text-muted-foreground hover:text-foreground" onClick={() => handleDeleteSavedView(view.id)}>
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </PanelCard>

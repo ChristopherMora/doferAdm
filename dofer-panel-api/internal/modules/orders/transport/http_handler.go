@@ -15,6 +15,7 @@ type OrderHandler struct {
 	getHandler               *app.GetOrderHandler
 	listHandler              *app.ListOrdersHandler
 	updateStatusHandler      *app.UpdateOrderStatusHandler
+	updatePriorityHandler    *app.UpdateOrderPriorityHandler
 	assignHandler            *app.AssignOrderHandler
 	historyHandler           *app.GetOrderHistoryHandler
 	statsHandler             *app.GetOrderStatsHandler
@@ -40,6 +41,7 @@ func NewOrderHandler(
 	getHandler *app.GetOrderHandler,
 	listHandler *app.ListOrdersHandler,
 	updateStatusHandler *app.UpdateOrderStatusHandler,
+	updatePriorityHandler *app.UpdateOrderPriorityHandler,
 	assignHandler *app.AssignOrderHandler,
 	historyHandler *app.GetOrderHistoryHandler,
 	statsHandler *app.GetOrderStatsHandler,
@@ -64,6 +66,7 @@ func NewOrderHandler(
 		getHandler:               getHandler,
 		listHandler:              listHandler,
 		updateStatusHandler:      updateStatusHandler,
+		updatePriorityHandler:    updatePriorityHandler,
 		assignHandler:            assignHandler,
 		historyHandler:           historyHandler,
 		statsHandler:             statsHandler,
@@ -273,6 +276,10 @@ type UpdateStatusRequest struct {
 	Status string `json:"status"`
 }
 
+type UpdatePriorityRequest struct {
+	Priority string `json:"priority"`
+}
+
 func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
 
@@ -298,6 +305,37 @@ func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request)
 		PublicID:    order.PublicID,
 		OrderNumber: order.OrderNumber,
 		Status:      string(order.Status),
+		UpdatedAt:   order.UpdatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (h *OrderHandler) UpdateOrderPriority(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
+
+	var req UpdatePriorityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.updatePriorityHandler.Handle(r.Context(), app.UpdateOrderPriorityCommand{
+		OrderID:     orderID,
+		NewPriority: req.Priority,
+		ChangedBy:   "admin",
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	response := OrderResponse{
+		ID:          order.ID,
+		PublicID:    order.PublicID,
+		OrderNumber: order.OrderNumber,
+		Priority:    string(order.Priority),
 		UpdatedAt:   order.UpdatedAt,
 	}
 

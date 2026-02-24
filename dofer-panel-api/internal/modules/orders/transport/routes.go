@@ -17,6 +17,7 @@ func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 		r.Get("/operator-stats", handler.GetOperatorStats)
 		r.Get("/{id}/history", handler.GetOrderHistory)
 		r.Patch("/{id}/status", handler.UpdateOrderStatus)
+		r.Patch("/{id}/priority", handler.UpdateOrderPriority)
 		r.Patch("/{id}/assign", handler.AssignOrder)
 		// Items endpoints
 		r.Get("/{id}/items", handler.GetOrderItems)
