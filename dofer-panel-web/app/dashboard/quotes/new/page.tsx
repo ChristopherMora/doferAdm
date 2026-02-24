@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, Suspense, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
@@ -45,6 +45,22 @@ interface QuoteDetailResponse {
   items?: QuoteItemAPI[] | null
 }
 
+interface QuoteTemplate {
+  id: string
+  name: string
+  description?: string
+  material: string
+  infill_percentage: number
+  layer_height: number
+  print_speed: number
+  base_cost: number
+  markup_percentage: number
+}
+
+interface QuoteTemplatesResponse {
+  templates: QuoteTemplate[]
+}
+
 interface CreateQuoteResponse {
   id: string
 }
@@ -78,15 +94,35 @@ function mapQuoteItemFromAPI(item: QuoteItemAPI): QuoteItem {
   }
 }
 
+function getSuggestedTemplateUnitPrice(template: QuoteTemplate): number {
+  return Number((template.base_cost * (1 + template.markup_percentage / 100)).toFixed(2))
+}
+
+function getTemplateDescription(template: QuoteTemplate): string {
+  return [
+    template.description?.trim() || '',
+    `Material: ${template.material}`,
+    `Infill: ${template.infill_percentage}%`,
+    `Capa: ${template.layer_height}mm`,
+    `Velocidad: ${template.print_speed}mm/s`,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+}
+
 function NewQuotePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editMode = searchParams.get('edit')
+  const templateIDFromQuery = searchParams.get('template_id')
   
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [quoteId, setQuoteId] = useState<string | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templateError, setTemplateError] = useState<string | null>(null)
+  const [templateNotice, setTemplateNotice] = useState<string | null>(null)
 
   // Step 1: Customer info
   const [customerName, setCustomerName] = useState('')
@@ -107,6 +143,46 @@ function NewQuotePageContent() {
     quantity: 1,
     other_costs: 0,
   })
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([])
+  const [selectedTemplateID, setSelectedTemplateID] = useState('')
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === selectedTemplateID) || null,
+    [templates, selectedTemplateID],
+  )
+
+  const applyTemplate = useCallback((template: QuoteTemplate) => {
+    setSelectedTemplateID(template.id)
+    setPricingMode('manual')
+    setCustomPrice(getSuggestedTemplateUnitPrice(template))
+    setCurrentItem((prev) => ({
+      ...prev,
+      product_name: prev.product_name || template.name,
+      description: prev.description || getTemplateDescription(template),
+      other_costs: prev.other_costs > 0 ? prev.other_costs : template.base_cost,
+    }))
+    setTemplateError(null)
+    setTemplateNotice(`Plantilla aplicada: ${template.name}`)
+  }, [])
+
+  const clearTemplateSelection = useCallback(() => {
+    setSelectedTemplateID('')
+    setTemplateNotice(null)
+  }, [])
+
+  const loadTemplates = useCallback(async () => {
+    setTemplateError(null)
+
+    try {
+      setTemplatesLoading(true)
+      const response = await apiClient.get<QuoteTemplatesResponse>('/quotes/templates')
+      setTemplates(response.templates || [])
+    } catch (error: unknown) {
+      setTemplates([])
+      setTemplateError(getErrorMessage(error, 'No se pudieron cargar plantillas'))
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [])
 
   const loadQuoteForEdit = useCallback(async (quoteIdToEdit: string) => {
     try {
@@ -149,6 +225,50 @@ function NewQuotePageContent() {
       loadQuoteForEdit(editMode)
     }
   }, [editMode, loadQuoteForEdit])
+
+  useEffect(() => {
+    void loadTemplates()
+  }, [loadTemplates])
+
+  useEffect(() => {
+    if (templates.length === 0 || selectedTemplateID) {
+      return
+    }
+
+    if (templateIDFromQuery) {
+      const templateFromQuery = templates.find((template) => template.id === templateIDFromQuery)
+      if (templateFromQuery) {
+        applyTemplate(templateFromQuery)
+      } else {
+        setTemplateError('La plantilla seleccionada no existe o ya no esta disponible.')
+      }
+      return
+    }
+
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const rawStoredTemplate = window.sessionStorage.getItem('quote-template-selected')
+    if (!rawStoredTemplate) {
+      return
+    }
+
+    try {
+      const parsed = JSON.parse(rawStoredTemplate) as { id?: string }
+      if (!parsed.id) {
+        return
+      }
+      const storedTemplate = templates.find((template) => template.id === parsed.id)
+      if (storedTemplate) {
+        applyTemplate(storedTemplate)
+      }
+    } catch {
+      // Ignore malformed storage.
+    } finally {
+      window.sessionStorage.removeItem('quote-template-selected')
+    }
+  }, [applyTemplate, selectedTemplateID, templateIDFromQuery, templates])
 
   const updateQuote = async () => {
     if (!customerName) {
@@ -283,9 +403,9 @@ function NewQuotePageContent() {
         weight_grams: 0,
         print_time_hours: 0,
         quantity: 1,
-        other_costs: 0,
+        other_costs: selectedTemplate ? selectedTemplate.base_cost : 0,
       })
-      setCustomPrice(0)
+      setCustomPrice(selectedTemplate ? getSuggestedTemplateUnitPrice(selectedTemplate) : 0)
 
       alert('✅ Item agregado exitosamente')
     } catch (error: unknown) {
@@ -361,36 +481,44 @@ function NewQuotePageContent() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isEditMode ? '✏️ Editar Cotización' : '📝 Nueva Cotización'}
-          </h1>
-          <p className="text-gray-600">
-            {isEditMode ? 'Actualiza la información de la cotización' : 'Crea una cotización para un cliente'}
-          </p>
+      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-700 p-6 text-white shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">{isEditMode ? 'Editar Cotizacion' : 'Nueva Cotizacion'}</h1>
+            <p className="text-white/80 mt-2">
+              {isEditMode
+                ? 'Actualiza datos del cliente y administracion de items.'
+                : 'Flujo guiado con plantilla, costos y cierre de cotizacion.'}
+            </p>
+          </div>
+          <button
+            onClick={() => router.back()}
+            className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm"
+          >
+            Volver
+          </button>
         </div>
-        <button
-          onClick={() => router.back()}
-          className="text-gray-600 hover:text-gray-900"
-        >
-          ← Volver
-        </button>
       </div>
 
-      {/* Progress Steps */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center justify-center space-x-4">
-          <div className={`flex items-center ${step >= 1 ? 'text-indigo-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= 1 ? 'border-indigo-600 bg-indigo-100' : 'border-gray-300'}`}>
+      <div className="bg-white rounded-xl border shadow-sm p-6">
+        <div className="flex items-center justify-center gap-4">
+          <div className={`flex items-center ${step >= 1 ? 'text-cyan-700' : 'text-gray-400'}`}>
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                step >= 1 ? 'border-cyan-700 bg-cyan-50' : 'border-gray-300'
+              }`}
+            >
               1
             </div>
             <span className="ml-2 font-medium">Datos del Cliente</span>
           </div>
-          <div className="w-16 h-0.5 bg-gray-300"></div>
-          <div className={`flex items-center ${step >= 2 ? 'text-indigo-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= 2 ? 'border-indigo-600 bg-indigo-100' : 'border-gray-300'}`}>
+          <div className="w-16 h-0.5 bg-gray-300" />
+          <div className={`flex items-center ${step >= 2 ? 'text-cyan-700' : 'text-gray-400'}`}>
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                step >= 2 ? 'border-cyan-700 bg-cyan-50' : 'border-gray-300'
+              }`}
+            >
               2
             </div>
             <span className="ml-2 font-medium">Agregar Items</span>
@@ -483,6 +611,105 @@ function NewQuotePageContent() {
       {/* Step 2: Add Items */}
       {step === 2 && (
         <div className="space-y-6">
+          <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Plantilla para esta cotizacion</h3>
+                <p className="text-sm text-gray-600">
+                  Aplica parametros de impresion y sugerencia de precio a nuevos items.
+                </p>
+              </div>
+              <button
+                onClick={() => router.push('/dashboard/quotes/templates')}
+                className="px-3 py-2 rounded-lg border text-sm hover:bg-gray-50"
+              >
+                Administrar Plantillas
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+              <select
+                value={selectedTemplateID}
+                onChange={(event) => setSelectedTemplateID(event.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-black"
+                disabled={templatesLoading}
+              >
+                <option value="">
+                  {templatesLoading ? 'Cargando plantillas...' : 'Seleccionar plantilla'}
+                </option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name} ({template.material})
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  const selected = templates.find((template) => template.id === selectedTemplateID)
+                  if (selected) {
+                    applyTemplate(selected)
+                  }
+                }}
+                disabled={!selectedTemplateID || templatesLoading}
+                className="px-4 py-2 rounded-lg bg-cyan-700 text-white hover:bg-cyan-800 disabled:opacity-50"
+              >
+                Aplicar Plantilla
+              </button>
+            </div>
+
+            {templateError && (
+              <div className="rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-2 text-sm">
+                {templateError}
+              </div>
+            )}
+            {templateNotice && (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 px-3 py-2 text-sm">
+                {templateNotice}
+              </div>
+            )}
+
+            {selectedTemplate && (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-cyan-900">{selectedTemplate.name}</p>
+                    <p className="text-sm text-cyan-800">
+                      {selectedTemplate.material} | {selectedTemplate.infill_percentage}% infill | {selectedTemplate.layer_height}mm capa | {selectedTemplate.print_speed}mm/s
+                    </p>
+                    {selectedTemplate.description && (
+                      <p className="text-sm text-cyan-900 mt-1">{selectedTemplate.description}</p>
+                    )}
+                  </div>
+                  <div className="text-sm text-cyan-900">
+                    <p>Costo base: {formatCurrency(selectedTemplate.base_cost)}</p>
+                    <p>Margen: {selectedTemplate.markup_percentage}%</p>
+                    <p className="font-semibold">
+                      Precio sugerido: {formatCurrency(getSuggestedTemplateUnitPrice(selectedTemplate))}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      setPricingMode('manual')
+                      setCustomPrice(getSuggestedTemplateUnitPrice(selectedTemplate))
+                    }}
+                    className="px-3 py-2 rounded-lg bg-cyan-700 text-white text-sm hover:bg-cyan-800"
+                  >
+                    Usar precio sugerido
+                  </button>
+                  <button
+                    onClick={clearTemplateSelection}
+                    className="px-3 py-2 rounded-lg border text-sm hover:bg-white"
+                  >
+                    Quitar plantilla
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Current Items */}
           {items.length > 0 && (
             <div className="bg-white rounded-lg shadow p-6">
