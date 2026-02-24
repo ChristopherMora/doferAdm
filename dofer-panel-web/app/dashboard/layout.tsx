@@ -1,12 +1,17 @@
 'use client'
 
-import { useEffect, useState, memo, useCallback } from 'react'
+import { useEffect, useState, memo, useCallback, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { apiClient } from '@/lib/api'
 import ThemeToggle from '@/components/ThemeToggle'
-import ShortcutsHelper from '@/components/ShortcutsHelper'
+
+interface OrderStats {
+  urgent_orders: number
+  total_orders: number
+  orders_by_status?: Record<string, number>
+}
 
 // Componente de breadcrumbs para navegación contextual
 const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
@@ -164,39 +169,26 @@ export default function DashboardLayout({
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [showSearch, setShowSearch] = useState(false)
-  const [sidebarCompact, setSidebarCompact] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [orderStats, setOrderStats] = useState<{ urgent: number; new: number; total: number }>({ urgent: 0, new: 0, total: 0 })
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    'Órdenes': false,
-    'Cotizaciones': false,
-    'Configuración': false
-  })
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean | undefined>>({})
+
+  const autoExpandedSections = useMemo<Record<string, boolean>>(() => ({
+    'Órdenes': pathname.includes('/orders') || pathname.includes('/kanban') || pathname.includes('/search'),
+    'Cotizaciones': pathname.includes('/quotes'),
+    'Configuración':
+      pathname.includes('/printers') ||
+      pathname.includes('/products') ||
+      pathname.includes('/calculadora') ||
+      pathname.includes('/settings'),
+  }), [pathname])
 
   const toggleSection = useCallback((sectionName: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [sectionName]: !prev[sectionName]
-    }))
-  }, [])
-
-  // Auto-expandir secciones cuando la ruta activa está dentro
-  useEffect(() => {
-    const newExpanded = { ...expandedSections }
-    
-    if (pathname.includes('/orders') || pathname.includes('/kanban') || pathname.includes('/search')) {
-      newExpanded['Órdenes'] = true
-    }
-    if (pathname.includes('/quotes')) {
-      newExpanded['Cotizaciones'] = true
-    }
-    if (pathname.includes('/printers') || pathname.includes('/products') || 
-        pathname.includes('/calculadora') || pathname.includes('/settings')) {
-      newExpanded['Configuración'] = true
-    }
-    
-    setExpandedSections(newExpanded)
-  }, [pathname])
+    setExpandedSections((prev) => {
+      const current = prev[sectionName] ?? autoExpandedSections[sectionName] ?? false
+      return { ...prev, [sectionName]: !current }
+    })
+  }, [autoExpandedSections])
 
   // Atajos de teclado
   useEffect(() => {
@@ -216,13 +208,6 @@ export default function DashboardLayout({
       if (e.key === '/' && !isInputField) {
         e.preventDefault()
         setShowSearch(true)
-        return
-      }
-      
-      // Cmd/Ctrl + B para toggle sidebar compacto
-      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-        e.preventDefault()
-        setSidebarCompact(prev => !prev)
         return
       }
       
@@ -280,7 +265,7 @@ export default function DashboardLayout({
     // Cargar stats de órdenes
     const loadOrderStats = async () => {
       try {
-        const data = await apiClient.get<any>('/orders/stats')
+        const data = await apiClient.get<OrderStats>('/orders/stats')
         setOrderStats({
           urgent: data.urgent_orders || 0,
           new: data.orders_by_status?.new || 0,
@@ -301,6 +286,7 @@ export default function DashboardLayout({
     // Limpiar token de prueba
     localStorage.removeItem('test-token')
     // Limpiar cookie de sesión
+    document.cookie = 'sb-access-token=; path=/; max-age=0'
     document.cookie = 'sb-localhost-auth-token=; path=/; max-age=0'
     // Cerrar sesión de Supabase
     await supabase.auth.signOut()
@@ -447,7 +433,7 @@ export default function DashboardLayout({
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto" aria-label="Navegación principal">
             {navigation.map((item) => {
               const isActive = item.href ? pathname === item.href : item.subItems?.some(sub => pathname === sub.href) || false
-              const isExpanded = item.subItems ? expandedSections[item.name] : undefined
+              const isExpanded = item.subItems ? (expandedSections[item.name] ?? autoExpandedSections[item.name] ?? false) : undefined
               
               // Agregar badges con contadores
               let badge: number | undefined = undefined
@@ -483,10 +469,6 @@ export default function DashboardLayout({
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span>Buscar</span>
                   <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘K</kbd>
-                </div>
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span>Sidebar compacto</span>
-                  <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘B</kbd>
                 </div>
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span>Navegación rápida</span>

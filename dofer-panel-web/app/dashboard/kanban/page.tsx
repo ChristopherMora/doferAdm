@@ -13,12 +13,12 @@ import {
   DragStartEvent,
   MouseSensor,
   TouchSensor,
+  useDroppable,
+  useDraggable,
   useSensor,
   useSensors,
-  closestCorners,
-  pointerWithin
+  closestCorners
 } from '@dnd-kit/core'
-import { CSS } from '@dnd-kit/utilities'
 
 const STATUS_COLUMNS = [
   { id: 'new', label: 'Nuevas', icon: '✨', color: 'bg-yellow-50 border-yellow-200' },
@@ -265,7 +265,6 @@ function DroppableColumn({
   orders: Order[]
   activeOrderId?: string
 }) {
-  const { useDroppable } = require('@dnd-kit/core')
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
   })
@@ -327,7 +326,6 @@ function DroppableColumn({
 
 // Componente para orden draggable
 function DraggableOrder({ order, isDragging }: { order: Order; isDragging: boolean }) {
-  const { useDraggable } = require('@dnd-kit/core')
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: order.id,
   })

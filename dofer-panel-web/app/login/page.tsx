@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
@@ -29,8 +30,9 @@ export default function LoginPage() {
         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`
         router.push('/dashboard')
       }
-    } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al iniciar sesión'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -98,9 +100,9 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-6 text-center">
-          <a href="/" className="text-sm text-indigo-600 hover:text-indigo-700">
+          <Link href="/" className="text-sm text-indigo-600 hover:text-indigo-700">
             ← Volver al inicio
-          </a>
+          </Link>
         </div>
       </div>
     </div>

@@ -1,9 +1,11 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/api/v1'
 const DEV_TEST_TOKEN = 'test-auth-token'
 
+type QueryValue = string | number | boolean | null | undefined
+
 interface RequestConfig extends RequestInit {
   token?: string
-  params?: Record<string, any>
+  params?: Record<string, QueryValue>
 }
 
 function parseSupabaseToken(rawValue: string): string | undefined {
@@ -111,7 +113,12 @@ async function apiRequest<T>(
   // Build query string from params
   let url = `${API_URL}${endpoint}`
   if (params) {
-    const queryString = new URLSearchParams(params).toString()
+    const queryParams = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === null || value === undefined) continue
+      queryParams.set(key, String(value))
+    }
+    const queryString = queryParams.toString()
     if (queryString) {
       const separator = url.includes('?') ? '&' : '?'
       url = `${url}${separator}${queryString}`
@@ -146,7 +153,7 @@ async function apiRequest<T>(
 }
 
 export const apiClient = {
-  get: <T>(endpoint: string, config?: { params?: Record<string, any>, token?: string }) =>
+  get: <T>(endpoint: string, config?: { params?: Record<string, QueryValue>, token?: string }) =>
     apiRequest<T>(endpoint, { method: 'GET', ...config }),
   
   post: <T>(endpoint: string, data?: unknown, token?: string) =>

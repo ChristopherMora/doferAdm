@@ -4,11 +4,49 @@ import { useState, useEffect } from 'react'
 import { autoAssignOrder, type Printer, type Order, type AssignmentResult } from '@/lib/autoAssignment'
 import { apiClient } from '@/lib/api'
 
+interface BackendOrder {
+  id: string
+  priority: 'low' | 'normal' | 'high' | 'urgent' | string
+  created_at: string
+}
+
+const DEFAULT_PRINTERS: Printer[] = [
+  {
+    id: 'printer-1',
+    name: 'Dofer FDM 01',
+    type: 'FDM',
+    status: 'available',
+    buildVolume: { width: 220, height: 250, depth: 220 },
+    materials: ['PLA', 'PETG', 'TPU'],
+    capabilities: {
+      maxLayerHeight: 0.3,
+      minLayerHeight: 0.08,
+      maxPrintSpeed: 120,
+    },
+  },
+  {
+    id: 'printer-2',
+    name: 'Dofer FDM 02',
+    type: 'FDM',
+    status: 'busy',
+    buildVolume: { width: 300, height: 300, depth: 300 },
+    materials: ['PLA', 'ABS', 'PETG'],
+    currentJob: {
+      orderId: 'job-sample-001',
+      estimatedCompletion: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    },
+    capabilities: {
+      maxLayerHeight: 0.3,
+      minLayerHeight: 0.1,
+      maxPrintSpeed: 100,
+    },
+  },
+]
+
 export default function PrintersPage() {
-  const [printers, setPrinters] = useState<Printer[]>([])
+  const [printers, setPrinters] = useState<Printer[]>(DEFAULT_PRINTERS)
   const [pendingOrders, setPendingOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const [showAddPrinter, setShowAddPrinter] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null)
   const [assignmentResult, setAssignmentResult] = useState<AssignmentResult | null>(null)
 
@@ -18,12 +56,21 @@ export default function PrintersPage() {
 
   const loadData = async () => {
     try {
-      const [printersData, ordersData] = await Promise.all([
-        apiClient.get('/printers'),
-        apiClient.get('/orders?status=pending')
-      ])
-      setPrinters((printersData as any).printers || [])
-      setPendingOrders((ordersData as any).orders || [])
+      // No existe endpoint /printers aún en backend; usar inventario local temporal.
+      setPrinters(DEFAULT_PRINTERS)
+
+      const ordersData = await apiClient.get<{ orders: BackendOrder[] }>('/orders', {
+        params: { status: 'new' },
+      })
+      const mappedOrders: Order[] = (ordersData.orders || []).map((order) => ({
+        id: order.id,
+        material: 'PLA',
+        priority: toPriority(order.priority),
+        dimensions: { width: 100, height: 100, depth: 100 },
+        estimatedTime: 4,
+        created_at: new Date(order.created_at),
+      }))
+      setPendingOrders(mappedOrders)
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -38,20 +85,6 @@ export default function PrintersPage() {
     const result = await autoAssignOrder(order, printers)
     setAssignmentResult(result)
     setSelectedOrder(orderId)
-
-    if (result.success) {
-      // Asignar en el backend
-      try {
-        await apiClient.patch(`/orders/${orderId}`, {
-          printer_id: result.printerId,
-          estimated_start: result.estimatedStart,
-          estimated_completion: result.estimatedCompletion
-        })
-        await loadData()
-      } catch (error) {
-        console.error('Error assigning order:', error)
-      }
-    }
   }
 
   const getStatusColor = (status: string) => {
@@ -87,12 +120,9 @@ export default function PrintersPage() {
             Gestiona tus impresoras y asigna órdenes automáticamente
           </p>
         </div>
-        <button
-          onClick={() => setShowAddPrinter(true)}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
-        >
-          + Agregar Impresora
-        </button>
+        <span className="text-sm text-muted-foreground">
+          Modo temporal: inventario local de impresoras
+        </span>
       </div>
 
       {/* Resumen de capacidad */}
@@ -246,4 +276,11 @@ export default function PrintersPage() {
       </div>
     </div>
   )
+}
+
+function toPriority(value: string): Order['priority'] {
+  if (value === 'low' || value === 'normal' || value === 'high' || value === 'urgent') {
+    return value
+  }
+  return 'normal'
 }
