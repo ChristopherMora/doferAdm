@@ -46,10 +46,12 @@ export default function LoginPage() {
 
       <div className="relative z-10 mx-auto min-h-screen max-w-6xl px-4 py-8 lg:px-8 lg:py-12">
         <div className="grid min-h-[88vh] items-stretch gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="panel-surface-strong rounded-3xl p-8 text-white lg:p-10">
+          <section className="relative overflow-hidden rounded-3xl border border-cyan-200/25 bg-slate-900/90 p-8 text-slate-100 shadow-2xl shadow-cyan-950/45 backdrop-blur lg:p-10">
+            <div className="pointer-events-none absolute -top-20 -right-20 h-60 w-60 rounded-full bg-cyan-400/20 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-16 -left-10 h-56 w-56 rounded-full bg-amber-300/20 blur-3xl" />
             <div className="flex h-full flex-col justify-between">
               <div>
-                <div className="inline-flex items-center gap-3 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.12em]">
+                <div className="inline-flex items-center gap-3 rounded-full border border-cyan-100/35 bg-cyan-200/10 px-3 py-1 text-xs uppercase tracking-[0.12em] text-cyan-50">
                   <span className="h-2 w-2 rounded-full bg-emerald-400" />
                   Plataforma operativa
                 </div>
@@ -57,29 +59,29 @@ export default function LoginPage() {
                 <h1 className="mt-6 text-4xl font-bold leading-tight lg:text-5xl">
                   DOFER Panel
                 </h1>
-                <p className="mt-4 max-w-md text-white/80">
+                <p className="mt-4 max-w-md text-slate-200">
                   Controla ordenes, cotizaciones, impresoras y clientes desde un solo tablero.
                 </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3 mt-10">
-                <div className="rounded-xl border border-white/20 bg-white/10 p-4">
-                  <p className="text-xs text-white/75">Operacion</p>
+                <div className="rounded-xl border border-slate-200/20 bg-slate-800/55 p-4">
+                  <p className="text-xs text-slate-300">Operacion</p>
                   <p className="mt-1 text-xl font-semibold">En linea</p>
                 </div>
-                <div className="rounded-xl border border-white/20 bg-white/10 p-4">
-                  <p className="text-xs text-white/75">Modulos</p>
+                <div className="rounded-xl border border-slate-200/20 bg-slate-800/55 p-4">
+                  <p className="text-xs text-slate-300">Modulos</p>
                   <p className="mt-1 text-xl font-semibold">8 activos</p>
                 </div>
-                <div className="rounded-xl border border-white/20 bg-white/10 p-4">
-                  <p className="text-xs text-white/75">Enfoque</p>
+                <div className="rounded-xl border border-slate-200/20 bg-slate-800/55 p-4">
+                  <p className="text-xs text-slate-300">Enfoque</p>
                   <p className="mt-1 text-xl font-semibold">Produccion</p>
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="panel-surface rounded-3xl p-7 lg:p-9">
+          <section className="rounded-3xl border border-slate-200/85 bg-white/95 p-7 shadow-2xl shadow-slate-950/10 backdrop-blur lg:p-9">
             <div className="mx-auto w-full max-w-md">
               <div className="mb-8 text-center">
                 <div className="mb-4 flex justify-center">
@@ -103,7 +105,7 @@ export default function LoginPage() {
                 )}
 
                 <div>
-                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-foreground">
+                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">
                     Email
                   </label>
                   <input
@@ -112,13 +114,13 @@ export default function LoginPage() {
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
-                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-black focus:ring-2 focus:ring-primary"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200 focus:outline-none"
                     placeholder="admin@dofer.com"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="password" className="mb-2 block text-sm font-medium text-foreground">
+                  <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-700">
                     Contrasena
                   </label>
                   <input
@@ -127,7 +129,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     required
-                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-black focus:ring-2 focus:ring-primary"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200 focus:outline-none"
                     placeholder="••••••••"
                   />
                 </div>
