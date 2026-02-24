@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { 
@@ -47,18 +48,12 @@ export default function StatsPage() {
       
       setStats(statsResponse)
       setRecentOrders(ordersResponse.orders || [])
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching stats:', err)
-      setError(err.message || 'Error al cargar estadísticas')
+      setError(getErrorMessage(err, 'Error al cargar estadísticas'))
     } finally {
       setLoading(false)
     }
-  }
-
-  const formatTime = (minutes: number): string => {
-    const hours = Math.floor(minutes / 60)
-    const mins = Math.floor(minutes % 60)
-    return `${hours}h ${mins}m`
   }
 
   const calculateRevenue = () => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,9 +27,10 @@ export default function QuotesPage() {
       setBackendError(false)
       const response = await apiClient.get<{ quotes: Quote[], total: number }>('/quotes')
       setQuotes(response.quotes || [])
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading quotes:', error)
-      if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+      const message = getErrorMessage(error, '')
+      if (message.includes('fetch') || message.includes('Failed to fetch')) {
         setBackendError(true)
       }
     } finally {

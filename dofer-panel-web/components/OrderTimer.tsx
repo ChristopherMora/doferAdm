@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { TimerState } from '@/types'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 
 interface OrderTimerProps {
   orderId: string
@@ -35,9 +36,9 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
       } else {
         setCurrentTime(state.actual_time_minutes)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching timer state:', err)
-      setError(err.response?.data?.error || 'Error al cargar el timer')
+      setError(getErrorMessage(err, 'Error al cargar el timer'))
     }
   }, [orderId])
 
@@ -64,8 +65,8 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
     try {
       await apiClient.post(`/orders/${orderId}/timer/start`, {})
       await fetchTimerState()
-    } catch (err: any) {
-      setError(err.response?.data || 'Error al iniciar el timer')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al iniciar el timer'))
     } finally {
       setLoading(false)
     }
@@ -77,8 +78,8 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
     try {
       await apiClient.post(`/orders/${orderId}/timer/pause`, {})
       await fetchTimerState()
-    } catch (err: any) {
-      setError(err.response?.data || 'Error al pausar el timer')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al pausar el timer'))
     } finally {
       setLoading(false)
     }
@@ -90,8 +91,8 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
     try {
       await apiClient.post(`/orders/${orderId}/timer/stop`, {})
       await fetchTimerState()
-    } catch (err: any) {
-      setError(err.response?.data || 'Error al detener el timer')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al detener el timer'))
     } finally {
       setLoading(false)
     }
@@ -112,8 +113,8 @@ export default function OrderTimer({ orderId, estimatedMinutes = 0 }: OrderTimer
       setEstimatedTime(tempEstimated)
       setIsEditingEstimated(false)
       await fetchTimerState()
-    } catch (err: any) {
-      setError(err.response?.data || 'Error al actualizar tiempo estimado')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al actualizar tiempo estimado'))
     } finally {
       setLoading(false)
     }

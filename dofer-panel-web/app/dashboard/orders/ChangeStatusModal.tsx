@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 
 interface ChangeStatusModalProps {
   isOpen: boolean
@@ -56,8 +57,8 @@ export default function ChangeStatusModal({ isOpen, onClose, onSuccess, orderId,
       await apiClient.patch(`/orders/${orderId}/status`, { status: newStatus })
       onSuccess()
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Error al cambiar el estado')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al cambiar el estado'))
     } finally {
       setLoading(false)
     }

@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import CalculadoraCostos from '@/components/CalculadoraCostos'
 
 interface QuoteItem {
@@ -15,6 +16,66 @@ interface QuoteItem {
   other_costs: number
   unit_price: number
   total: number
+}
+
+interface QuoteSummary {
+  id: string
+  customer_name: string
+  customer_email?: string
+  customer_phone?: string
+  notes?: string
+  valid_until: string
+  created_at: string
+}
+
+interface QuoteItemAPI {
+  id: string
+  product_name: string
+  description?: string
+  weight_grams: number
+  print_time_hours: number
+  quantity: number
+  other_costs?: number
+  unit_price: number
+  total: number
+}
+
+interface QuoteDetailResponse {
+  quote: QuoteSummary
+  items?: QuoteItemAPI[] | null
+}
+
+interface CreateQuoteResponse {
+  id: string
+}
+
+interface CostBreakdown {
+  unit_price: number
+  total: number
+}
+
+interface QuoteItemPayload {
+  product_name: string
+  description: string
+  weight_grams: number
+  print_time_hours: number
+  quantity: number
+  other_costs: number
+  unit_price?: number
+}
+
+function mapQuoteItemFromAPI(item: QuoteItemAPI): QuoteItem {
+  return {
+    id: item.id,
+    product_name: item.product_name,
+    description: item.description || '',
+    weight_grams: item.weight_grams,
+    print_time_hours: item.print_time_hours,
+    quantity: item.quantity,
+    other_costs: item.other_costs || 0,
+    unit_price: item.unit_price,
+    total: item.total,
+  }
 }
 
 function NewQuotePageContent() {
@@ -57,7 +118,7 @@ function NewQuotePageContent() {
   const loadQuoteForEdit = async (quoteIdToEdit: string) => {
     try {
       setLoading(true)
-      const response = await apiClient.get<any>(`/quotes/${quoteIdToEdit}`)
+      const response = await apiClient.get<QuoteDetailResponse>(`/quotes/${quoteIdToEdit}`)
       const quote = response.quote
       const existingItems = response.items || []
 
@@ -74,23 +135,13 @@ function NewQuotePageContent() {
       setValidDays(diffDays > 0 ? diffDays : 15)
 
       // Load existing items
-      const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
-        id: item.id, // Guardar el ID del backend
-        product_name: item.product_name,
-        description: item.description || '',
-        weight_grams: item.weight_grams,
-        print_time_hours: item.print_time_hours,
-        quantity: item.quantity,
-        other_costs: item.other_costs || 0,
-        unit_price: item.unit_price,
-        total: item.total,
-      }))
+      const formattedItems: QuoteItem[] = existingItems.map(mapQuoteItemFromAPI)
       setItems(formattedItems)
 
       setQuoteId(quoteIdToEdit)
       setIsEditMode(true)
       setStep(2) // Go directly to items step
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading quote:', error)
       alert('Error al cargar cotización para editar')
       router.push('/dashboard/quotes')
@@ -116,9 +167,9 @@ function NewQuotePageContent() {
       })
       
       alert('✅ Información del cliente actualizada')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating quote:', error)
-      alert(`Error al actualizar cotización: ${error.message || 'Error desconocido'}`)
+      alert(`Error al actualizar cotización: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
       setLoading(false)
     }
@@ -132,7 +183,7 @@ function NewQuotePageContent() {
 
     try {
       setLoading(true)
-      const response = await apiClient.post<any>('/quotes', {
+      const response = await apiClient.post<CreateQuoteResponse>('/quotes', {
         customer_name: customerName,
         customer_email: customerEmail || '',
         customer_phone: customerPhone,
@@ -142,21 +193,22 @@ function NewQuotePageContent() {
       
       setQuoteId(response.id)
       setStep(2)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating quote:', error)
+      const message = getErrorMessage(error, 'Error desconocido')
       
       // Mensaje más específico dependiendo del error
-      if (error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+      if (message.includes('fetch') || message.includes('Failed to fetch')) {
         alert('❌ No se puede conectar al servidor.\n\nEl backend API no está corriendo.\n\nPara crear cotizaciones necesitas:\n1. Configurar la base de datos (Supabase o Docker)\n2. Iniciar el backend: cd dofer-panel-api && go run cmd/api/main.go')
       } else {
-        alert(`Error al crear cotización: ${error.message || 'Error desconocido'}`)
+        alert(`Error al crear cotización: ${message}`)
       }
     } finally {
       setLoading(false)
     }
   }
 
-  const addItemToQuote = async (breakdown?: any) => {
+  const addItemToQuote = async (breakdown?: CostBreakdown) => {
     if (!quoteId) {
       alert('Por favor crea la cotización primero (Paso 1)')
       return
@@ -192,7 +244,7 @@ function NewQuotePageContent() {
       }
 
       // Enviar con precio personalizado si aplica
-      const itemData: any = {
+      const itemData: QuoteItemPayload = {
         product_name: currentItem.product_name,
         description: currentItem.description,
         weight_grams: currentItem.weight_grams,
@@ -210,20 +262,9 @@ function NewQuotePageContent() {
 
       // Si estamos en modo edición, recargar la cotización para obtener totales actualizados
       if (isEditMode) {
-        const response = await apiClient.get<any>(`/quotes/${quoteId}`)
+        const response = await apiClient.get<QuoteDetailResponse>(`/quotes/${quoteId}`)
         const existingItems = response.items || []
-        
-        const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
-          id: item.id,
-          product_name: item.product_name,
-          description: item.description || '',
-          weight_grams: item.weight_grams,
-          print_time_hours: item.print_time_hours,
-          quantity: item.quantity,
-          other_costs: item.other_costs || 0,
-          unit_price: item.unit_price,
-          total: item.total,
-        }))
+        const formattedItems: QuoteItem[] = existingItems.map(mapQuoteItemFromAPI)
         setItems(formattedItems)
       } else {
         // En modo creación, agregar al estado local
@@ -247,9 +288,9 @@ function NewQuotePageContent() {
       setCustomPrice(0)
 
       alert('✅ Item agregado exitosamente')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding item:', error)
-      alert(`Error al agregar item: ${error.message || 'Error desconocido'}`)
+      alert(`Error al agregar item: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
       setLoading(false)
     }
@@ -265,26 +306,15 @@ function NewQuotePageContent() {
         await apiClient.delete(`/quotes/${quoteId}/items/${item.id}`)
         
         // Recargar la cotización para obtener los totales actualizados
-        const response = await apiClient.get<any>(`/quotes/${quoteId}`)
+        const response = await apiClient.get<QuoteDetailResponse>(`/quotes/${quoteId}`)
         const existingItems = response.items || []
-        
-        const formattedItems: QuoteItem[] = existingItems.map((item: any) => ({
-          id: item.id,
-          product_name: item.product_name,
-          description: item.description || '',
-          weight_grams: item.weight_grams,
-          print_time_hours: item.print_time_hours,
-          quantity: item.quantity,
-          other_costs: item.other_costs || 0,
-          unit_price: item.unit_price,
-          total: item.total,
-        }))
+        const formattedItems: QuoteItem[] = existingItems.map(mapQuoteItemFromAPI)
         setItems(formattedItems)
         
         alert('✅ Item eliminado')
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error deleting item:', error)
-        alert(`Error al eliminar item: ${error.message || 'Error desconocido'}`)
+        alert(`Error al eliminar item: ${getErrorMessage(error, 'Error desconocido')}`)
       } finally {
         setLoading(false)
       }

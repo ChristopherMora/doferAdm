@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf'
-import { Quote, QuoteItem, Order, OrderItem } from '@/types'
+import { Quote, QuoteItem, Order, OrderItem, OrderPayment } from '@/types'
 
 export function generateQuotePDF(quote: Quote) {
   const doc = new jsPDF()
@@ -302,7 +302,7 @@ function formatCurrency(value: number): string {
 
 // ============= GENERADOR DE PDF PARA PEDIDOS =============
 
-export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: any[]) {
+export function generateOrderPDF(order: Order, items?: OrderItem[], payments?: OrderPayment[]) {
   const doc = new jsPDF()
   const pageWidth = doc.internal.pageSize.width
   const pageHeight = doc.internal.pageSize.height

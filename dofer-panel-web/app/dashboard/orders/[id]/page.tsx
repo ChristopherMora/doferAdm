@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { OrderItem, OrderPayment, Order as OrderType } from '@/types'
+import { getErrorMessage } from '@/lib/errors'
 import ChangeStatusModal from '../ChangeStatusModal'
 import AssignOperatorModal from '../AssignOperatorModal'
 import OrderTimer from '@/components/OrderTimer'
@@ -66,9 +67,9 @@ export default function OrderDetailPage() {
       setHistory(historyData.history || [])
       setItems(itemsData.items || [])
       setPayments(paymentsData.payments || [])
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading order:', err)
-      setError(err.response?.data?.error || err.message || 'Error al cargar la orden')
+      setError(getErrorMessage(err, 'Error al cargar la orden'))
     } finally {
       setLoading(false)
     }
@@ -88,7 +89,7 @@ export default function OrderDetailPage() {
           ? { ...item, is_completed: !currentStatus, completed_at: !currentStatus ? new Date().toISOString() : undefined }
           : item
       ))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating item status:', err)
       alert('Error al actualizar el estado del item')
     }
@@ -107,7 +108,7 @@ export default function OrderDetailPage() {
       setNewItem({ product_name: '', description: '', quantity: 1, unit_price: 0 })
       // Recargar la orden para actualizar los totales
       await loadOrder()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error adding item:', err)
       alert('Error al agregar el item')
     }
@@ -121,7 +122,7 @@ export default function OrderDetailPage() {
       setItems(items.filter(item => item.id !== itemId))
       // Recargar la orden para actualizar los totales
       await loadOrder()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting item:', err)
       alert('Error al eliminar el item')
     }
@@ -144,7 +145,7 @@ export default function OrderDetailPage() {
       setNewPayment({ amount: 0, payment_method: 'efectivo', notes: '' })
       // Recargar la orden para actualizar los totales
       await loadOrder()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error adding payment:', err)
       alert('Error al agregar el pago')
     }
@@ -158,7 +159,7 @@ export default function OrderDetailPage() {
       setPayments(payments.filter(p => p.id !== paymentId))
       // Recargar la orden para actualizar los totales
       await loadOrder()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting payment:', err)
       alert('Error al eliminar el pago')
     }
@@ -298,19 +299,19 @@ export default function OrderDetailPage() {
               <p className="text-sm text-gray-500">Cantidad</p>
               <p className="text-base text-gray-900">{order.quantity} unidades</p>
             </div>
-            {(order as any).print_file && (
+            {order.print_file && (
               <div>
                 <p className="text-sm text-gray-500">Archivo de Impresión</p>
                 <div className="flex items-center gap-2 mt-1">
                   <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <a 
-                    href={(order as any).print_file} 
-                    download={(order as any).print_file_name || 'archivo'}
+                  <a
+                    href={order.print_file}
+                    download={order.print_file_name || 'archivo'}
                     className="text-base text-indigo-600 hover:text-indigo-800 font-medium"
                   >
-                    {(order as any).print_file_name}
+                    {order.print_file_name || 'archivo'}
                   </a>
                 </div>
               </div>
@@ -348,9 +349,9 @@ export default function OrderDetailPage() {
                       `Pagado: ${formatCurrency(updatedOrder.amount_paid)}\n` +
                       `Balance: ${formatCurrency(updatedOrder.balance)}`
                     alert(msg)
-                  } catch (err: any) {
+                  } catch (err: unknown) {
                     console.error('Error completo al recalcular:', err)
-                    alert('❌ Error al recalcular totales:\n' + (err.message || JSON.stringify(err)))
+                    alert(`❌ Error al recalcular totales:\n${getErrorMessage(err, 'Error desconocido')}`)
                   }
                 }}
                 className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
@@ -716,7 +717,7 @@ export default function OrderDetailPage() {
       {order && (
         <OrderTimer 
           orderId={order.id} 
-          estimatedMinutes={(order as any).estimated_time_minutes || 0}
+          estimatedMinutes={order.estimated_time_minutes || 0}
         />
       )}
 

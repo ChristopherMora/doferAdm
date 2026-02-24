@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 
 interface AssignOperatorModalProps {
   isOpen: boolean
@@ -42,8 +43,8 @@ export default function AssignOperatorModal({ isOpen, onClose, onSuccess, orderI
       await apiClient.patch(`/orders/${orderId}/assign`, { user_id: selectedUser })
       onSuccess()
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Error al asignar operador')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Error al asignar operador'))
     } finally {
       setLoading(false)
     }

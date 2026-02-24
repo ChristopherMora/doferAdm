@@ -30,6 +30,10 @@ interface CustomerStats {
   total_revenue: number
 }
 
+interface CustomersResponse {
+  customers: Customer[]
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [stats, setStats] = useState<CustomerStats | null>(null)
@@ -57,8 +61,8 @@ export default function CustomersPage() {
       const params = new URLSearchParams()
       if (filterTier) params.append('tier', filterTier)
       
-      const data = await apiClient.get(`/customers?${params.toString()}`)
-      setCustomers((data as any).customers || [])
+      const data = await apiClient.get<CustomersResponse>(`/customers?${params.toString()}`)
+      setCustomers(data.customers || [])
     } catch (error) {
       addToast({
         title: 'Error al cargar clientes',
@@ -88,9 +92,9 @@ export default function CustomersPage() {
     }
 
     try {
-      const data = await apiClient.get(`/customers/search?q=${encodeURIComponent(searchTerm)}`)
-      setCustomers((data as any).customers || [])
-    } catch (error) {
+      const data = await apiClient.get<CustomersResponse>(`/customers/search?q=${encodeURIComponent(searchTerm)}`)
+      setCustomers(data.customers || [])
+    } catch {
       addToast({
         title: 'Error en la búsqueda',
         description: 'No se pudo realizar la búsqueda',

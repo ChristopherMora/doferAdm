@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 
 interface CreateOrderModalProps {
   isOpen: boolean
@@ -57,9 +58,9 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
       })
       setImagePreview(null)
       setPrintFilePreview(null)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating order:', err)
-      setError(err.message || 'Error al crear la orden')
+      setError(getErrorMessage(err, 'Error al crear la orden'))
     } finally {
       setLoading(false)
     }

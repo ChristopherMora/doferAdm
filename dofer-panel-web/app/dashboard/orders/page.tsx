@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
@@ -90,7 +90,7 @@ export default function OrdersPage() {
     try {
       setLoading(true)
       const offset = (currentPage - 1) * ordersPerPage
-      const params: any = {
+      const params: Record<string, string | number> = {
         limit: ordersPerPage,
         offset: offset,
       }

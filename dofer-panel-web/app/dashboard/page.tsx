@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState, useMemo, memo, useCallback } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { apiClient } from '@/lib/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import type { LucideIcon } from 'lucide-react'
 import { 
   RefreshCw, Plus, FileText, Package, Calendar, Flame, CheckCircle2, 
   Clock, XCircle, BarChart3, AlertTriangle, Printer, Wrench, 
@@ -22,39 +23,29 @@ interface OrderStats {
   average_per_day: number
 }
 
-// Memoizar card de estadísticas
-const StatsCard = memo(({ 
-  title, 
-  value, 
-  description, 
-  icon: Icon, 
-  trend 
-}: { 
-  title: string
-  value: string | number
-  description: string
-  icon: any
-  trend?: string
-}) => (
-  <Card className="hover:shadow-md transition-shadow">
-    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-      <CardTitle className="text-sm font-medium">{title}</CardTitle>
-      <Icon className="h-4 w-4 text-muted-foreground" />
-    </CardHeader>
-    <CardContent>
-      <div className="text-2xl font-bold">{value}</div>
-      <p className="text-xs text-muted-foreground">{description}</p>
-      {trend && <p className="text-xs text-green-600 mt-1">{trend}</p>}
-    </CardContent>
-  </Card>
-))
+interface RecentOrder {
+  id: string
+  order_number: string
+  customer_name: string
+  product_name: string
+  quantity?: number
+  status: string
+  created_at: string
+  delivery_deadline?: string
+}
 
-StatsCard.displayName = 'StatsCard'
+interface StatusCardConfig {
+  label: string
+  icon: LucideIcon
+  variant: 'default' | 'secondary' | 'destructive' | 'outline'
+  color: string
+  iconBg: string
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<OrderStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [recentOrders, setRecentOrders] = useState<any[]>([])
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
   const [backendConnected, setBackendConnected] = useState(true)
   const [dueSoonCount, setDueSoonCount] = useState(0)
   const [overdueCount, setOverdueCount] = useState(0)
@@ -71,16 +62,16 @@ export default function DashboardPage() {
       const statsData = await apiClient.get<OrderStats>('/orders/stats')
       setStats(statsData)
 
-      const response = await apiClient.get<{ orders: any[] }>('/orders?limit=5')
+      const response = await apiClient.get<{ orders: RecentOrder[] }>('/orders?limit=5')
       setRecentOrders(response.orders || [])
       
-      const allOrdersResponse = await apiClient.get<{ orders: any[] }>('/orders?limit=1000')
+      const allOrdersResponse = await apiClient.get<{ orders: RecentOrder[] }>('/orders?limit=1000')
       const allOrders = allOrdersResponse.orders || []
       
       let dueSoon = 0, overdue = 0
       const now = new Date()
       
-      allOrders.forEach((order: any) => {
+      allOrders.forEach((order) => {
         if (order.delivery_deadline && !['delivered', 'cancelled'].includes(order.status)) {
           const deadline = new Date(order.delivery_deadline)
           const diffDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
@@ -189,7 +180,7 @@ export default function DashboardPage() {
     },
   ], [stats])
 
-  const statusConfig: Record<string, { label: string; icon: any; variant: 'default' | 'secondary' | 'destructive' | 'outline'; color: string; iconBg: string }> = useMemo(() => ({
+  const statusConfig: Record<string, StatusCardConfig> = useMemo(() => ({
     new: { 
       label: 'Nuevas', 
       icon: Sparkles, 

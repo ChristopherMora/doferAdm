@@ -3,8 +3,16 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { Quote, QuoteItem } from '@/types'
 import { generateQuotePDF } from '@/lib/pdfGenerator'
+
+interface ConvertToOrderResponse {
+  order: {
+    id: string
+    order_number: string
+  }
+}
 
 export default function QuoteDetailPage() {
   const router = useRouter()
@@ -125,15 +133,16 @@ export default function QuoteDetailPage() {
 
     try {
       setUpdating(true)
-      const response = await apiClient.post<any>(`/quotes/${quoteId}/convert-to-order`, {})
+      const response = await apiClient.post<ConvertToOrderResponse>(`/quotes/${quoteId}/convert-to-order`, {})
       alert(`✅ Cotización convertida a pedido: ${response.order.order_number}`)
       router.push(`/dashboard/orders`)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error converting to order:', error)
-      if (error.message?.includes('debe estar aprobada')) {
+      const message = getErrorMessage(error, 'Error desconocido')
+      if (message.includes('debe estar aprobada')) {
         alert('❌ La cotización debe estar aprobada para convertirla en pedido')
       } else {
-        alert(`Error al convertir cotización: ${error.message || 'Error desconocido'}`)
+        alert(`Error al convertir cotización: ${message}`)
       }
     } finally {
       setUpdating(false)
@@ -150,9 +159,9 @@ export default function QuoteDetailPage() {
       await apiClient.post(`/quotes/${quoteId}/sync-items`, {})
       alert('✅ Items sincronizados al pedido exitosamente')
       loadQuote()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error syncing items:', error)
-      alert(`Error: ${error.message || 'No se pudieron sincronizar los items'}`)
+      alert(`Error: ${getErrorMessage(error, 'No se pudieron sincronizar los items')}`)
     } finally {
       setUpdating(false)
     }
@@ -172,9 +181,9 @@ export default function QuoteDetailPage() {
       setPaymentAmount('')
       setShowPaymentModal(false)
       await loadQuote()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding payment:', error)
-      alert(`Error al registrar pago: ${error.message || 'Error desconocido'}`)
+      alert(`Error al registrar pago: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
       setUpdating(false)
     }
@@ -411,7 +420,7 @@ export default function QuoteDetailPage() {
               >
                 📦 Convertir a Pedido
               </button>
-              {(quote as any).converted_to_order_id && (
+              {quote.converted_to_order_id && (
                 <button
                   onClick={syncItemsToOrder}
                   disabled={updating}
