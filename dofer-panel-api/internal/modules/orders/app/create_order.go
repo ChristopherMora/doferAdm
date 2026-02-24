@@ -14,17 +14,18 @@ var (
 )
 
 type CreateOrderCommand struct {
-	Platform      string
-	CustomerName  string
-	CustomerEmail string
-	CustomerPhone string
-	ProductName   string
-	ProductImage  string
-	PrintFile     string
-	PrintFileName string
-	Quantity      int
-	Priority      string
-	Notes         string
+	Platform         string
+	CustomerName     string
+	CustomerEmail    string
+	CustomerPhone    string
+	ProductName      string
+	ProductImage     string
+	PrintFile        string
+	PrintFileName    string
+	Quantity         int
+	Priority         string
+	Notes            string
+	DeliveryDeadline *time.Time
 }
 
 type CreateOrderHandler struct {
@@ -57,6 +58,7 @@ func (h *CreateOrderHandler) Handle(ctx context.Context, cmd CreateOrderCommand)
 	order.PrintFile = cmd.PrintFile
 	order.PrintFileName = cmd.PrintFileName
 	order.Notes = cmd.Notes
+	order.DeliveryDeadline = cmd.DeliveryDeadline
 
 	if cmd.Priority != "" {
 		order.Priority = domain.OrderPriority(cmd.Priority)

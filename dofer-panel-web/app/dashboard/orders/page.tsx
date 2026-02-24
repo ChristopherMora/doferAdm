@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Image, { type ImageLoaderProps } from 'next/image'
 import EmptyState from '@/components/dashboard/EmptyState'
@@ -56,6 +56,41 @@ interface SavedOrderView {
   range: string
   q: string
   showFilters: boolean
+}
+
+type SlaState = 'on_time' | 'risk' | 'overdue' | 'none' | 'closed'
+
+function getOrderSlaState(order: Order): SlaState {
+  if (!order.delivery_deadline) return 'none'
+  if (['delivered', 'cancelled'].includes(order.status)) return 'closed'
+
+  const deadline = new Date(order.delivery_deadline)
+  if (Number.isNaN(deadline.getTime())) return 'none'
+
+  const msRemaining = deadline.getTime() - Date.now()
+  if (msRemaining < 0) return 'overdue'
+  if (msRemaining <= 24 * 60 * 60 * 1000) return 'risk'
+  return 'on_time'
+}
+
+function getSlaBadge(order: Order): {
+  label: string
+  variant: 'default' | 'secondary' | 'destructive' | 'outline'
+  className?: string
+} {
+  const slaState = getOrderSlaState(order)
+  switch (slaState) {
+    case 'on_time':
+      return { label: 'SLA en tiempo', variant: 'default', className: 'bg-emerald-600 text-white hover:bg-emerald-600' }
+    case 'risk':
+      return { label: 'SLA en riesgo', variant: 'secondary', className: 'border-amber-300 bg-amber-50 text-amber-700' }
+    case 'overdue':
+      return { label: 'SLA atrasado', variant: 'destructive' }
+    case 'closed':
+      return { label: 'SLA cerrado', variant: 'outline' }
+    default:
+      return { label: 'Sin fecha limite', variant: 'outline' }
+  }
 }
 
 function sanitizeFilterValue(value: string | null, allowed: string[], fallback = 'all'): string {
@@ -380,6 +415,20 @@ export default function OrdersPage() {
   }
 
   const visibleOrders = getFilteredOrders()
+  const slaSummary = useMemo(() => {
+    return visibleOrders.reduce(
+      (acc, order) => {
+        const sla = getOrderSlaState(order)
+        if (sla === 'on_time') acc.onTime += 1
+        if (sla === 'risk') acc.risk += 1
+        if (sla === 'overdue') acc.overdue += 1
+        if (sla === 'none') acc.none += 1
+        return acc
+      },
+      { onTime: 0, risk: 0, overdue: 0, none: 0 },
+    )
+  }, [visibleOrders])
+
   const visibleOrderIDs = visibleOrders.map((order) => order.id)
   const isAllVisibleSelected =
     visibleOrderIDs.length > 0 && visibleOrderIDs.every((id) => selectedOrderIDs.includes(id))
@@ -854,6 +903,29 @@ export default function OrdersPage() {
         </CardContent>
       </Card>
 
+      <Card className="elevated-md">
+        <CardContent className="py-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-emerald-700">En tiempo</p>
+              <p className="text-2xl font-semibold text-emerald-800">{slaSummary.onTime}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-amber-700">En riesgo</p>
+              <p className="text-2xl font-semibold text-amber-800">{slaSummary.risk}</p>
+            </div>
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-red-700">Atrasadas</p>
+              <p className="text-2xl font-semibold text-red-800">{slaSummary.overdue}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-slate-600">Sin fecha</p>
+              <p className="text-2xl font-semibold text-slate-700">{slaSummary.none}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Vista responsive: Cards en móvil, Tabla en desktop */}
       <Card className="elevated-lg overflow-hidden">
         <CardContent className="p-0">
@@ -894,6 +966,7 @@ export default function OrdersPage() {
               <div className="md:hidden divide-y">
                 {visibleOrders.map((order) => {
                   const isOverdue = order.delivery_deadline && new Date(order.delivery_deadline) < new Date() && !['delivered', 'cancelled'].includes(order.status)
+                  const slaBadge = getSlaBadge(order)
                   
                   return (
                     <div
@@ -948,6 +1021,9 @@ export default function OrdersPage() {
                         <div className="flex flex-wrap gap-2">
                           <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
                           <Badge variant={getPriorityBadge(order.priority)}>{order.priority}</Badge>
+                          <Badge variant={slaBadge.variant} className={slaBadge.className}>
+                            {slaBadge.label}
+                          </Badge>
                           <Badge variant="outline" className="text-xs">{order.platform}</Badge>
                         </div>
 
@@ -988,6 +1064,7 @@ export default function OrdersPage() {
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Cant.</th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Prioridad</th>
+                      <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">SLA</th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Plataforma</th>
                       <th className="text-left py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Fecha</th>
                       <th className="text-right py-3 px-4 text-xs text-muted-foreground font-medium uppercase tracking-wider">Acción</th>
@@ -996,6 +1073,7 @@ export default function OrdersPage() {
                   <tbody>
                     {visibleOrders.map((order) => {
                       const isOverdue = order.delivery_deadline && new Date(order.delivery_deadline) < new Date() && !['delivered', 'cancelled'].includes(order.status)
+                      const slaBadge = getSlaBadge(order)
                       
                       return (
                         <tr 
@@ -1049,6 +1127,11 @@ export default function OrdersPage() {
                           </td>
                           <td className="py-3 px-4">
                             <Badge variant={getPriorityBadge(order.priority)}>{order.priority}</Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge variant={slaBadge.variant} className={slaBadge.className}>
+                              {slaBadge.label}
+                            </Badge>
                           </td>
                           <td className="py-3 px-4 text-muted-foreground">
                             {order.platform}

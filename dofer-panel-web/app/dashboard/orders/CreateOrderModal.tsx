@@ -66,6 +66,8 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
       const deadline = new Date(formData.delivery_deadline)
       if (Number.isNaN(deadline.getTime())) {
         errors.delivery_deadline = 'Fecha de entrega invalida.'
+      } else if (deadline.getTime() < Date.now() - 60_000) {
+        errors.delivery_deadline = 'La fecha de entrega no puede estar en el pasado.'
       }
     }
 
@@ -84,8 +86,12 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
     setError(null)
 
     try {
-      console.log('Creating order with data:', formData)
-      const response = await apiClient.post('/orders', formData)
+      const payload = {
+        ...formData,
+        delivery_deadline: formData.delivery_deadline ? new Date(formData.delivery_deadline).toISOString() : '',
+      }
+      console.log('Creating order with data:', payload)
+      const response = await apiClient.post('/orders', payload)
       console.log('Order created successfully:', response)
       onSuccess()
       onClose()
@@ -363,6 +369,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 name="delivery_deadline"
                 value={formData.delivery_deadline}
                 onChange={handleChange}
+                min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                 className="w-full px-4 py-2 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-700 text-white"
               />
               {formErrors.delivery_deadline && (

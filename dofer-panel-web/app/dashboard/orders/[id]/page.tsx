@@ -237,6 +237,30 @@ export default function OrderDetailPage() {
     return badges[priority] || 'bg-gray-100 text-gray-800'
   }
 
+  const getSlaIndicator = () => {
+    if (!order?.delivery_deadline) {
+      return { label: 'Sin fecha limite', className: 'bg-gray-100 text-gray-700' }
+    }
+
+    if (['delivered', 'cancelled'].includes(order.status)) {
+      return { label: 'SLA cerrado', className: 'bg-gray-100 text-gray-700' }
+    }
+
+    const deadline = new Date(order.delivery_deadline)
+    if (Number.isNaN(deadline.getTime())) {
+      return { label: 'Fecha invalida', className: 'bg-gray-100 text-gray-700' }
+    }
+
+    const remainingMs = deadline.getTime() - Date.now()
+    if (remainingMs < 0) {
+      return { label: 'SLA atrasado', className: 'bg-red-100 text-red-800' }
+    }
+    if (remainingMs <= 24 * 60 * 60 * 1000) {
+      return { label: 'SLA en riesgo', className: 'bg-amber-100 text-amber-800' }
+    }
+    return { label: 'SLA en tiempo', className: 'bg-green-100 text-green-800' }
+  }
+
   const getTotalItems = () => {
     return items.reduce((sum, item) => sum + item.total, 0)
   }
@@ -391,6 +415,20 @@ export default function OrderDetailPage() {
               <div>
                 <p className="text-sm text-gray-500">Notas</p>
                 <p className="text-base text-gray-900 whitespace-pre-wrap">{order.notes}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-sm text-gray-500">SLA</p>
+              <span className={`inline-flex px-3 py-1 mt-1 text-sm font-medium rounded-full ${getSlaIndicator().className}`}>
+                {getSlaIndicator().label}
+              </span>
+            </div>
+            {order.delivery_deadline && (
+              <div>
+                <p className="text-sm text-gray-500">Entrega maxima</p>
+                <p className="text-base text-gray-900">
+                  {new Date(order.delivery_deadline).toLocaleString('es-MX')}
+                </p>
               </div>
             )}
           </div>

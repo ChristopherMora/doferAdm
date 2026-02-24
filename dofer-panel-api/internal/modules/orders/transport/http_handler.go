@@ -2,7 +2,9 @@ package transport
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dofer/panel-api/internal/modules/orders/app"
@@ -95,43 +97,68 @@ func NewOrderHandler(
 }
 
 type CreateOrderRequest struct {
-	Platform      string `json:"platform"`
-	CustomerName  string `json:"customer_name"`
-	CustomerEmail string `json:"customer_email"`
-	CustomerPhone string `json:"customer_phone"`
-	ProductName   string `json:"product_name"`
-	ProductImage  string `json:"product_image"`
-	PrintFile     string `json:"print_file"`
-	PrintFileName string `json:"print_file_name"`
-	Quantity      int    `json:"quantity"`
-	Priority      string `json:"priority"`
-	Notes         string `json:"notes"`
+	Platform         string `json:"platform"`
+	CustomerName     string `json:"customer_name"`
+	CustomerEmail    string `json:"customer_email"`
+	CustomerPhone    string `json:"customer_phone"`
+	ProductName      string `json:"product_name"`
+	ProductImage     string `json:"product_image"`
+	PrintFile        string `json:"print_file"`
+	PrintFileName    string `json:"print_file_name"`
+	Quantity         int    `json:"quantity"`
+	Priority         string `json:"priority"`
+	Notes            string `json:"notes"`
+	DeliveryDeadline string `json:"delivery_deadline"`
 }
 
 type OrderResponse struct {
-	ID            string     `json:"id"`
-	PublicID      string     `json:"public_id"`
-	OrderNumber   string     `json:"order_number"`
-	Platform      string     `json:"platform"`
-	Status        string     `json:"status"`
-	Priority      string     `json:"priority"`
-	CustomerName  string     `json:"customer_name"`
-	CustomerEmail string     `json:"customer_email"`
-	CustomerPhone string     `json:"customer_phone"`
-	ProductName   string     `json:"product_name"`
-	ProductImage  string     `json:"product_image"`
-	PrintFile     string     `json:"print_file,omitempty"`
-	PrintFileName string     `json:"print_file_name,omitempty"`
-	Quantity      int        `json:"quantity"`
-	Notes         string     `json:"notes"`
-	AssignedTo    string     `json:"assigned_to,omitempty"`
-	AssignedAt    *time.Time `json:"assigned_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	Amount        float64    `json:"amount"`
-	AmountPaid    float64    `json:"amount_paid"`
-	Balance       float64    `json:"balance"`
+	ID               string     `json:"id"`
+	PublicID         string     `json:"public_id"`
+	OrderNumber      string     `json:"order_number"`
+	Platform         string     `json:"platform"`
+	Status           string     `json:"status"`
+	Priority         string     `json:"priority"`
+	CustomerName     string     `json:"customer_name"`
+	CustomerEmail    string     `json:"customer_email"`
+	CustomerPhone    string     `json:"customer_phone"`
+	ProductName      string     `json:"product_name"`
+	ProductImage     string     `json:"product_image"`
+	PrintFile        string     `json:"print_file,omitempty"`
+	PrintFileName    string     `json:"print_file_name,omitempty"`
+	Quantity         int        `json:"quantity"`
+	Notes            string     `json:"notes"`
+	AssignedTo       string     `json:"assigned_to,omitempty"`
+	AssignedAt       *time.Time `json:"assigned_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	DeliveryDeadline *time.Time `json:"delivery_deadline,omitempty"`
+	Amount           float64    `json:"amount"`
+	AmountPaid       float64    `json:"amount_paid"`
+	Balance          float64    `json:"balance"`
+}
+
+func parseOptionalDeadline(raw string) (*time.Time, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil, nil
+	}
+
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return &parsed, nil
+	}
+
+	if parsed, err := time.ParseInLocation("2006-01-02T15:04", value, time.Local); err == nil {
+		utc := parsed.UTC()
+		return &utc, nil
+	}
+
+	if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.Local); err == nil {
+		utc := parsed.UTC()
+		return &utc, nil
+	}
+
+	return nil, errors.New("invalid delivery_deadline")
 }
 
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
@@ -141,18 +168,25 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deliveryDeadline, err := parseOptionalDeadline(req.DeliveryDeadline)
+	if err != nil {
+		http.Error(w, "invalid delivery_deadline", http.StatusBadRequest)
+		return
+	}
+
 	order, err := h.createHandler.Handle(r.Context(), app.CreateOrderCommand{
-		Platform:      req.Platform,
-		CustomerName:  req.CustomerName,
-		CustomerEmail: req.CustomerEmail,
-		CustomerPhone: req.CustomerPhone,
-		ProductName:   req.ProductName,
-		ProductImage:  req.ProductImage,
-		PrintFile:     req.PrintFile,
-		PrintFileName: req.PrintFileName,
-		Quantity:      req.Quantity,
-		Priority:      req.Priority,
-		Notes:         req.Notes,
+		Platform:         req.Platform,
+		CustomerName:     req.CustomerName,
+		CustomerEmail:    req.CustomerEmail,
+		CustomerPhone:    req.CustomerPhone,
+		ProductName:      req.ProductName,
+		ProductImage:     req.ProductImage,
+		PrintFile:        req.PrintFile,
+		PrintFileName:    req.PrintFileName,
+		Quantity:         req.Quantity,
+		Priority:         req.Priority,
+		Notes:            req.Notes,
+		DeliveryDeadline: deliveryDeadline,
 	})
 
 	if err != nil {
@@ -161,23 +195,24 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := OrderResponse{
-		ID:            order.ID,
-		PublicID:      order.PublicID,
-		OrderNumber:   order.OrderNumber,
-		Platform:      string(order.Platform),
-		Status:        string(order.Status),
-		Priority:      string(order.Priority),
-		CustomerName:  order.CustomerName,
-		CustomerEmail: order.CustomerEmail,
-		CustomerPhone: order.CustomerPhone,
-		ProductName:   order.ProductName,
-		ProductImage:  order.ProductImage,
-		PrintFile:     order.PrintFile,
-		PrintFileName: order.PrintFileName,
-		Quantity:      order.Quantity,
-		Notes:         order.Notes,
-		CreatedAt:     order.CreatedAt,
-		UpdatedAt:     order.UpdatedAt,
+		ID:               order.ID,
+		PublicID:         order.PublicID,
+		OrderNumber:      order.OrderNumber,
+		Platform:         string(order.Platform),
+		Status:           string(order.Status),
+		Priority:         string(order.Priority),
+		CustomerName:     order.CustomerName,
+		CustomerEmail:    order.CustomerEmail,
+		CustomerPhone:    order.CustomerPhone,
+		ProductName:      order.ProductName,
+		ProductImage:     order.ProductImage,
+		PrintFile:        order.PrintFile,
+		PrintFileName:    order.PrintFileName,
+		Quantity:         order.Quantity,
+		Notes:            order.Notes,
+		CreatedAt:        order.CreatedAt,
+		UpdatedAt:        order.UpdatedAt,
+		DeliveryDeadline: order.DeliveryDeadline,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -198,29 +233,30 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := OrderResponse{
-		ID:            order.ID,
-		PublicID:      order.PublicID,
-		OrderNumber:   order.OrderNumber,
-		Platform:      string(order.Platform),
-		Status:        string(order.Status),
-		Priority:      string(order.Priority),
-		CustomerName:  order.CustomerName,
-		CustomerEmail: order.CustomerEmail,
-		CustomerPhone: order.CustomerPhone,
-		ProductName:   order.ProductName,
-		ProductImage:  order.ProductImage,
-		PrintFile:     order.PrintFile,
-		PrintFileName: order.PrintFileName,
-		Quantity:      order.Quantity,
-		Notes:         order.Notes,
-		AssignedTo:    order.AssignedTo,
-		AssignedAt:    order.AssignedAt,
-		CreatedAt:     order.CreatedAt,
-		UpdatedAt:     order.UpdatedAt,
-		CompletedAt:   order.CompletedAt,
-		Amount:        order.Amount,
-		AmountPaid:    order.AmountPaid,
-		Balance:       order.Balance,
+		ID:               order.ID,
+		PublicID:         order.PublicID,
+		OrderNumber:      order.OrderNumber,
+		Platform:         string(order.Platform),
+		Status:           string(order.Status),
+		Priority:         string(order.Priority),
+		CustomerName:     order.CustomerName,
+		CustomerEmail:    order.CustomerEmail,
+		CustomerPhone:    order.CustomerPhone,
+		ProductName:      order.ProductName,
+		ProductImage:     order.ProductImage,
+		PrintFile:        order.PrintFile,
+		PrintFileName:    order.PrintFileName,
+		Quantity:         order.Quantity,
+		Notes:            order.Notes,
+		AssignedTo:       order.AssignedTo,
+		AssignedAt:       order.AssignedAt,
+		CreatedAt:        order.CreatedAt,
+		UpdatedAt:        order.UpdatedAt,
+		CompletedAt:      order.CompletedAt,
+		DeliveryDeadline: order.DeliveryDeadline,
+		Amount:           order.Amount,
+		AmountPaid:       order.AmountPaid,
+		Balance:          order.Balance,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -248,26 +284,27 @@ func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	responses := make([]OrderResponse, len(orders))
 	for i, order := range orders {
 		responses[i] = OrderResponse{
-			ID:            order.ID,
-			PublicID:      order.PublicID,
-			OrderNumber:   order.OrderNumber,
-			Platform:      string(order.Platform),
-			Status:        string(order.Status),
-			Priority:      string(order.Priority),
-			CustomerName:  order.CustomerName,
-			CustomerEmail: order.CustomerEmail,
-			CustomerPhone: order.CustomerPhone,
-			ProductName:   order.ProductName,
-			ProductImage:  order.ProductImage,
-			PrintFile:     order.PrintFile,
-			PrintFileName: order.PrintFileName,
-			Quantity:      order.Quantity,
-			Notes:         order.Notes,
-			AssignedTo:    order.AssignedTo,
-			AssignedAt:    order.AssignedAt,
-			CreatedAt:     order.CreatedAt,
-			UpdatedAt:     order.UpdatedAt,
-			CompletedAt:   order.CompletedAt,
+			ID:               order.ID,
+			PublicID:         order.PublicID,
+			OrderNumber:      order.OrderNumber,
+			Platform:         string(order.Platform),
+			Status:           string(order.Status),
+			Priority:         string(order.Priority),
+			CustomerName:     order.CustomerName,
+			CustomerEmail:    order.CustomerEmail,
+			CustomerPhone:    order.CustomerPhone,
+			ProductName:      order.ProductName,
+			ProductImage:     order.ProductImage,
+			PrintFile:        order.PrintFile,
+			PrintFileName:    order.PrintFileName,
+			Quantity:         order.Quantity,
+			Notes:            order.Notes,
+			AssignedTo:       order.AssignedTo,
+			AssignedAt:       order.AssignedAt,
+			CreatedAt:        order.CreatedAt,
+			UpdatedAt:        order.UpdatedAt,
+			CompletedAt:      order.CompletedAt,
+			DeliveryDeadline: order.DeliveryDeadline,
 		}
 	}
 

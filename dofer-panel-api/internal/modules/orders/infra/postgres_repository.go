@@ -26,9 +26,9 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 			id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
-			quantity, notes, internal_notes, metadata,
+			quantity, notes, internal_notes, metadata, delivery_deadline,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`
 
 	metadata, _ := json.Marshal(order.Metadata)
@@ -53,6 +53,7 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 		order.Notes,
 		order.InternalNotes,
 		metadata,
+		order.DeliveryDeadline,
 		order.CreatedAt,
 		order.UpdatedAt,
 	)
@@ -66,7 +67,7 @@ func (r *PostgresOrderRepository) FindByID(id string) (*domain.Order, error) {
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
-			assigned_to, assigned_at, created_at, updated_at, completed_at,
+			assigned_to, assigned_at, created_at, updated_at, completed_at, delivery_deadline,
 			amount, amount_paid, balance
 		FROM orders
 		WHERE id = $1
@@ -81,7 +82,7 @@ func (r *PostgresOrderRepository) FindByPublicID(publicID string) (*domain.Order
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
-			assigned_to, assigned_at, created_at, updated_at, completed_at,
+			assigned_to, assigned_at, created_at, updated_at, completed_at, delivery_deadline,
 			amount, amount_paid, balance
 		FROM orders
 		WHERE public_id = $1
@@ -96,7 +97,7 @@ func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domai
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
-			assigned_to, assigned_at, created_at, updated_at, completed_at,
+			assigned_to, assigned_at, created_at, updated_at, completed_at, delivery_deadline,
 			amount, amount_paid, balance
 		FROM orders
 		WHERE 1=1
@@ -161,7 +162,8 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 			completed_at = $9,
 			amount = $10,
 			amount_paid = $11,
-			balance = $12
+			balance = $12,
+			delivery_deadline = $13
 		WHERE id = $1
 	`
 
@@ -202,6 +204,7 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 		order.Amount,
 		order.AmountPaid,
 		order.Balance,
+		order.DeliveryDeadline,
 	)
 
 	return err
@@ -211,7 +214,7 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 	var order domain.Order
 	var metadataJSON []byte
 	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
-	var assignedAt, completedAt sql.NullTime
+	var assignedAt, completedAt, deliveryDeadline sql.NullTime
 
 	err := row.Scan(
 		&order.ID,
@@ -236,6 +239,7 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 		&order.CreatedAt,
 		&order.UpdatedAt,
 		&completedAt,
+		&deliveryDeadline,
 		&order.Amount,
 		&order.AmountPaid,
 		&order.Balance,
@@ -280,6 +284,10 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 		t := completedAt.Time
 		order.CompletedAt = &t
 	}
+	if deliveryDeadline.Valid {
+		t := deliveryDeadline.Time
+		order.DeliveryDeadline = &t
+	}
 
 	if len(metadataJSON) > 0 {
 		json.Unmarshal(metadataJSON, &order.Metadata)
@@ -292,7 +300,7 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 	var order domain.Order
 	var metadataJSON []byte
 	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
-	var assignedAt, completedAt sql.NullTime
+	var assignedAt, completedAt, deliveryDeadline sql.NullTime
 
 	err := rows.Scan(
 		&order.ID,
@@ -317,6 +325,7 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 		&order.CreatedAt,
 		&order.UpdatedAt,
 		&completedAt,
+		&deliveryDeadline,
 		&order.Amount,
 		&order.AmountPaid,
 		&order.Balance,
@@ -358,6 +367,10 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 		t := completedAt.Time
 		order.CompletedAt = &t
 	}
+	if deliveryDeadline.Valid {
+		t := deliveryDeadline.Time
+		order.DeliveryDeadline = &t
+	}
 
 	if len(metadataJSON) > 0 {
 		json.Unmarshal(metadataJSON, &order.Metadata)
@@ -365,4 +378,3 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 
 	return &order, nil
 }
-
