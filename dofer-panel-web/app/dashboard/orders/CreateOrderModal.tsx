@@ -11,9 +11,18 @@ interface CreateOrderModalProps {
   onSuccess: () => void
 }
 
+interface OrderFormErrors {
+  customer_name?: string
+  customer_email?: string
+  product_name?: string
+  quantity?: string
+  delivery_deadline?: string
+}
+
 export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateOrderModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [formErrors, setFormErrors] = useState<OrderFormErrors>({})
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [printFilePreview, setPrintFilePreview] = useState<string | null>(null)
   const [formData, setFormData] = useState({
@@ -31,8 +40,46 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
     delivery_deadline: '',
   })
 
+  const validateForm = (): OrderFormErrors => {
+    const errors: OrderFormErrors = {}
+    const trimmedCustomerName = formData.customer_name.trim()
+    const trimmedProductName = formData.product_name.trim()
+    const trimmedEmail = formData.customer_email.trim()
+
+    if (!trimmedCustomerName) {
+      errors.customer_name = 'El nombre del cliente es obligatorio.'
+    }
+
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.customer_email = 'Ingresa un email valido.'
+    }
+
+    if (!trimmedProductName) {
+      errors.product_name = 'El producto es obligatorio.'
+    }
+
+    if (!Number.isFinite(formData.quantity) || formData.quantity < 1) {
+      errors.quantity = 'La cantidad debe ser al menos 1.'
+    }
+
+    if (formData.delivery_deadline) {
+      const deadline = new Date(formData.delivery_deadline)
+      if (Number.isNaN(deadline.getTime())) {
+        errors.delivery_deadline = 'Fecha de entrega invalida.'
+      }
+    }
+
+    return errors
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const validation = validateForm()
+    setFormErrors(validation)
+    if (Object.keys(validation).length > 0) {
+      return
+    }
+
     setLoading(true)
     setError(null)
 
@@ -69,6 +116,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    setFormErrors((prev) => ({ ...prev, [name as keyof OrderFormErrors]: undefined }))
     setFormData(prev => ({
       ...prev,
       [name]: name === 'quantity' ? parseInt(value) || 0 : value
@@ -165,6 +213,9 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 placeholder="Juan Pérez"
                 className="w-full px-4 py-2 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-700 text-white placeholder:text-gray-400"
               />
+              {formErrors.customer_name && (
+                <p className="text-xs text-red-300 mt-1">{formErrors.customer_name}</p>
+              )}
             </div>
 
             {/* Customer Email */}
@@ -180,6 +231,9 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 placeholder="cliente@example.com"
                 className="w-full px-4 py-2 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-700 text-white placeholder:text-gray-400"
               />
+              {formErrors.customer_email && (
+                <p className="text-xs text-red-300 mt-1">{formErrors.customer_email}</p>
+              )}
             </div>
 
             {/* Customer Phone */}
@@ -211,6 +265,9 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 placeholder="Figura 3D Personalizada"
                 className="w-full px-4 py-2 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-700 text-white placeholder:text-gray-400"
               />
+              {formErrors.product_name && (
+                <p className="text-xs text-red-300 mt-1">{formErrors.product_name}</p>
+              )}
             </div>
 
             {/* Product Image */}
@@ -273,6 +330,9 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 min="1"
                 className="w-full px-4 py-2 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-700 text-white"
               />
+              {formErrors.quantity && (
+                <p className="text-xs text-red-300 mt-1">{formErrors.quantity}</p>
+              )}
             </div>
 
             {/* Priority */}
@@ -305,6 +365,9 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
                 onChange={handleChange}
                 className="w-full px-4 py-2 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-700 text-white"
               />
+              {formErrors.delivery_deadline && (
+                <p className="text-xs text-red-300 mt-1">{formErrors.delivery_deadline}</p>
+              )}
             </div>
           </div>
 

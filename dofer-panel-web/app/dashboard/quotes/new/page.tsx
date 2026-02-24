@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import { useToast } from '@/components/ui/toast'
 import CalculadoraCostos from '@/components/CalculadoraCostos'
 
 interface QuoteItem {
@@ -80,6 +81,42 @@ interface QuoteItemPayload {
   unit_price?: number
 }
 
+interface CustomerValidationErrors {
+  customerName?: string
+  customerEmail?: string
+  validDays?: string
+}
+
+interface ItemValidationErrors {
+  product_name?: string
+  weight_grams?: string
+  print_time_hours?: string
+  quantity?: string
+  customPrice?: string
+}
+
+interface QuoteDraft {
+  customerName: string
+  customerEmail: string
+  customerPhone: string
+  notes: string
+  validDays: number
+  items: QuoteItem[]
+  pricingMode: 'auto' | 'manual'
+  customPrice: number
+  currentItem: {
+    product_name: string
+    description: string
+    weight_grams: number
+    print_time_hours: number
+    quantity: number
+    other_costs: number
+  }
+  selectedTemplateID: string
+}
+
+const DRAFT_STORAGE_KEY = 'dofer_quote_draft_v1'
+
 function mapQuoteItemFromAPI(item: QuoteItemAPI): QuoteItem {
   return {
     id: item.id,
@@ -110,9 +147,79 @@ function getTemplateDescription(template: QuoteTemplate): string {
     .join(' | ')
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function validateCustomerFields({
+  customerName,
+  customerEmail,
+  validDays,
+}: {
+  customerName: string
+  customerEmail: string
+  validDays: number
+}): CustomerValidationErrors {
+  const errors: CustomerValidationErrors = {}
+
+  if (!customerName.trim()) {
+    errors.customerName = 'El nombre del cliente es obligatorio.'
+  }
+
+  if (customerEmail.trim() && !isValidEmail(customerEmail.trim())) {
+    errors.customerEmail = 'Ingresa un email valido.'
+  }
+
+  if (!Number.isFinite(validDays) || validDays < 1 || validDays > 365) {
+    errors.validDays = 'La vigencia debe estar entre 1 y 365 dias.'
+  }
+
+  return errors
+}
+
+function validateItemFields({
+  currentItem,
+  pricingMode,
+  customPrice,
+}: {
+  currentItem: {
+    product_name: string
+    weight_grams: number
+    print_time_hours: number
+    quantity: number
+  }
+  pricingMode: 'auto' | 'manual'
+  customPrice: number
+}): ItemValidationErrors {
+  const errors: ItemValidationErrors = {}
+
+  if (!currentItem.product_name.trim()) {
+    errors.product_name = 'El nombre del producto es obligatorio.'
+  }
+
+  if (!Number.isFinite(currentItem.weight_grams) || currentItem.weight_grams <= 0) {
+    errors.weight_grams = 'El peso debe ser mayor a 0.'
+  }
+
+  if (!Number.isFinite(currentItem.print_time_hours) || currentItem.print_time_hours <= 0) {
+    errors.print_time_hours = 'El tiempo de impresion debe ser mayor a 0.'
+  }
+
+  if (!Number.isFinite(currentItem.quantity) || currentItem.quantity < 1) {
+    errors.quantity = 'La cantidad debe ser al menos 1.'
+  }
+
+  if (pricingMode === 'manual' && (!Number.isFinite(customPrice) || customPrice <= 0)) {
+    errors.customPrice = 'Define un precio unitario mayor a 0.'
+  }
+
+  return errors
+}
+
 function NewQuotePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { addToast } = useToast()
   const editMode = searchParams.get('edit')
   const templateIDFromQuery = searchParams.get('template_id')
   
@@ -123,6 +230,10 @@ function NewQuotePageContent() {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
   const [templateNotice, setTemplateNotice] = useState<string | null>(null)
+  const [customerErrors, setCustomerErrors] = useState<CustomerValidationErrors>({})
+  const [itemErrors, setItemErrors] = useState<ItemValidationErrors>({})
+  const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const [draftTimestamp, setDraftTimestamp] = useState<string | null>(null)
 
   // Step 1: Customer info
   const [customerName, setCustomerName] = useState('')
@@ -150,6 +261,14 @@ function NewQuotePageContent() {
     [templates, selectedTemplateID],
   )
 
+  const clearDraft = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY)
+    }
+    setDraftTimestamp(null)
+    setDraftNotice('Borrador local limpiado.')
+  }, [])
+
   const applyTemplate = useCallback((template: QuoteTemplate) => {
     setSelectedTemplateID(template.id)
     setPricingMode('manual')
@@ -162,6 +281,7 @@ function NewQuotePageContent() {
     }))
     setTemplateError(null)
     setTemplateNotice(`Plantilla aplicada: ${template.name}`)
+    setItemErrors((prev) => ({ ...prev, customPrice: undefined }))
   }, [])
 
   const clearTemplateSelection = useCallback(() => {
@@ -212,12 +332,16 @@ function NewQuotePageContent() {
       setStep(2) // Go directly to items step
     } catch (error: unknown) {
       console.error('Error loading quote:', error)
-      alert('Error al cargar cotización para editar')
+      addToast({
+        title: 'Error cargando cotizacion',
+        description: 'No se pudo cargar para edicion.',
+        variant: 'error',
+      })
       router.push('/dashboard/quotes')
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [addToast, router])
 
   // Load existing quote if in edit mode
   useEffect(() => {
@@ -270,9 +394,119 @@ function NewQuotePageContent() {
     }
   }, [applyTemplate, selectedTemplateID, templateIDFromQuery, templates])
 
+  useEffect(() => {
+    if (editMode || typeof window === 'undefined') {
+      return
+    }
+
+    const rawDraft = window.localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!rawDraft) {
+      return
+    }
+
+    try {
+      const parsed = JSON.parse(rawDraft) as Partial<QuoteDraft> & { savedAt?: string }
+
+      setCustomerName(parsed.customerName || '')
+      setCustomerEmail(parsed.customerEmail || '')
+      setCustomerPhone(parsed.customerPhone || '')
+      setNotes(parsed.notes || '')
+      setValidDays(parsed.validDays && parsed.validDays > 0 ? parsed.validDays : 15)
+      setItems(Array.isArray(parsed.items) ? parsed.items : [])
+      setPricingMode(parsed.pricingMode === 'manual' ? 'manual' : 'auto')
+      setCustomPrice(typeof parsed.customPrice === 'number' ? parsed.customPrice : 0)
+      setCurrentItem({
+        product_name: parsed.currentItem?.product_name || '',
+        description: parsed.currentItem?.description || '',
+        weight_grams: parsed.currentItem?.weight_grams || 0,
+        print_time_hours: parsed.currentItem?.print_time_hours || 0,
+        quantity: parsed.currentItem?.quantity || 1,
+        other_costs: parsed.currentItem?.other_costs || 0,
+      })
+
+      if (!templateIDFromQuery) {
+        setSelectedTemplateID(parsed.selectedTemplateID || '')
+      }
+
+      if (parsed.savedAt) {
+        setDraftTimestamp(parsed.savedAt)
+      }
+
+      setDraftNotice('Se recupero un borrador local de cotizacion.')
+    } catch {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY)
+    }
+  }, [editMode, templateIDFromQuery])
+
+  useEffect(() => {
+    if (isEditMode || quoteId || typeof window === 'undefined') {
+      return
+    }
+
+    const hasContent =
+      customerName.trim() !== '' ||
+      customerEmail.trim() !== '' ||
+      customerPhone.trim() !== '' ||
+      notes.trim() !== '' ||
+      items.length > 0 ||
+      currentItem.product_name.trim() !== '' ||
+      currentItem.description.trim() !== '' ||
+      currentItem.weight_grams > 0 ||
+      currentItem.print_time_hours > 0 ||
+      currentItem.other_costs > 0 ||
+      selectedTemplateID !== ''
+
+    if (!hasContent) {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY)
+      setDraftTimestamp(null)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      const savedAt = new Date().toISOString()
+      const draft: QuoteDraft & { savedAt: string } = {
+        customerName,
+        customerEmail,
+        customerPhone,
+        notes,
+        validDays,
+        items,
+        pricingMode,
+        customPrice,
+        currentItem,
+        selectedTemplateID,
+        savedAt,
+      }
+
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
+      setDraftTimestamp(savedAt)
+    }, 500)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    currentItem,
+    customerEmail,
+    customerName,
+    customerPhone,
+    customPrice,
+    isEditMode,
+    items,
+    notes,
+    pricingMode,
+    quoteId,
+    selectedTemplateID,
+    validDays,
+  ])
+
   const updateQuote = async () => {
-    if (!customerName) {
-      alert('Por favor completa el nombre del cliente')
+    const validation = validateCustomerFields({ customerName, customerEmail, validDays })
+    setCustomerErrors(validation)
+    if (Object.keys(validation).length > 0) {
+      addToast({
+        title: 'Corrige los datos del cliente',
+        description: 'Revisa los campos marcados antes de continuar.',
+        variant: 'warning',
+      })
       return
     }
 
@@ -285,19 +519,33 @@ function NewQuotePageContent() {
         customer_phone: customerPhone,
         notes: notes,
       })
-      
-      alert('✅ Información del cliente actualizada')
+
+      addToast({
+        title: 'Cliente actualizado',
+        description: 'Los datos de la cotizacion fueron actualizados.',
+        variant: 'success',
+      })
     } catch (error: unknown) {
       console.error('Error updating quote:', error)
-      alert(`Error al actualizar cotización: ${getErrorMessage(error, 'Error desconocido')}`)
+      addToast({
+        title: 'Error al actualizar cotizacion',
+        description: getErrorMessage(error, 'Error desconocido'),
+        variant: 'error',
+      })
     } finally {
       setLoading(false)
     }
   }
 
   const createQuote = async () => {
-    if (!customerName) {
-      alert('Por favor completa el nombre del cliente')
+    const validation = validateCustomerFields({ customerName, customerEmail, validDays })
+    setCustomerErrors(validation)
+    if (Object.keys(validation).length > 0) {
+      addToast({
+        title: 'Corrige los datos del cliente',
+        description: 'Revisa los campos marcados antes de continuar.',
+        variant: 'warning',
+      })
       return
     }
 
@@ -310,18 +558,31 @@ function NewQuotePageContent() {
         notes: notes,
         valid_days: validDays,
       })
-      
+
+      clearDraft()
       setQuoteId(response.id)
       setStep(2)
+      addToast({
+        title: 'Cotizacion creada',
+        description: 'Ahora puedes agregar items y definir precios.',
+        variant: 'success',
+      })
     } catch (error: unknown) {
       console.error('Error creating quote:', error)
       const message = getErrorMessage(error, 'Error desconocido')
-      
-      // Mensaje más específico dependiendo del error
+
       if (message.includes('fetch') || message.includes('Failed to fetch')) {
-        alert('❌ No se puede conectar al servidor.\n\nEl backend API no está corriendo.\n\nPara crear cotizaciones necesitas:\n1. Configurar la base de datos (Supabase o Docker)\n2. Iniciar el backend: cd dofer-panel-api && go run cmd/api/main.go')
+        addToast({
+          title: 'No hay conexion con backend',
+          description: 'Inicia el API para poder crear cotizaciones.',
+          variant: 'error',
+        })
       } else {
-        alert(`Error al crear cotización: ${message}`)
+        addToast({
+          title: 'Error al crear cotizacion',
+          description: message,
+          variant: 'error',
+        })
       }
     } finally {
       setLoading(false)
@@ -330,11 +591,22 @@ function NewQuotePageContent() {
 
   const addItemToQuote = async (breakdown?: CostBreakdown) => {
     if (!quoteId) {
-      alert('Por favor crea la cotización primero (Paso 1)')
+      addToast({
+        title: 'Falta crear la cotizacion',
+        description: 'Primero completa el paso 1.',
+        variant: 'warning',
+      })
       return
     }
-    if (!currentItem.product_name) {
-      alert('Por favor completa el nombre del producto')
+
+    const validation = validateItemFields({ currentItem, pricingMode, customPrice })
+    setItemErrors(validation)
+    if (Object.keys(validation).length > 0) {
+      addToast({
+        title: 'Revisa los campos del item',
+        description: 'Hay datos obligatorios o invalidos.',
+        variant: 'warning',
+      })
       return
     }
 
@@ -346,17 +618,19 @@ function NewQuotePageContent() {
       let finalTotal = 0
 
       if (pricingMode === 'manual') {
-        // Precio personalizado
         if (customPrice <= 0) {
-          alert('Por favor ingresa un precio válido mayor a 0')
+          setItemErrors((prev) => ({ ...prev, customPrice: 'Define un precio unitario mayor a 0.' }))
           return
         }
         finalUnitPrice = customPrice
         finalTotal = customPrice * currentItem.quantity
       } else {
-        // Cálculo automático
         if (!breakdown) {
-          alert('Calcula el precio primero con el botón azul')
+          addToast({
+            title: 'Falta calcular precio',
+            description: 'Usa la calculadora para obtener el costo automatico.',
+            variant: 'warning',
+          })
           return
         }
         finalUnitPrice = breakdown.unit_price
@@ -406,11 +680,19 @@ function NewQuotePageContent() {
         other_costs: selectedTemplate ? selectedTemplate.base_cost : 0,
       })
       setCustomPrice(selectedTemplate ? getSuggestedTemplateUnitPrice(selectedTemplate) : 0)
-
-      alert('✅ Item agregado exitosamente')
+      setItemErrors({})
+      addToast({
+        title: 'Item agregado',
+        description: 'Se agrego correctamente a la cotizacion.',
+        variant: 'success',
+      })
     } catch (error: unknown) {
       console.error('Error adding item:', error)
-      alert(`Error al agregar item: ${getErrorMessage(error, 'Error desconocido')}`)
+      addToast({
+        title: 'Error al agregar item',
+        description: getErrorMessage(error, 'Error desconocido'),
+        variant: 'error',
+      })
     } finally {
       setLoading(false)
     }
@@ -430,18 +712,30 @@ function NewQuotePageContent() {
         const existingItems = response.items || []
         const formattedItems: QuoteItem[] = existingItems.map(mapQuoteItemFromAPI)
         setItems(formattedItems)
-        
-        alert('✅ Item eliminado')
+
+        addToast({
+          title: 'Item eliminado',
+          description: 'Se elimino correctamente de la cotizacion.',
+          variant: 'success',
+        })
       } catch (error: unknown) {
         console.error('Error deleting item:', error)
-        alert(`Error al eliminar item: ${getErrorMessage(error, 'Error desconocido')}`)
+        addToast({
+          title: 'Error al eliminar item',
+          description: getErrorMessage(error, 'Error desconocido'),
+          variant: 'error',
+        })
       } finally {
         setLoading(false)
       }
     } else {
       // En modo creación, solo eliminar del estado local
       setItems(items.filter((_, i) => i !== index))
-      alert('✅ Item eliminado')
+      addToast({
+        title: 'Item eliminado',
+        description: 'Se elimino del borrador actual.',
+        variant: 'default',
+      })
     }
   }
 
@@ -457,16 +751,25 @@ function NewQuotePageContent() {
     })
     setCustomPrice(itemToEdit.unit_price)
     setPricingMode('manual')
-    removeItem(index)
+    void removeItem(index)
     window.scrollTo({ top: 0, behavior: 'smooth' })
-    alert('Item cargado para editar. Actualiza y haz clic en Agregar.')
+    addToast({
+      title: 'Item listo para editar',
+      description: 'Actualiza sus datos y vuelve a agregarlo.',
+      variant: 'default',
+    })
   }
 
   const finishQuote = () => {
     if (items.length === 0) {
-      alert('Agrega al menos un item a la cotización')
+      addToast({
+        title: 'Cotizacion incompleta',
+        description: 'Agrega al menos un item antes de finalizar.',
+        variant: 'warning',
+      })
       return
     }
+    clearDraft()
     router.push(`/dashboard/quotes/${quoteId}`)
   }
 
@@ -499,6 +802,23 @@ function NewQuotePageContent() {
           </button>
         </div>
       </div>
+
+      {!isEditMode && (
+        <div className="rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <p className="font-medium">Autoguardado activo</p>
+            <p className="text-cyan-800">
+              {draftTimestamp
+                ? `Ultimo guardado: ${new Date(draftTimestamp).toLocaleTimeString('es-MX')}`
+                : 'Empieza a escribir para guardar un borrador local.'}
+            </p>
+            {draftNotice && <p className="text-cyan-700 mt-1">{draftNotice}</p>}
+          </div>
+          <button onClick={clearDraft} className="px-3 py-2 rounded-lg border border-cyan-300 hover:bg-white">
+            Limpiar borrador
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border shadow-sm p-6">
         <div className="flex items-center justify-center gap-4">
@@ -539,10 +859,18 @@ function NewQuotePageContent() {
               <input
                 type="text"
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                onChange={(e) => {
+                  setCustomerName(e.target.value)
+                  setCustomerErrors((prev) => ({ ...prev, customerName: undefined }))
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                  customerErrors.customerName ? 'border-red-400' : 'border-gray-300'
+                }`}
                 placeholder="Juan Pérez"
               />
+              {customerErrors.customerName && (
+                <p className="text-xs text-red-600 mt-1">{customerErrors.customerName}</p>
+              )}
             </div>
 
             <div>
@@ -552,10 +880,18 @@ function NewQuotePageContent() {
               <input
                 type="email"
                 value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                onChange={(e) => {
+                  setCustomerEmail(e.target.value)
+                  setCustomerErrors((prev) => ({ ...prev, customerEmail: undefined }))
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                  customerErrors.customerEmail ? 'border-red-400' : 'border-gray-300'
+                }`}
                 placeholder="juan@example.com"
               />
+              {customerErrors.customerEmail && (
+                <p className="text-xs text-red-600 mt-1">{customerErrors.customerEmail}</p>
+              )}
             </div>
 
             <div>
@@ -578,10 +914,18 @@ function NewQuotePageContent() {
               <input
                 type="number"
                 value={validDays}
-                onChange={(e) => setValidDays(parseInt(e.target.value) || 15)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                onChange={(e) => {
+                  setValidDays(parseInt(e.target.value, 10) || 15)
+                  setCustomerErrors((prev) => ({ ...prev, validDays: undefined }))
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                  customerErrors.validDays ? 'border-red-400' : 'border-gray-300'
+                }`}
                 placeholder="15"
               />
+              {customerErrors.validDays && (
+                <p className="text-xs text-red-600 mt-1">{customerErrors.validDays}</p>
+              )}
             </div>
           </div>
 
@@ -694,6 +1038,7 @@ function NewQuotePageContent() {
                     onClick={() => {
                       setPricingMode('manual')
                       setCustomPrice(getSuggestedTemplateUnitPrice(selectedTemplate))
+                      setItemErrors((prev) => ({ ...prev, customPrice: undefined }))
                     }}
                     className="px-3 py-2 rounded-lg bg-cyan-700 text-white text-sm hover:bg-cyan-800"
                   >
@@ -765,10 +1110,16 @@ function NewQuotePageContent() {
                 <input
                   type="text"
                   value={currentItem.product_name}
-                  onChange={(e) => setCurrentItem({ ...currentItem, product_name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                  onChange={(e) => {
+                    setCurrentItem({ ...currentItem, product_name: e.target.value })
+                    setItemErrors((prev) => ({ ...prev, product_name: undefined }))
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                    itemErrors.product_name ? 'border-red-400' : 'border-gray-300'
+                  }`}
                   placeholder="Ej: Maceta decorativa"
                 />
+                {itemErrors.product_name && <p className="text-xs text-red-600 mt-1">{itemErrors.product_name}</p>}
               </div>
 
               <div>
@@ -791,10 +1142,16 @@ function NewQuotePageContent() {
                 <input
                   type="number"
                   value={currentItem.weight_grams || ''}
-                  onChange={(e) => setCurrentItem({ ...currentItem, weight_grams: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                  onChange={(e) => {
+                    setCurrentItem({ ...currentItem, weight_grams: parseFloat(e.target.value) || 0 })
+                    setItemErrors((prev) => ({ ...prev, weight_grams: undefined }))
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                    itemErrors.weight_grams ? 'border-red-400' : 'border-gray-300'
+                  }`}
                   placeholder="100"
                 />
+                {itemErrors.weight_grams && <p className="text-xs text-red-600 mt-1">{itemErrors.weight_grams}</p>}
               </div>
 
               <div>
@@ -805,10 +1162,18 @@ function NewQuotePageContent() {
                   type="number"
                   step="0.1"
                   value={currentItem.print_time_hours || ''}
-                  onChange={(e) => setCurrentItem({ ...currentItem, print_time_hours: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                  onChange={(e) => {
+                    setCurrentItem({ ...currentItem, print_time_hours: parseFloat(e.target.value) || 0 })
+                    setItemErrors((prev) => ({ ...prev, print_time_hours: undefined }))
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                    itemErrors.print_time_hours ? 'border-red-400' : 'border-gray-300'
+                  }`}
                   placeholder="5.5"
                 />
+                {itemErrors.print_time_hours && (
+                  <p className="text-xs text-red-600 mt-1">{itemErrors.print_time_hours}</p>
+                )}
               </div>
 
               <div>
@@ -818,10 +1183,16 @@ function NewQuotePageContent() {
                 <input
                   type="number"
                   value={currentItem.quantity || ''}
-                  onChange={(e) => setCurrentItem({ ...currentItem, quantity: parseInt(e.target.value) || 1 })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                  onChange={(e) => {
+                    setCurrentItem({ ...currentItem, quantity: parseInt(e.target.value, 10) || 1 })
+                    setItemErrors((prev) => ({ ...prev, quantity: undefined }))
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                    itemErrors.quantity ? 'border-red-400' : 'border-gray-300'
+                  }`}
                   placeholder="1"
                 />
+                {itemErrors.quantity && <p className="text-xs text-red-600 mt-1">{itemErrors.quantity}</p>}
               </div>
 
               <div>
@@ -846,6 +1217,7 @@ function NewQuotePageContent() {
                   onClick={() => {
                     setPricingMode('auto')
                     setCustomPrice(0)
+                    setItemErrors((prev) => ({ ...prev, customPrice: undefined }))
                   }}
                   className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
                     pricingMode === 'auto'
@@ -856,7 +1228,10 @@ function NewQuotePageContent() {
                   📊 Cálculo Automático
                 </button>
                 <button
-                  onClick={() => setPricingMode('manual')}
+                  onClick={() => {
+                    setPricingMode('manual')
+                    setItemErrors((prev) => ({ ...prev, customPrice: undefined }))
+                  }}
                   className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
                     pricingMode === 'manual'
                       ? 'bg-indigo-600 text-white'
@@ -873,10 +1248,16 @@ function NewQuotePageContent() {
               {pricingMode === 'auto' ? (
                 <CalculadoraCostos 
                   onCalculated={(breakdown) => {
-                    if (currentItem.product_name && currentItem.weight_grams && currentItem.print_time_hours) {
+                    const validation = validateItemFields({ currentItem, pricingMode, customPrice })
+                    setItemErrors(validation)
+                    if (Object.keys(validation).length === 0) {
                       addItemToQuote(breakdown)
                     } else {
-                      alert('Completa nombre, peso y tiempo de impresión')
+                      addToast({
+                        title: 'Datos incompletos del item',
+                        description: 'Completa los campos requeridos para calcular.',
+                        variant: 'warning',
+                      })
                     }
                   }}
                 />
@@ -892,8 +1273,13 @@ function NewQuotePageContent() {
                         step="0.01"
                         min="0"
                         value={customPrice || ''}
-                        onChange={(e) => setCustomPrice(parseFloat(e.target.value) || 0)}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-black"
+                        onChange={(e) => {
+                          setCustomPrice(parseFloat(e.target.value) || 0)
+                          setItemErrors((prev) => ({ ...prev, customPrice: undefined }))
+                        }}
+                        className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-black ${
+                          itemErrors.customPrice ? 'border-red-400' : 'border-gray-300'
+                        }`}
                         placeholder="0.00"
                       />
                       <button
@@ -909,6 +1295,7 @@ function NewQuotePageContent() {
                         Total: {formatCurrency(customPrice * currentItem.quantity)}
                       </p>
                     )}
+                    {itemErrors.customPrice && <p className="text-xs text-red-600 mt-2">{itemErrors.customPrice}</p>}
                   </div>
                 </div>
               )}

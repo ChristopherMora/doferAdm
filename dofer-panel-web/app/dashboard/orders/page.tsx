@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Image, { type ImageLoaderProps } from 'next/image'
 import EmptyState from '@/components/dashboard/EmptyState'
 import PageHeader from '@/components/dashboard/PageHeader'
@@ -34,8 +34,15 @@ interface Order {
 
 const passthroughImageLoader = ({ src }: ImageLoaderProps) => src
 
+function sanitizeFilterValue(value: string | null, allowed: string[], fallback = 'all'): string {
+  if (!value) return fallback
+  return allowed.includes(value) ? value : fallback
+}
+
 export default function OrdersPage() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { addToast } = useToast()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,11 +54,33 @@ export default function OrdersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [filtersReady, setFiltersReady] = useState(false)
   
   // Paginación
   const [currentPage, setCurrentPage] = useState(1)
   const [totalOrders, setTotalOrders] = useState(0)
   const ordersPerPage = 50
+
+  useEffect(() => {
+    if (filtersReady) return
+
+    const status = sanitizeFilterValue(searchParams.get('status'), ['all', 'new', 'printing', 'post', 'packed', 'ready', 'delivered', 'cancelled'])
+    const priority = sanitizeFilterValue(searchParams.get('priority'), ['all', 'urgent', 'normal', 'low'])
+    const platform = sanitizeFilterValue(searchParams.get('platform'), ['all', 'WhatsApp', 'Instagram', 'Facebook', 'Website', 'Phone', 'Other'])
+    const range = sanitizeFilterValue(searchParams.get('range'), ['all', 'today', 'week', 'month'])
+    const query = searchParams.get('q') || ''
+    const page = Number.parseInt(searchParams.get('page') || '1', 10)
+
+    setFilterStatus(status)
+    setFilterPriority(priority)
+    setFilterPlatform(platform)
+    setFilterDateRange(range)
+    setSearchQuery(query)
+    setDebouncedSearch(query)
+    setShowFilters(searchParams.get('filters') === '1')
+    setCurrentPage(Number.isFinite(page) && page > 0 ? page : 1)
+    setFiltersReady(true)
+  }, [filtersReady, searchParams])
 
   // Atajos de teclado para página de órdenes
   useEffect(() => {
@@ -120,8 +149,37 @@ export default function OrdersPage() {
   }, [addToast, currentPage, debouncedSearch, filterStatus, ordersPerPage])
 
   useEffect(() => {
+    if (!filtersReady) return
     loadOrders()
-  }, [loadOrders])
+  }, [filtersReady, loadOrders])
+
+  useEffect(() => {
+    if (!filtersReady) return
+
+    const params = new URLSearchParams()
+    if (filterStatus !== 'all') params.set('status', filterStatus)
+    if (filterPriority !== 'all') params.set('priority', filterPriority)
+    if (filterPlatform !== 'all') params.set('platform', filterPlatform)
+    if (filterDateRange !== 'all') params.set('range', filterDateRange)
+    if (searchQuery.trim()) params.set('q', searchQuery.trim())
+    if (currentPage > 1) params.set('page', String(currentPage))
+    if (showFilters) params.set('filters', '1')
+
+    const queryString = params.toString()
+    const nextURL = queryString ? `${pathname}?${queryString}` : pathname
+    router.replace(nextURL, { scroll: false })
+  }, [
+    currentPage,
+    filterDateRange,
+    filterPlatform,
+    filterPriority,
+    filterStatus,
+    filtersReady,
+    pathname,
+    router,
+    searchQuery,
+    showFilters,
+  ])
 
   const getStatusBadge = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
     const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -218,6 +276,7 @@ export default function OrdersPage() {
     setFilterPlatform('all')
     setFilterDateRange('all')
     setSearchQuery('')
+    setCurrentPage(1)
   }
 
   const activeFiltersCount = [
