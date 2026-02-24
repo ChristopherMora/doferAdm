@@ -10,6 +10,14 @@ interface BackendOrder {
   created_at: string
 }
 
+interface BackendPrinter {
+  id: string
+  name: string
+  model?: string
+  material?: string
+  status: string
+}
+
 const DEFAULT_PRINTERS: Printer[] = [
   {
     id: 'printer-1',
@@ -47,6 +55,7 @@ export default function PrintersPage() {
   const [printers, setPrinters] = useState<Printer[]>(DEFAULT_PRINTERS)
   const [pendingOrders, setPendingOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
+  const [usingLocalFallback, setUsingLocalFallback] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null)
   const [assignmentResult, setAssignmentResult] = useState<AssignmentResult | null>(null)
 
@@ -56,8 +65,10 @@ export default function PrintersPage() {
 
   const loadData = async () => {
     try {
-      // No existe endpoint /printers aún en backend; usar inventario local temporal.
-      setPrinters(DEFAULT_PRINTERS)
+      const printersData = await apiClient.get<{ printers: BackendPrinter[] }>('/printers')
+      const mappedPrinters = (printersData.printers || []).map(mapBackendPrinter)
+      setPrinters(mappedPrinters.length > 0 ? mappedPrinters : DEFAULT_PRINTERS)
+      setUsingLocalFallback(mappedPrinters.length === 0)
 
       const ordersData = await apiClient.get<{ orders: BackendOrder[] }>('/orders', {
         params: { status: 'new' },
@@ -73,6 +84,8 @@ export default function PrintersPage() {
       setPendingOrders(mappedOrders)
     } catch (error) {
       console.error('Error loading data:', error)
+      setPrinters(DEFAULT_PRINTERS)
+      setUsingLocalFallback(true)
     } finally {
       setLoading(false)
     }
@@ -121,7 +134,9 @@ export default function PrintersPage() {
           </p>
         </div>
         <span className="text-sm text-muted-foreground">
-          Modo temporal: inventario local de impresoras
+          {usingLocalFallback
+            ? 'Modo fallback: inventario local de impresoras'
+            : 'Inventario sincronizado con backend'}
         </span>
       </div>
 
@@ -283,4 +298,36 @@ function toPriority(value: string): Order['priority'] {
     return value
   }
   return 'normal'
+}
+
+function mapBackendPrinter(printer: BackendPrinter): Printer {
+  const material = (printer.material || '').trim()
+  const upperMaterial = material.toUpperCase()
+  const printerType: Printer['type'] =
+    upperMaterial.includes('RESIN') || upperMaterial.includes('SLA') ? 'SLA' : 'FDM'
+
+  const materials = material
+    ? material.split(',').map((item) => item.trim()).filter(Boolean)
+    : ['PLA']
+
+  return {
+    id: printer.id,
+    name: printer.name,
+    type: printerType,
+    status: normalizePrinterStatus(printer.status),
+    buildVolume: { width: 220, height: 250, depth: 220 },
+    materials,
+    capabilities: {
+      maxLayerHeight: 0.3,
+      minLayerHeight: 0.08,
+      maxPrintSpeed: 120,
+    },
+  }
+}
+
+function normalizePrinterStatus(status: string): Printer['status'] {
+  if (status === 'available' || status === 'busy' || status === 'maintenance' || status === 'offline') {
+    return status
+  }
+  return 'offline'
 }

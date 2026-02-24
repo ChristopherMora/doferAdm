@@ -56,6 +56,21 @@ type QuotePayment struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+type QuoteTemplate struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	Material         string    `json:"material"`
+	InfillPercentage float64   `json:"infill_percentage"`
+	LayerHeight      float64   `json:"layer_height"`
+	PrintSpeed       float64   `json:"print_speed"`
+	BaseCost         float64   `json:"base_cost"`
+	MarkupPercentage float64   `json:"markup_percentage"`
+	CreatedBy        string    `json:"created_by,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 type QuoteRepository interface {
 	Create(quote *Quote) error
 	FindByID(id string) (*Quote, error)
@@ -73,4 +88,11 @@ type QuoteRepository interface {
 	// Payments
 	AddPayment(payment *QuotePayment) error
 	GetPayments(quoteID string) ([]*QuotePayment, error)
+
+	// Templates
+	CreateTemplate(template *QuoteTemplate) error
+	FindTemplateByID(id string) (*QuoteTemplate, error)
+	FindAllTemplates(filters map[string]interface{}) ([]*QuoteTemplate, error)
+	UpdateTemplate(template *QuoteTemplate) error
+	DeleteTemplate(id string) error
 }

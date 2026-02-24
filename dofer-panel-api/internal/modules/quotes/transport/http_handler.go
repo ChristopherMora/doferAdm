@@ -10,6 +10,7 @@ import (
 	"github.com/dofer/panel-api/internal/modules/quotes/app"
 	"github.com/dofer/panel-api/internal/platform/httpserver/middleware"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 )
 
 type QuoteHandler struct {
@@ -25,6 +26,11 @@ type QuoteHandler struct {
 	convertToOrderHandler *app.ConvertToOrderHandler
 	addPaymentHandler     *app.AddPaymentHandler
 	syncItemsHandler      *app.SyncItemsToOrderHandler
+	createTemplateHandler *app.CreateQuoteTemplateHandler
+	getTemplateHandler    *app.GetQuoteTemplateHandler
+	listTemplateHandler   *app.ListQuoteTemplatesHandler
+	updateTemplateHandler *app.UpdateQuoteTemplateHandler
+	deleteTemplateHandler *app.DeleteQuoteTemplateHandler
 }
 
 func NewQuoteHandler(
@@ -40,6 +46,11 @@ func NewQuoteHandler(
 	convertToOrderHandler *app.ConvertToOrderHandler,
 	addPaymentHandler *app.AddPaymentHandler,
 	syncItemsHandler *app.SyncItemsToOrderHandler,
+	createTemplateHandler *app.CreateQuoteTemplateHandler,
+	getTemplateHandler *app.GetQuoteTemplateHandler,
+	listTemplateHandler *app.ListQuoteTemplatesHandler,
+	updateTemplateHandler *app.UpdateQuoteTemplateHandler,
+	deleteTemplateHandler *app.DeleteQuoteTemplateHandler,
 ) *QuoteHandler {
 	return &QuoteHandler{
 		createHandler:         createHandler,
@@ -54,6 +65,11 @@ func NewQuoteHandler(
 		convertToOrderHandler: convertToOrderHandler,
 		addPaymentHandler:     addPaymentHandler,
 		syncItemsHandler:      syncItemsHandler,
+		createTemplateHandler: createTemplateHandler,
+		getTemplateHandler:    getTemplateHandler,
+		listTemplateHandler:   listTemplateHandler,
+		updateTemplateHandler: updateTemplateHandler,
+		deleteTemplateHandler: deleteTemplateHandler,
 	}
 }
 
@@ -88,6 +104,28 @@ type UpdateQuoteRequest struct {
 
 type AddPaymentRequest struct {
 	Amount float64 `json:"amount"`
+}
+
+type CreateQuoteTemplateRequest struct {
+	Name             string  `json:"name"`
+	Description      string  `json:"description"`
+	Material         string  `json:"material"`
+	InfillPercentage float64 `json:"infill_percentage"`
+	LayerHeight      float64 `json:"layer_height"`
+	PrintSpeed       float64 `json:"print_speed"`
+	BaseCost         float64 `json:"base_cost"`
+	MarkupPercentage float64 `json:"markup_percentage"`
+}
+
+type UpdateQuoteTemplateRequest struct {
+	Name             *string  `json:"name,omitempty"`
+	Description      *string  `json:"description,omitempty"`
+	Material         *string  `json:"material,omitempty"`
+	InfillPercentage *float64 `json:"infill_percentage,omitempty"`
+	LayerHeight      *float64 `json:"layer_height,omitempty"`
+	PrintSpeed       *float64 `json:"print_speed,omitempty"`
+	BaseCost         *float64 `json:"base_cost,omitempty"`
+	MarkupPercentage *float64 `json:"markup_percentage,omitempty"`
 }
 
 func (h *QuoteHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
@@ -397,4 +435,131 @@ func (h *QuoteHandler) SyncItemsToOrder(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "Items sincronizados al pedido exitosamente",
 	})
+}
+
+func (h *QuoteHandler) ListQuoteTemplates(w http.ResponseWriter, r *http.Request) {
+	templates, err := h.listTemplateHandler.Handle(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"templates": templates,
+		"total":     len(templates),
+	})
+}
+
+func (h *QuoteHandler) GetQuoteTemplate(w http.ResponseWriter, r *http.Request) {
+	templateID := chi.URLParam(r, "templateId")
+
+	template, err := h.getTemplateHandler.Handle(r.Context(), templateID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if template == nil {
+		http.Error(w, "template not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(template)
+}
+
+func (h *QuoteHandler) CreateQuoteTemplate(w http.ResponseWriter, r *http.Request) {
+	var req CreateQuoteTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Material == "" {
+		req.Material = "PLA"
+	}
+	if req.LayerHeight == 0 {
+		req.LayerHeight = 0.2
+	}
+	if req.PrintSpeed == 0 {
+		req.PrintSpeed = 50
+	}
+
+	createdBy, _ := middleware.UserIDFromContext(r.Context())
+	cmd := app.CreateQuoteTemplateCommand{
+		Name:             req.Name,
+		Description:      req.Description,
+		Material:         req.Material,
+		InfillPercentage: req.InfillPercentage,
+		LayerHeight:      req.LayerHeight,
+		PrintSpeed:       req.PrintSpeed,
+		BaseCost:         req.BaseCost,
+		MarkupPercentage: req.MarkupPercentage,
+		CreatedBy:        createdBy,
+	}
+
+	template, err := h.createTemplateHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(template)
+}
+
+func (h *QuoteHandler) UpdateQuoteTemplate(w http.ResponseWriter, r *http.Request) {
+	templateID := chi.URLParam(r, "templateId")
+
+	var req UpdateQuoteTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cmd := app.UpdateQuoteTemplateCommand{
+		TemplateID:       templateID,
+		Name:             req.Name,
+		Description:      req.Description,
+		Material:         req.Material,
+		InfillPercentage: req.InfillPercentage,
+		LayerHeight:      req.LayerHeight,
+		PrintSpeed:       req.PrintSpeed,
+		BaseCost:         req.BaseCost,
+		MarkupPercentage: req.MarkupPercentage,
+	}
+
+	template, err := h.updateTemplateHandler.Handle(r.Context(), cmd)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, "template not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(template)
+}
+
+func (h *QuoteHandler) DeleteQuoteTemplate(w http.ResponseWriter, r *http.Request) {
+	templateID := chi.URLParam(r, "templateId")
+
+	cmd := app.DeleteQuoteTemplateCommand{
+		TemplateID: templateID,
+	}
+
+	if err := h.deleteTemplateHandler.Handle(r.Context(), cmd); err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, "template not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Template deleted successfully"})
 }

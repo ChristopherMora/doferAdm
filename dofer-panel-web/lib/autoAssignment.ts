@@ -247,7 +247,7 @@ function findPrinterMeetingDeadline(
 /**
  * Obtiene cola de impresión para una impresora
  */
-export async function getPrinterQueue(printerId: string): Promise<Order[]> {
+export async function getPrinterQueue(): Promise<Order[]> {
   // TODO: Implementar en backend
   return []
 }

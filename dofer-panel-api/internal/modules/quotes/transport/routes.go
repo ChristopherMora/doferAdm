@@ -13,6 +13,13 @@ func RegisterRoutes(r chi.Router, handler *QuoteHandler) {
 		r.Get("/", handler.ListQuotes)
 		r.Get("/search", handler.SearchQuotes)
 
+		// Templates
+		r.Get("/templates", handler.ListQuoteTemplates)
+		r.Post("/templates", handler.CreateQuoteTemplate)
+		r.Get("/templates/{templateId}", handler.GetQuoteTemplate)
+		r.Put("/templates/{templateId}", handler.UpdateQuoteTemplate)
+		r.Delete("/templates/{templateId}", handler.DeleteQuoteTemplate)
+
 		// Rutas anidadas con {id}
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", handler.GetQuote)

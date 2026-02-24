@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useCallback, useEffect, Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
@@ -108,14 +108,7 @@ function NewQuotePageContent() {
     other_costs: 0,
   })
 
-  // Load existing quote if in edit mode
-  useEffect(() => {
-    if (editMode) {
-      loadQuoteForEdit(editMode)
-    }
-  }, [editMode])
-
-  const loadQuoteForEdit = async (quoteIdToEdit: string) => {
+  const loadQuoteForEdit = useCallback(async (quoteIdToEdit: string) => {
     try {
       setLoading(true)
       const response = await apiClient.get<QuoteDetailResponse>(`/quotes/${quoteIdToEdit}`)
@@ -148,7 +141,14 @@ function NewQuotePageContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
+
+  // Load existing quote if in edit mode
+  useEffect(() => {
+    if (editMode) {
+      loadQuoteForEdit(editMode)
+    }
+  }, [editMode, loadQuoteForEdit])
 
   const updateQuote = async () => {
     if (!customerName) {

@@ -14,7 +14,6 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
   const [loadingModel, setLoadingModel] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [modelDimensions, setModelDimensions] = useState<{ x: number; y: number; z: number } | null>(null)
-  const [showWireframe, setShowWireframe] = useState(false)
   const [showSupports, setShowSupports] = useState(false)
   const [measuringMode, setMeasuringMode] = useState(false)
   const [measurementPoints, setMeasurementPoints] = useState<THREE.Vector3[]>([])
@@ -357,20 +356,20 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
           if (newPoints.length === 2) {
             const distance = newPoints[0].distanceTo(newPoints[1])
             setMeasurementDistance(distance)
-            updateMeasurementMarkers(newPoints, distance)
+            updateMeasurementMarkers(newPoints)
             return []
           } else if (newPoints.length > 2) {
             if (measurementMarkersRef.current) measurementMarkersRef.current.clear()
             setMeasurementDistance(null)
             return [point]
           }
-          updateMeasurementMarkers(newPoints, null)
+          updateMeasurementMarkers(newPoints)
           return newPoints
         })
       }
     }
 
-    const updateMeasurementMarkers = (points: THREE.Vector3[], distance: number | null) => {
+    const updateMeasurementMarkers = (points: THREE.Vector3[]) => {
       if (!measurementMarkersRef.current) return
       
       measurementMarkersRef.current.clear()
@@ -530,7 +529,7 @@ export default function STLViewer3D({ file, onClose }: STLViewer3DProps) {
             <p className="text-gray-600">• Click der. + arrastrar: Mover</p>
             {measuringMode && (
               <p className="text-amber-700 font-medium border-t pt-1 mt-1">
-                📏 Modo medición: Click 2 puntos
+                📏 Modo medición: Click 2 puntos ({measurementPoints.length}/2)
               </p>
             )}
           </div>

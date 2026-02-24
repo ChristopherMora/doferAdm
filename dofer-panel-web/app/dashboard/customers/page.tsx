@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import Link from 'next/link'
@@ -51,12 +51,7 @@ export default function CustomersPage() {
   })
   const { addToast } = useToast()
 
-  useEffect(() => {
-    loadCustomers()
-    loadStats()
-  }, [filterTier])
-
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       const params = new URLSearchParams()
       if (filterTier) params.append('tier', filterTier)
@@ -73,16 +68,21 @@ export default function CustomersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [addToast, filterTier])
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const data = await apiClient.get('/customers/stats')
       setStats(data as CustomerStats)
     } catch (error) {
       console.error('Error loading stats:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadCustomers()
+    loadStats()
+  }, [loadCustomers, loadStats])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()

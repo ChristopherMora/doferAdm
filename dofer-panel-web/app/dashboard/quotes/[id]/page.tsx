@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
@@ -25,11 +25,7 @@ export default function QuoteDetailPage() {
   const [paymentAmount, setPaymentAmount] = useState<string>('')
   const [showPaymentModal, setShowPaymentModal] = useState(false)
 
-  useEffect(() => {
-    loadQuote()
-  }, [quoteId])
-
-  const loadQuote = async () => {
+  const loadQuote = useCallback(async () => {
     try {
       setLoading(true)
       const response = await apiClient.get<{ quote: Quote; items: QuoteItem[] | null }>(`/quotes/${quoteId}`)
@@ -40,7 +36,11 @@ export default function QuoteDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [quoteId])
+
+  useEffect(() => {
+    loadQuote()
+  }, [loadQuote])
 
   const updateStatus = async (newStatus: 'pending' | 'approved' | 'rejected' | 'expired') => {
     try {

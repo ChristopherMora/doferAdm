@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
@@ -43,7 +44,7 @@ export default function LoginPage() {
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <img src="/logo.png" alt="DOFER" className="h-20 w-20 object-contain" />
+            <Image src="/logo.png" alt="DOFER" width={80} height={80} className="h-20 w-20 object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             DOFER Panel

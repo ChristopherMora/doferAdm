@@ -1,7 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+
+import { apiClient } from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 
 interface QuoteTemplate {
   id: string
@@ -16,30 +19,15 @@ interface QuoteTemplate {
   created_at: string
 }
 
-const STORAGE_KEY = 'dofer-quote-templates'
-
-function readTemplatesFromStorage(): QuoteTemplate[] {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed as QuoteTemplate[]
-  } catch {
-    return []
-  }
-}
-
-function writeTemplatesToStorage(templates: QuoteTemplate[]) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(templates))
+interface QuoteTemplatesResponse {
+  templates: QuoteTemplate[]
 }
 
 export default function QuoteTemplatesPage() {
   const router = useRouter()
-  const [templates, setTemplates] = useState<QuoteTemplate[]>(() => readTemplatesFromStorage())
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
@@ -52,41 +40,61 @@ export default function QuoteTemplatesPage() {
     markup_percentage: 30,
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const newTemplate: QuoteTemplate = {
-      id: crypto.randomUUID(),
-      created_at: new Date().toISOString(),
-      ...formData,
+  useEffect(() => {
+    loadTemplates()
+  }, [])
+
+  const loadTemplates = async () => {
+    try {
+      setLoading(true)
+      const response = await apiClient.get<QuoteTemplatesResponse>('/quotes/templates')
+      setTemplates(response.templates || [])
+    } catch (error: unknown) {
+      console.error('Error loading templates:', error)
+      alert(`Error al cargar plantillas: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setLoading(false)
     }
-
-    setTemplates((prev) => {
-      const next = [newTemplate, ...prev]
-      writeTemplatesToStorage(next)
-      return next
-    })
-
-    setShowForm(false)
-    setFormData({
-      name: '',
-      description: '',
-      material: 'PLA',
-      infill_percentage: 20,
-      layer_height: 0.2,
-      print_speed: 50,
-      base_cost: 0,
-      markup_percentage: 30,
-    })
   }
 
-  const handleDelete = (id: string) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    try {
+      setSubmitting(true)
+      const newTemplate = await apiClient.post<QuoteTemplate>('/quotes/templates', formData)
+
+      setTemplates((prev) => [newTemplate, ...prev])
+
+      setShowForm(false)
+      setFormData({
+        name: '',
+        description: '',
+        material: 'PLA',
+        infill_percentage: 20,
+        layer_height: 0.2,
+        print_speed: 50,
+        base_cost: 0,
+        markup_percentage: 30,
+      })
+    } catch (error: unknown) {
+      console.error('Error creating template:', error)
+      alert(`Error al crear plantilla: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar esta plantilla?')) return
 
-    setTemplates((prev) => {
-      const next = prev.filter((template) => template.id !== id)
-      writeTemplatesToStorage(next)
-      return next
-    })
+    try {
+      await apiClient.delete(`/quotes/templates/${id}`)
+      setTemplates((prev) => prev.filter((template) => template.id !== id))
+    } catch (error: unknown) {
+      console.error('Error deleting template:', error)
+      alert(`Error al eliminar plantilla: ${getErrorMessage(error, 'Error desconocido')}`)
+    }
   }
 
   const handleUseTemplate = (template: QuoteTemplate) => {
@@ -99,6 +107,10 @@ export default function QuoteTemplatesPage() {
     router.push(`/dashboard/quotes/new?${params.toString()}`)
   }
 
+  if (loading) {
+    return <div className="p-8">Cargando plantillas...</div>
+  }
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
@@ -108,12 +120,13 @@ export default function QuoteTemplatesPage() {
             Crea plantillas rápidas para cotizaciones frecuentes
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            Persistencia temporal en navegador (localStorage)
+            Persistencia en base de datos (Supabase)
           </p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+          disabled={submitting}
         >
           {showForm ? 'Cancelar' : '+ Nueva Plantilla'}
         </button>
@@ -164,7 +177,7 @@ export default function QuoteTemplatesPage() {
               <input
                 type="number"
                 value={formData.infill_percentage}
-                onChange={(e) => setFormData({ ...formData, infill_percentage: parseFloat(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, infill_percentage: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border rounded-lg"
                 min="0"
                 max="100"
@@ -177,7 +190,7 @@ export default function QuoteTemplatesPage() {
               <input
                 type="number"
                 value={formData.layer_height}
-                onChange={(e) => setFormData({ ...formData, layer_height: parseFloat(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, layer_height: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border rounded-lg"
                 min="0.1"
                 max="0.4"
@@ -190,10 +203,10 @@ export default function QuoteTemplatesPage() {
               <input
                 type="number"
                 value={formData.print_speed}
-                onChange={(e) => setFormData({ ...formData, print_speed: parseFloat(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, print_speed: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border rounded-lg"
                 min="20"
-                max="100"
+                max="200"
                 step="5"
               />
             </div>
@@ -203,7 +216,7 @@ export default function QuoteTemplatesPage() {
               <input
                 type="number"
                 value={formData.base_cost}
-                onChange={(e) => setFormData({ ...formData, base_cost: parseFloat(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, base_cost: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border rounded-lg"
                 min="0"
                 step="0.01"
@@ -215,7 +228,7 @@ export default function QuoteTemplatesPage() {
               <input
                 type="number"
                 value={formData.markup_percentage}
-                onChange={(e) => setFormData({ ...formData, markup_percentage: parseFloat(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, markup_percentage: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border rounded-lg"
                 min="0"
                 max="200"
@@ -226,9 +239,10 @@ export default function QuoteTemplatesPage() {
             <div className="col-span-2">
               <button
                 type="submit"
-                className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+                className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-60"
+                disabled={submitting}
               >
-                Guardar Plantilla
+                {submitting ? 'Guardando...' : 'Guardar Plantilla'}
               </button>
             </div>
           </form>

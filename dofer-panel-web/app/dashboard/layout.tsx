@@ -3,6 +3,7 @@
 import { useEffect, useState, memo, useCallback, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { apiClient } from '@/lib/api'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -408,7 +409,7 @@ export default function DashboardLayout({
           {/* Logo */}
           <div className="p-6 border-b border-border">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="DOFER" className="h-12 w-12 object-contain" />
+              <Image src="/logo.png" alt="DOFER" width={48} height={48} className="h-12 w-12 object-contain" />
               <div>
                 <h1 className="text-2xl font-bold text-primary">DOFER Panel</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">Sistema operativo</p>

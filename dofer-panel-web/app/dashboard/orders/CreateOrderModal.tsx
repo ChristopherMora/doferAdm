@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 
@@ -225,9 +226,12 @@ export default function CreateOrderModal({ isOpen, onClose, onSuccess }: CreateO
               />
               {imagePreview && (
                 <div className="mt-2">
-                  <img 
+                  <Image
                     src={imagePreview} 
                     alt="Preview" 
+                    width={80}
+                    height={80}
+                    unoptimized
                     className="h-20 w-20 object-cover rounded-lg border border-slate-600"
                   />
                 </div>

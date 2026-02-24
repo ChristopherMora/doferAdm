@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image, { type ImageLoaderProps } from 'next/image'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,8 @@ interface Order {
   updated_at: string
   delivery_deadline?: string
 }
+
+const passthroughImageLoader = ({ src }: ImageLoaderProps) => src
 
 export default function OrdersPage() {
   const router = useRouter()
@@ -82,11 +85,7 @@ export default function OrdersPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  useEffect(() => {
-    loadOrders()
-  }, [filterStatus, filterPriority, filterPlatform, filterDateRange, debouncedSearch, currentPage])
-
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
       setLoading(true)
       const offset = (currentPage - 1) * ordersPerPage
@@ -116,7 +115,11 @@ export default function OrdersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [addToast, currentPage, debouncedSearch, filterStatus, ordersPerPage])
+
+  useEffect(() => {
+    loadOrders()
+  }, [loadOrders])
 
   const getStatusBadge = (status: string): 'default' | 'secondary' | 'destructive' | 'outline' => {
     const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -257,7 +260,7 @@ export default function OrdersPage() {
         description: `${filteredOrders.length} órdenes exportadas a Excel`,
         variant: 'success'
       })
-    } catch (error) {
+    } catch {
       addToast({
         title: 'Error al exportar',
         description: 'No se pudo exportar el archivo',
@@ -304,7 +307,7 @@ export default function OrdersPage() {
         description: `${filteredOrders.length} órdenes exportadas`,
         variant: 'success'
       })
-    } catch (error) {
+    } catch {
       addToast({
         title: 'Error al generar PDF',
         description: 'No se pudo crear el archivo',
@@ -531,9 +534,13 @@ export default function OrdersPage() {
                             )}
                           </div>
                           {order.product_image && (
-                            <img
+                            <Image
                               src={order.product_image}
                               alt={order.product_name}
+                              loader={passthroughImageLoader}
+                              unoptimized
+                              width={48}
+                              height={48}
                               className="h-12 w-12 object-cover rounded border flex-shrink-0"
                             />
                           )}
@@ -613,9 +620,13 @@ export default function OrdersPage() {
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
                               {order.product_image && (
-                                <img
+                                <Image
                                   src={order.product_image}
                                   alt={order.product_name}
+                                  loader={passthroughImageLoader}
+                                  unoptimized
+                                  width={32}
+                                  height={32}
                                   className="h-8 w-8 object-cover rounded border"
                                 />
                               )}

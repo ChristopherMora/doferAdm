@@ -14,6 +14,7 @@ import (
 	ordersApp "github.com/dofer/panel-api/internal/modules/orders/app"
 	ordersInfra "github.com/dofer/panel-api/internal/modules/orders/infra"
 	ordersTransport "github.com/dofer/panel-api/internal/modules/orders/transport"
+	"github.com/dofer/panel-api/internal/modules/printers"
 	quotesApp "github.com/dofer/panel-api/internal/modules/quotes/app"
 	quotesInfra "github.com/dofer/panel-api/internal/modules/quotes/infra"
 	quotesTransport "github.com/dofer/panel-api/internal/modules/quotes/transport"
@@ -88,7 +89,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	operatorStatsHandler := ordersApp.NewGetOperatorStatsHandler(timerRepo)
 	getOrderItemsHandler := ordersApp.NewGetOrderItemsHandler(orderRepo)
 	updateOrderItemStatusHandler := ordersApp.NewUpdateOrderItemStatusHandler(orderRepo)
-	
+
 	// Setup order item and payment handlers
 	addOrderItemHandler := ordersApp.NewAddOrderItemHandler(orderRepo)
 	deleteOrderItemHandler := ordersApp.NewDeleteOrderItemHandler(orderRepo)
@@ -147,6 +148,11 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	convertToOrderHandler := quotesApp.NewConvertToOrderHandler(quoteRepo, orderRepo)
 	addPaymentHandler := quotesApp.NewAddPaymentHandler(quoteRepo)
 	syncItemsHandler := quotesApp.NewSyncItemsToOrderHandler(quoteRepo, orderRepo)
+	createQuoteTemplateHandler := quotesApp.NewCreateQuoteTemplateHandler(quoteRepo)
+	getQuoteTemplateHandler := quotesApp.NewGetQuoteTemplateHandler(quoteRepo)
+	listQuoteTemplateHandler := quotesApp.NewListQuoteTemplatesHandler(quoteRepo)
+	updateQuoteTemplateHandler := quotesApp.NewUpdateQuoteTemplateHandler(quoteRepo)
+	deleteQuoteTemplateHandler := quotesApp.NewDeleteQuoteTemplateHandler(quoteRepo)
 	quoteHandler := quotesTransport.NewQuoteHandler(
 		createQuoteHandler,
 		getQuoteHandler,
@@ -160,6 +166,11 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		convertToOrderHandler,
 		addPaymentHandler,
 		syncItemsHandler,
+		createQuoteTemplateHandler,
+		getQuoteTemplateHandler,
+		listQuoteTemplateHandler,
+		updateQuoteTemplateHandler,
+		deleteQuoteTemplateHandler,
 	)
 
 	// Setup tracking handler
@@ -168,6 +179,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	// Setup customers handler
 	customerRepo := customers.NewRepository(db)
 	customerHandler := customers.NewHandler(customerRepo)
+
+	// Setup printers handler
+	printerRepo := printers.NewRepository(db)
+	printerHandler := printers.NewHandler(printerRepo)
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
@@ -184,6 +199,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		quotesTransport.RegisterRoutes(r, quoteHandler)
 		tracking.RegisterRoutes(r, trackingHandler)
 		customers.RegisterRoutes(r, customerHandler)
+		printers.RegisterRoutes(r, printerHandler)
 	})
 
 	return r

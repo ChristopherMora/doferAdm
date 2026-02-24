@@ -308,6 +308,7 @@ export default function OrderLabel({
         <div className="section-content">
           {customerName}
           {customerPhone && <div style={{ fontSize: '10px', color: '#666' }}>📱 {customerPhone}</div>}
+          {customerEmail && <div style={{ fontSize: '10px', color: '#666' }}>📧 {customerEmail}</div>}
         </div>
       </div>
 

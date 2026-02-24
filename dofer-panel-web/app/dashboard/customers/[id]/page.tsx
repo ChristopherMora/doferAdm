@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { apiClient } from '@/lib/api'
 import { useToast } from '@/components/ToastProvider'
 
@@ -31,16 +30,6 @@ interface Customer {
   last_order_date: string | null
   created_at: string
   updated_at: string
-}
-
-interface Order {
-  id: string
-  order_number: string
-  status: string
-  total_price: number
-  created_at: string
-  product_name?: string
-  quantity?: number
 }
 
 interface Interaction {
@@ -73,7 +62,6 @@ export default function CustomerDetailPage() {
   const customerId = params.id as string
 
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [orders, setOrders] = useState<Order[]>([])
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -90,11 +78,7 @@ export default function CustomerDetailPage() {
     priority: 'normal'
   })
 
-  useEffect(() => {
-    loadCustomerData()
-  }, [customerId])
-
-  const loadCustomerData = async () => {
+  const loadCustomerData = useCallback(async () => {
     try {
       setLoading(true)
       const [customerData, analyticsData] = await Promise.all([
@@ -136,7 +120,11 @@ export default function CustomerDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [customerId, showToast])
+
+  useEffect(() => {
+    loadCustomerData()
+  }, [loadCustomerData])
 
   const handleUpdateCustomer = async () => {
     try {

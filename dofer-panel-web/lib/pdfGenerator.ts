@@ -208,7 +208,6 @@ function drawTableImproved(doc: jsPDF, items: QuoteItem[], startY: number): numb
   const colWidth2 = availableWidth * 0.20  // Especificaciones: 20%
   const colWidth3 = availableWidth * 0.10  // Cantidad: 10%
   const colWidth4 = availableWidth * 0.175 // Precio Unitario: 17.5%
-  const colWidth5 = availableWidth * 0.175 // Total: 17.5%
   
   let yPosition = startY
   const rowHeight = 8
@@ -664,7 +663,6 @@ function drawOrderItemsTable(doc: jsPDF, items: OrderItem[], startY: number): nu
   const colWidth2 = availableWidth * 0.25  // Descripción: 25%
   const colWidth3 = availableWidth * 0.12  // Cantidad: 12%
   const colWidth4 = availableWidth * 0.17  // Precio Unit: 17%
-  const colWidth5 = availableWidth * 0.16  // Total: 16%
   
   let yPosition = startY
   const rowHeight = 8
