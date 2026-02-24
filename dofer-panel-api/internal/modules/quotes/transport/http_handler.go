@@ -88,6 +88,7 @@ type AddQuoteItemRequest struct {
 	PrintTimeHours float64  `json:"print_time_hours"`
 	Quantity       int      `json:"quantity"`
 	OtherCosts     float64  `json:"other_costs"`
+	MaterialName   string   `json:"material_name"`
 	UnitPrice      *float64 `json:"unit_price"` // Precio personalizado (opcional)
 }
 
@@ -217,6 +218,7 @@ func (h *QuoteHandler) AddQuoteItem(w http.ResponseWriter, r *http.Request) {
 		PrintTimeHours: req.PrintTimeHours,
 		Quantity:       req.Quantity,
 		OtherCosts:     req.OtherCosts,
+		MaterialName:   req.MaterialName,
 		CustomPrice:    req.UnitPrice, // Pasar precio personalizado si existe
 	}
 

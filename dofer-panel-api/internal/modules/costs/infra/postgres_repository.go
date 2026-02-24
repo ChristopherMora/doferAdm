@@ -2,9 +2,14 @@ package infra
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/dofer/panel-api/internal/modules/costs/domain"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,6 +26,7 @@ func (r *PostgresCostSettingsRepository) Get() (*domain.CostSettings, error) {
 		SELECT id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
 		       profit_margin_percentage, updated_at
 		FROM cost_settings
+		ORDER BY updated_at DESC
 		LIMIT 1
 	`
 
@@ -131,34 +137,51 @@ func (r *PostgresCostSettingsRepository) Update(settings *domain.CostSettings) e
 }
 
 func (r *PostgresCostSettingsRepository) CalculateCost(input domain.CalculationInput) (*domain.CostBreakdown, error) {
-	settings, err := r.Get()
-	if err != nil {
-		return nil, err
+	var (
+		settings *domain.CostSettings
+		err      error
+	)
+
+	materialName := strings.TrimSpace(input.MaterialName)
+	if materialName != "" {
+		settings, err = r.GetByMaterial(materialName)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("%w: %s", domain.ErrMaterialNotFound, materialName)
+			}
+			return nil, err
+		}
+	} else {
+		settings, err = r.Get()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Calcular costos individuales
-	materialCost := input.WeightGrams * settings.MaterialCostPerGram
-	laborCost := input.PrintTimeHours * settings.LaborCostPerHour
-	electricityCost := input.PrintTimeHours * settings.ElectricityCostPerHour
+	// Calcular costos con redondeo monetario consistente.
+	materialCost := roundMoney(input.WeightGrams * settings.MaterialCostPerGram)
+	laborCost := roundMoney(input.PrintTimeHours * settings.LaborCostPerHour)
+	electricityCost := roundMoney(input.PrintTimeHours * settings.ElectricityCostPerHour)
+	otherCosts := roundMoney(input.OtherCosts)
 
-	// Subtotal de costos
-	subtotal := materialCost + laborCost + electricityCost + input.OtherCosts
-
-	// Aplicar margen de ganancia
-	profitMargin := subtotal * (settings.ProfitMarginPercentage / 100)
-	unitPrice := subtotal + profitMargin
-
-	// Calcular total con cantidad
-	total := unitPrice * float64(input.Quantity)
+	subtotal := roundMoney(materialCost + laborCost + electricityCost + otherCosts)
+	profitMargin := roundMoney(subtotal * (settings.ProfitMarginPercentage / 100))
+	unitPrice := roundMoney(subtotal + profitMargin)
+	total := roundMoney(unitPrice * float64(input.Quantity))
 
 	return &domain.CostBreakdown{
 		MaterialCost:    materialCost,
 		LaborCost:       laborCost,
 		ElectricityCost: electricityCost,
-		OtherCosts:      input.OtherCosts,
+		OtherCosts:      otherCosts,
 		Subtotal:        subtotal,
 		ProfitMargin:    profitMargin,
 		UnitPrice:       unitPrice,
 		Total:           total,
+		MaterialName:    settings.MaterialName,
 	}, nil
+}
+
+func roundMoney(value float64) float64 {
+	return math.Round(value*100) / 100
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { apiClient } from '@/lib/api'
 import STLUploader from './STLUploader'
 import type { STLMetrics } from '@/lib/stlParser'
@@ -31,6 +31,7 @@ interface CostBreakdown {
   profit_margin: number
   unit_price: number
   total: number
+  material_name?: string
 }
 
 interface CalculadoraCostosProps {
@@ -41,7 +42,7 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
   const { addToast } = useToast()
   const [settings, setSettings] = useState<CostSettings | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
-  const [selectedMaterial, setSelectedMaterial] = useState<string>('PLA')
+  const [selectedMaterial, setSelectedMaterial] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null)
 
@@ -51,28 +52,34 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
   const [quantity, setQuantity] = useState<number>(1)
   const [otherCosts, setOtherCosts] = useState<number>(0)
 
-  useEffect(() => {
-    loadSettings()
-    loadMaterials()
-  }, [])
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
       const data = await apiClient.get<CostSettings>('/costs/settings')
       setSettings(data)
     } catch (error) {
       console.error('Error loading settings:', error)
     }
-  }
+  }, [])
 
-  const loadMaterials = async () => {
+  const loadMaterials = useCallback(async () => {
     try {
       const response = await apiClient.get<{ materials: Material[] }>('/costs/materials')
-      setMaterials(response.materials || [])
+      const materialList = response.materials || []
+      setMaterials(materialList)
+      setSelectedMaterial((previous) =>
+        materialList.length === 0 || materialList.some((m) => m.material_name === previous)
+          ? previous
+          : materialList[0].material_name,
+      )
     } catch (error) {
       console.error('Error loading materials:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void loadSettings()
+    void loadMaterials()
+  }, [loadMaterials, loadSettings])
 
   const calculateCost = async () => {
     if (!weightGrams || !printTimeHours || !quantity) {
@@ -91,6 +98,7 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
         print_time_hours: printTimeHours,
         quantity: quantity,
         other_costs: otherCosts,
+        material_name: selectedMaterial || undefined,
       })
       setBreakdown(data)
       if (onCalculated) {
@@ -115,11 +123,19 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
     }).format(value)
   }
 
+  const selectedMaterialData = materials.find((m) => m.material_name === selectedMaterial)
+  const activeSettings = selectedMaterialData || settings
+  const roiPercentage = breakdown && breakdown.subtotal > 0
+    ? ((breakdown.profit_margin / breakdown.subtotal) * 100).toFixed(1)
+    : '0.0'
+
   return (
     <div className="space-y-6">
       {/* STL Uploader Section */}
       <div className="border rounded-lg p-6 bg-gray-50">
         <STLUploader
+          material={selectedMaterial || 'PLA'}
+          showMaterialSelector={false}
           onAnalyzed={(metrics: STLMetrics, weight: number, timeHours: number) => {
             setWeightGrams(weight)
             setPrintTimeHours(timeHours)
@@ -140,23 +156,23 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
           >
             {materials.map((material) => (
               <option key={material.id} value={material.material_name}>
-                {material.material_name} - ${material.material_cost_per_gram.toFixed(2)}/g
+                {material.material_name} - ${material.material_cost_per_gram.toFixed(2)}/kg
                 {' '}(Margen: {material.profit_margin_percentage}%)
               </option>
             ))}
           </select>
-          {materials.find(m => m.material_name === selectedMaterial) && (
+          {selectedMaterialData && (
             <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div className="bg-gray-50 p-2 rounded">
                 <span className="text-gray-600">Costo material:</span>
                 <span className="font-bold ml-1">
-                  ${materials.find(m => m.material_name === selectedMaterial)?.material_cost_per_gram.toFixed(2)}/g
+                  ${selectedMaterialData.material_cost_per_gram.toFixed(2)}/kg
                 </span>
               </div>
               <div className="bg-gray-50 p-2 rounded">
                 <span className="text-gray-600">Mano de obra:</span>
                 <span className="font-bold ml-1">
-                  ${materials.find(m => m.material_name === selectedMaterial)?.labor_cost_per_hour.toFixed(2)}/h
+                  ${selectedMaterialData.labor_cost_per_hour.toFixed(2)}/h
                 </span>
               </div>
             </div>
@@ -173,21 +189,21 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
       </div>
 
       {/* Settings Info */}
-      {settings && (
+      {activeSettings && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-blue-900 mb-2">⚙️ Configuración Actual</h3>
+          <h3 className="text-sm font-semibold text-blue-900 mb-2">⚙️ Configuración Activa</h3>
           <div className="grid grid-cols-2 gap-3 text-sm text-blue-800">
             <div>
-              <span className="font-medium">Material:</span> {formatCurrency(settings.material_cost_per_gram)}/g
+              <span className="font-medium">Material:</span> {formatCurrency(activeSettings.material_cost_per_gram)}/kg
             </div>
             <div>
-              <span className="font-medium">Electricidad:</span> {formatCurrency(settings.electricity_cost_per_hour)}/h
+              <span className="font-medium">Electricidad:</span> {formatCurrency(activeSettings.electricity_cost_per_hour)}/h
             </div>
             <div>
-              <span className="font-medium">Mano de obra:</span> {formatCurrency(settings.labor_cost_per_hour)}/h
+              <span className="font-medium">Mano de obra:</span> {formatCurrency(activeSettings.labor_cost_per_hour)}/h
             </div>
             <div>
-              <span className="font-medium">Margen:</span> {settings.profit_margin_percentage}%
+              <span className="font-medium">Margen:</span> {activeSettings.profit_margin_percentage}%
             </div>
           </div>
         </div>
@@ -314,13 +330,13 @@ export default function CalculadoraCostos({ onCalculated }: CalculadoraCostosPro
               <div className="bg-white rounded-lg p-3 border border-emerald-200">
                 <p className="text-xs text-gray-600 mb-1">ROI por Pieza</p>
                 <p className="text-lg font-bold text-emerald-600">
-                  {((breakdown.profit_margin / breakdown.subtotal) * 100).toFixed(1)}%
+                  {roiPercentage}%
                 </p>
               </div>
             </div>
             <div className="bg-emerald-100 rounded-lg p-3 border border-emerald-300">
               <p className="text-xs font-semibold text-emerald-800">
-                📊 Por cada ${formatCurrency(breakdown.subtotal)} invertido, ganas ${formatCurrency(breakdown.profit_margin)}
+                📊 Por cada {formatCurrency(breakdown.subtotal)} invertido, ganas {formatCurrency(breakdown.profit_margin)}
               </p>
             </div>
           </div>

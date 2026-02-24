@@ -1,6 +1,11 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrMaterialNotFound = errors.New("material not found")
 
 type CostSettings struct {
 	ID                     string    `json:"id"`
@@ -18,6 +23,7 @@ type CalculationInput struct {
 	PrintTimeHours float64 `json:"print_time_hours"`
 	Quantity       int     `json:"quantity"`
 	OtherCosts     float64 `json:"other_costs"`
+	MaterialName   string  `json:"material_name,omitempty"`
 }
 
 type CostBreakdown struct {
@@ -29,6 +35,7 @@ type CostBreakdown struct {
 	ProfitMargin    float64 `json:"profit_margin"`
 	UnitPrice       float64 `json:"unit_price"`
 	Total           float64 `json:"total"`
+	MaterialName    string  `json:"material_name,omitempty"`
 }
 
 type CostSettingsRepository interface {

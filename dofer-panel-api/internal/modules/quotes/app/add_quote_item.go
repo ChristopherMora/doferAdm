@@ -17,6 +17,7 @@ type AddQuoteItemCommand struct {
 	PrintTimeHours float64
 	Quantity       int
 	OtherCosts     float64
+	MaterialName   string
 	CustomPrice    *float64 // Precio personalizado (opcional)
 }
 
@@ -33,7 +34,11 @@ func NewAddQuoteItemHandler(quoteRepo quoteDomain.QuoteRepository, costCalc *cos
 }
 
 func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemCommand) error {
-	var unitPrice, total float64
+	var (
+		unitPrice float64
+		total     float64
+		breakdown *domain.CostBreakdown
+	)
 
 	// Si hay precio personalizado, usarlo; si no, calcular automáticamente
 	if cmd.CustomPrice != nil && *cmd.CustomPrice > 0 {
@@ -46,9 +51,11 @@ func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemComman
 			PrintTimeHours: cmd.PrintTimeHours,
 			Quantity:       cmd.Quantity,
 			OtherCosts:     cmd.OtherCosts,
+			MaterialName:   cmd.MaterialName,
 		}
 
-		breakdown, err := h.costCalc.Handle(ctx, costInput)
+		var err error
+		breakdown, err = h.costCalc.Handle(ctx, costInput)
 		if err != nil {
 			return err
 		}
@@ -72,15 +79,7 @@ func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemComman
 	}
 
 	// Si es cálculo automático, incluir detalles de costos
-	if cmd.CustomPrice == nil {
-		costInput := domain.CalculationInput{
-			WeightGrams:    cmd.WeightGrams,
-			PrintTimeHours: cmd.PrintTimeHours,
-			Quantity:       cmd.Quantity,
-			OtherCosts:     cmd.OtherCosts,
-		}
-
-		breakdown, _ := h.costCalc.Handle(ctx, costInput)
+	if breakdown != nil {
 		item.MaterialCost = breakdown.MaterialCost
 		item.LaborCost = breakdown.LaborCost
 		item.ElectricityCost = breakdown.ElectricityCost

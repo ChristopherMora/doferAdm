@@ -2,7 +2,9 @@ package transport
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/dofer/panel-api/internal/modules/costs/app"
 	"github.com/dofer/panel-api/internal/modules/costs/domain"
@@ -38,6 +40,7 @@ type CalculateCostRequest struct {
 	PrintTimeHours float64 `json:"print_time_hours"`
 	Quantity       int     `json:"quantity"`
 	OtherCosts     float64 `json:"other_costs"`
+	MaterialName   string  `json:"material_name"`
 }
 
 func (h *CostHandler) GetCostSettings(w http.ResponseWriter, r *http.Request) {
@@ -105,15 +108,37 @@ func (h *CostHandler) CalculateCost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.WeightGrams <= 0 {
+		http.Error(w, "weight_grams must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.PrintTimeHours <= 0 {
+		http.Error(w, "print_time_hours must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.Quantity < 1 {
+		http.Error(w, "quantity must be at least 1", http.StatusBadRequest)
+		return
+	}
+	if req.OtherCosts < 0 {
+		http.Error(w, "other_costs cannot be negative", http.StatusBadRequest)
+		return
+	}
+
 	input := domain.CalculationInput{
 		WeightGrams:    req.WeightGrams,
 		PrintTimeHours: req.PrintTimeHours,
 		Quantity:       req.Quantity,
 		OtherCosts:     req.OtherCosts,
+		MaterialName:   strings.TrimSpace(req.MaterialName),
 	}
 
 	breakdown, err := h.calculateHandler.Handle(r.Context(), input)
 	if err != nil {
+		if errors.Is(err, domain.ErrMaterialNotFound) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

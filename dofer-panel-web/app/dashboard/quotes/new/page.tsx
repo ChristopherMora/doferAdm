@@ -69,6 +69,7 @@ interface CreateQuoteResponse {
 interface CostBreakdown {
   unit_price: number
   total: number
+  material_name?: string
 }
 
 interface QuoteItemPayload {
@@ -78,6 +79,7 @@ interface QuoteItemPayload {
   print_time_hours: number
   quantity: number
   other_costs: number
+  material_name?: string
   unit_price?: number
 }
 
@@ -645,6 +647,7 @@ function NewQuotePageContent() {
         print_time_hours: currentItem.print_time_hours,
         quantity: currentItem.quantity,
         other_costs: currentItem.other_costs,
+        material_name: breakdown?.material_name,
       }
 
       // Si es precio manual, enviar el precio personalizado

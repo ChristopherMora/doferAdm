@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { parseSTL, formatMetrics, MATERIAL_DENSITIES, type STLMetrics } from '@/lib/stlParser'
 import { Upload, Loader2, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -10,9 +10,30 @@ const STLViewer3D = dynamic(() => import('./STLViewer3D'), { ssr: false })
 
 interface STLUploaderProps {
   onAnalyzed?: (metrics: STLMetrics, weight: number, estimatedTimeHours: number) => void
+  material?: string
+  showMaterialSelector?: boolean
 }
 
-export default function STLUploader({ onAnalyzed }: STLUploaderProps) {
+function resolveMaterialDensity(materialName: string): number {
+  if (MATERIAL_DENSITIES[materialName]) {
+    return MATERIAL_DENSITIES[materialName]
+  }
+
+  const normalized = materialName.trim().toUpperCase()
+  const aliases: Array<{ key: string; density: number }> = [
+    { key: 'PLA', density: MATERIAL_DENSITIES.PLA },
+    { key: 'ABS', density: MATERIAL_DENSITIES.ABS },
+    { key: 'PETG', density: MATERIAL_DENSITIES.PETG },
+    { key: 'TPU', density: MATERIAL_DENSITIES.TPU },
+    { key: 'NYLON', density: MATERIAL_DENSITIES.NYLON },
+    { key: 'RESIN', density: MATERIAL_DENSITIES.Resin },
+  ]
+
+  const aliasMatch = aliases.find((alias) => normalized.includes(alias.key))
+  return aliasMatch?.density ?? MATERIAL_DENSITIES.PLA
+}
+
+export default function STLUploader({ onAnalyzed, material, showMaterialSelector = true }: STLUploaderProps) {
   const router = useRouter()
   const [metrics, setMetrics] = useState<STLMetrics | null>(null)
   const [loading, setLoading] = useState(false)
@@ -27,6 +48,7 @@ export default function STLUploader({ onAnalyzed }: STLUploaderProps) {
   const [show3DViewer, setShow3DViewer] = useState<boolean>(false)
   const [currentFile, setCurrentFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const activeMaterial = material && material.trim() ? material : selectedMaterial
 
   // Exportar a PDF
   const exportToPDF = () => {
@@ -55,7 +77,7 @@ ESPECIFICACIONES DEL MODELO
 ───────────────────────────────────────────────────────
 CONFIGURACIÓN DE IMPRESIÓN
 ───────────────────────────────────────────────────────
-• Material: ${selectedMaterial}
+• Material: ${activeMaterial}
 • Relleno: ${infillPercentage}%
 • Peso estimado: ${weight.toFixed(2)} g
 • Tiempo estimado: ${estimatedTime < 1 ? `${Math.round(estimatedTime * 60)} minutos` : `${estimatedTime.toFixed(1)} horas`}
@@ -102,7 +124,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
     // Guardar datos en sessionStorage para pre-llenar la cotización
     const quoteData = {
       productName: fileName.replace('.stl', ''),
-      material: selectedMaterial,
+      material: activeMaterial,
       weight: weight.toFixed(2),
       printTime: estimatedTime.toFixed(2),
       infill: infillPercentage,
@@ -127,7 +149,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
     setInfillPercentage(preset.infill)
     if (metrics) {
       const volumeCm3 = metrics.volume / 1000
-      const density = MATERIAL_DENSITIES[selectedMaterial] || MATERIAL_DENSITIES['PLA']
+      const density = resolveMaterialDensity(activeMaterial)
       const fillPercentage = 0.90 + (preset.infill / 100) * 0.10
       const weight = volumeCm3 * density * Math.min(fillPercentage, 1.0)
       const timeHours = calculatePrintTime(metrics, preset.infill)
@@ -195,7 +217,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
         try {
           const parsed = await parseSTL(file)
           const volumeCm3 = parsed.volume / 1000
-          const density = MATERIAL_DENSITIES[selectedMaterial] || MATERIAL_DENSITIES['PLA']
+          const density = resolveMaterialDensity(activeMaterial)
           const fillPercentage = 0.90 + (infillPercentage / 100) * 0.10
           const weight = volumeCm3 * density * Math.min(fillPercentage, 1.0)
           const timeHours = calculatePrintTime(parsed, infillPercentage)
@@ -237,7 +259,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
 
       // Calcular peso con material seleccionado, considerando configuración real de impresión
       const volumeCm3 = parsed.volume / 1000
-      const density = MATERIAL_DENSITIES[selectedMaterial] || MATERIAL_DENSITIES['PLA']
+      const density = resolveMaterialDensity(activeMaterial)
       
       // Fórmula calibrada con laminadores reales
       // Factor alto porque en piezas pequeñas las paredes, techo y piso ocupan casi todo
@@ -286,7 +308,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
     setSelectedMaterial(e.target.value)
     if (metrics) {
       const volumeCm3 = metrics.volume / 1000
-      const density = MATERIAL_DENSITIES[e.target.value] || MATERIAL_DENSITIES['PLA']
+      const density = resolveMaterialDensity(e.target.value)
       const fillPercentage = 0.90 + (infillPercentage / 100) * 0.10
       const weight = volumeCm3 * density * Math.min(fillPercentage, 1.0)
       if (onAnalyzed) {
@@ -295,12 +317,22 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
     }
   }
 
+  useEffect(() => {
+    if (!material || !metrics || !onAnalyzed) return
+
+    const volumeCm3 = metrics.volume / 1000
+    const density = resolveMaterialDensity(activeMaterial)
+    const currentFill = 0.90 + (infillPercentage / 100) * 0.10
+    const weight = volumeCm3 * density * Math.min(currentFill, 1.0)
+    onAnalyzed(metrics, weight, estimatedTime)
+  }, [activeMaterial, estimatedTime, infillPercentage, material, metrics, onAnalyzed])
+
   const handleInfillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newInfill = parseFloat(e.target.value) || 15
     setInfillPercentage(newInfill)
     if (metrics) {
       const volumeCm3 = metrics.volume / 1000
-      const density = MATERIAL_DENSITIES[selectedMaterial] || MATERIAL_DENSITIES['PLA']
+      const density = resolveMaterialDensity(activeMaterial)
       const fillPercentage = 0.90 + (newInfill / 100) * 0.10
       const weight = volumeCm3 * density * Math.min(fillPercentage, 1.0)
       
@@ -325,7 +357,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
 
   const formattedMetrics = metrics ? formatMetrics(metrics) : null
   const volumeCm3 = metrics ? metrics.volume / 1000 : 0
-  const density = MATERIAL_DENSITIES[selectedMaterial] || MATERIAL_DENSITIES['PLA']
+  const density = resolveMaterialDensity(activeMaterial)
   const fillPercentage = 0.90 + (infillPercentage / 100) * 0.10
   const weight = volumeCm3 * density * Math.min(fillPercentage, 1.0)
   const solidWeight = volumeCm3 * density
@@ -490,23 +522,25 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
           </div>
 
           {/* Material and Infill Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-900 mb-2">
-                Material (para cálculo de peso)
-              </label>
-              <select
-                value={selectedMaterial}
-                onChange={handleMaterialChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-black"
-              >
-                {Object.entries(MATERIAL_DENSITIES).map(([material, density]) => (
-                  <option key={material} value={material}>
-                    {material} ({density} g/cm³)
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className={`grid grid-cols-1 ${showMaterialSelector ? 'md:grid-cols-2' : ''} gap-4`}>
+            {showMaterialSelector && (
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">
+                  Material (para cálculo de peso)
+                </label>
+                <select
+                  value={selectedMaterial}
+                  onChange={handleMaterialChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-black"
+                >
+                  {Object.entries(MATERIAL_DENSITIES).map(([materialName, materialDensity]) => (
+                    <option key={materialName} value={materialName}>
+                      {materialName} ({materialDensity} g/cm³)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-900 mb-2">
@@ -635,7 +669,7 @@ ${Object.entries(MATERIAL_DENSITIES).map(([mat, dens]) => {
                   <tbody className="divide-y divide-gray-200">
                     {Object.entries(MATERIAL_DENSITIES).map(([material, density]) => {
                       const matWeight = volumeCm3 * density * fillPercentage
-                      const isSelected = material === selectedMaterial
+                      const isSelected = material === activeMaterial
                       const recommendations: Record<string, string> = {
                         'PLA': 'Fácil, económico, ideal principiantes',
                         'ABS': 'Resistente al calor, durabilidad',
