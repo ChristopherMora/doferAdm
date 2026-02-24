@@ -2,60 +2,66 @@
 
 @layer base {
   :root {
-    /* DOFER Panel - Light Mode (shadcn/ui clean) */
-    --background: 0 0% 100%;
-    --foreground: 222.2 47.4% 11.2%;
+    /* DOFER Panel - Light Theme (teal + amber) */
+    --background: 210 33% 98%;
+    --foreground: 215 32% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card-foreground: 215 32% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --popover-foreground: 215 32% 14%;
+    --primary: 189 84% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 207 28% 92%;
+    --secondary-foreground: 216 27% 18%;
+    --muted: 208 26% 94%;
+    --muted-foreground: 215 14% 40%;
+    --accent: 37 92% 58%;
+    --accent-foreground: 21 33% 16%;
+    --destructive: 0 76% 52%;
     --destructive-foreground: 0 0% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 262 83% 58%;
-    --radius: 0.5rem;
+    --border: 214 24% 86%;
+    --input: 214 24% 86%;
+    --ring: 189 84% 38%;
+    --radius: 0.85rem;
     
-    /* Extended palette for charts and states */
+    /* Surface shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --shadow-md: 0 12px 28px -18px rgb(15 23 42 / 0.22);
+    --shadow-lg: 0 22px 44px -22px rgb(15 23 42 / 0.28);
+    --shadow-xl: 0 32px 70px -28px rgb(15 23 42 / 0.32);
+
+    /* Extended palette for states */
     --success: 142 76% 36%;
     --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-    --info: 217 91% 60%;
+    --warning: 36 94% 52%;
+    --warning-foreground: 20 22% 16%;
+    --info: 201 96% 40%;
     --info-foreground: 0 0% 98%;
   }
 
   .dark {
-    /* DOFER Panel - Dark Mode Premium (shadcn/ui inspired) */
-    --background: 222.2 84% 4.9%;
+    /* DOFER Panel - Dark Theme */
+    --background: 218 34% 8%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 8%;
+    --card: 218 27% 11%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 8%;
+    --popover: 218 27% 11%;
     --popover-foreground: 210 40% 98%;
-    --primary: 262 83% 58%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 217.2 32.6% 17.5%;
+    --primary: 188 86% 55%;
+    --primary-foreground: 212 47% 12%;
+    --secondary: 215 24% 20%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --muted: 215 23% 17%;
+    --muted-foreground: 214 15% 68%;
+    --accent: 36 94% 58%;
+    --accent-foreground: 20 24% 16%;
+    --destructive: 0 67% 44%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 262 83% 58%;
+    --border: 216 20% 24%;
+    --input: 216 20% 24%;
+    --ring: 188 86% 55%;
     
-    /* Elevation shadows for dark mode */
+    /* Surface shadows for dark mode */
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.6);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.7), 0 4px 6px -4px rgb(0 0 0 / 0.7);
@@ -71,9 +77,24 @@
   }
   
   body {
+    min-height: 100vh;
     background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(1200px 560px at 6% -16%, hsl(var(--primary) / 0.16), transparent 60%),
+      radial-gradient(980px 520px at 100% -10%, hsl(var(--accent) / 0.14), transparent 56%);
+    background-attachment: fixed;
     color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: var(--font-display), "Trebuchet MS", "Segoe UI", sans-serif;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.02em;
   }
 
   /* Smooth transitions for better UX */
@@ -86,7 +107,7 @@
   /* Focus visible for accessibility */
   *:focus-visible {
     outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
+    outline-offset: 3px;
   }
 
   /* Smooth scroll behavior */
@@ -257,5 +278,40 @@
     background: hsl(var(--card) / 0.7);
     backdrop-filter: blur(12px);
     border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .panel-surface {
+    background: hsl(var(--card) / 0.86);
+    backdrop-filter: blur(14px);
+    border: 1px solid hsl(var(--border) / 0.65);
+    box-shadow: var(--shadow-md);
+  }
+
+  .panel-surface-strong {
+    background: linear-gradient(145deg, hsl(var(--card)), hsl(var(--card) / 0.92));
+    border: 1px solid hsl(var(--border) / 0.75);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .grid-mesh {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.25) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.25) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.23);
+    color: hsl(var(--foreground));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

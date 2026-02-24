@@ -13,8 +13,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault()
     setLoading(true)
     setError(null)
 
@@ -27,12 +27,11 @@ export default function LoginPage() {
       if (error) throw error
 
       if (data.session) {
-        // Guardar token en cookie para que el middleware pueda validar la sesión
         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`
         router.push('/dashboard')
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error al iniciar sesión'
+      const message = err instanceof Error ? err.message : 'Error al iniciar sesion'
       setError(message)
     } finally {
       setLoading(false)
@@ -40,70 +39,115 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <Image src="/logo.png" alt="DOFER" width={80} height={80} className="h-20 w-20 object-contain" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            DOFER Panel
-          </h1>
-          <p className="text-gray-600">Ingresa a tu cuenta</p>
-        </div>
+    <div className="relative min-h-screen overflow-hidden bg-slate-950">
+      <div className="pointer-events-none absolute -top-28 -left-16 h-80 w-80 rounded-full bg-cyan-500/25 blur-3xl" />
+      <div className="pointer-events-none absolute -top-16 right-0 h-72 w-72 rounded-full bg-amber-400/20 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 opacity-20 grid-mesh" />
 
-        <form onSubmit={handleLogin} className="space-y-6">
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
+      <div className="relative z-10 mx-auto min-h-screen max-w-6xl px-4 py-8 lg:px-8 lg:py-12">
+        <div className="grid min-h-[88vh] items-stretch gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <section className="panel-surface-strong rounded-3xl p-8 text-white lg:p-10">
+            <div className="flex h-full flex-col justify-between">
+              <div>
+                <div className="inline-flex items-center gap-3 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.12em]">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  Plataforma operativa
+                </div>
+
+                <h1 className="mt-6 text-4xl font-bold leading-tight lg:text-5xl">
+                  DOFER Panel
+                </h1>
+                <p className="mt-4 max-w-md text-white/80">
+                  Controla ordenes, cotizaciones, impresoras y clientes desde un solo tablero.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3 mt-10">
+                <div className="rounded-xl border border-white/20 bg-white/10 p-4">
+                  <p className="text-xs text-white/75">Operacion</p>
+                  <p className="mt-1 text-xl font-semibold">En linea</p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-white/10 p-4">
+                  <p className="text-xs text-white/75">Modulos</p>
+                  <p className="mt-1 text-xl font-semibold">8 activos</p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-white/10 p-4">
+                  <p className="text-xs text-white/75">Enfoque</p>
+                  <p className="mt-1 text-xl font-semibold">Produccion</p>
+                </div>
+              </div>
             </div>
-          )}
+          </section>
 
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-black"
-              placeholder="admin@dofer.com"
-            />
-          </div>
+          <section className="panel-surface rounded-3xl p-7 lg:p-9">
+            <div className="mx-auto w-full max-w-md">
+              <div className="mb-8 text-center">
+                <div className="mb-4 flex justify-center">
+                  <Image
+                    src="/logo.png"
+                    alt="DOFER"
+                    width={88}
+                    height={88}
+                    className="h-20 w-20 rounded-2xl bg-white p-1 shadow-md"
+                  />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">Iniciar sesion</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Accede a tu panel administrativo</p>
+              </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Contraseña
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-black"
-              placeholder="••••••••"
-            />
-          </div>
+              <form onSubmit={handleLogin} className="space-y-5">
+                {error && (
+                  <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {error}
+                  </div>
+                )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-          >
-            {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
-          </button>
+                <div>
+                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-foreground">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-black focus:ring-2 focus:ring-primary"
+                    placeholder="admin@dofer.com"
+                  />
+                </div>
 
+                <div>
+                  <label htmlFor="password" className="mb-2 block text-sm font-medium text-foreground">
+                    Contrasena
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-black focus:ring-2 focus:ring-primary"
+                    placeholder="••••••••"
+                  />
+                </div>
 
-        </form>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? 'Iniciando sesion...' : 'Entrar al panel'}
+                </button>
+              </form>
 
-        <div className="mt-6 text-center">
-          <Link href="/" className="text-sm text-indigo-600 hover:text-indigo-700">
-            ← Volver al inicio
-          </Link>
+              <div className="mt-6 text-center">
+                <Link href="/" className="text-sm text-primary hover:text-primary/80">
+                  Volver al inicio
+                </Link>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>

@@ -74,10 +74,10 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
       <div className="space-y-1">
         <button
           onClick={onToggle}
-          className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:scale-[1.02] ${
+          className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${
             isActive
-              ? 'bg-primary/10 text-primary font-medium shadow-sm'
-              : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
+              ? 'border-primary/25 bg-primary/10 text-primary font-medium shadow-sm'
+              : 'border-transparent text-foreground/75 hover:border-border/70 hover:bg-secondary/70 hover:text-foreground'
           }`}
           title={`${isActive ? 'Contraer' : 'Expandir'} ${item.name}`}
           aria-expanded={isExpanded}
@@ -106,10 +106,10 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
                   href={subItem.href}
                   prefetch={true}
                   onClick={onClose}
-                  className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-sm hover:scale-[1.02] ${
+                  className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-sm ${
                     isSubActive
                       ? 'bg-primary/10 text-primary font-medium shadow-sm'
-                      : 'text-foreground/60 hover:bg-accent hover:text-accent-foreground'
+                      : 'text-foreground/65 hover:bg-secondary hover:text-foreground'
                   }`}
                   title={subItem.name}
                 >
@@ -129,10 +129,10 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
       href={item.href!}
       prefetch={true}
       onClick={onClose}
-      className={`group flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-all duration-200 hover:scale-[1.02] ${
+      className={`group flex items-center justify-between gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${
         isActive
-          ? 'bg-primary/10 text-primary font-medium shadow-sm'
-          : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'
+          ? 'border-primary/25 bg-primary/10 text-primary font-medium shadow-sm'
+          : 'border-transparent text-foreground/75 hover:border-border/70 hover:bg-secondary/70 hover:text-foreground'
       }`}
       title={item.name}
       aria-label={`${item.name}${badge ? ` - ${badge} pendientes` : ''}`}
@@ -320,7 +320,7 @@ export default function DashboardLayout({
     { 
       name: 'Configuración', 
       icon: '⚙️',
-      shortcut: '⌘5',
+      shortcut: '⌘6',
       subItems: [
         { name: 'Impresoras', href: '/dashboard/printers', icon: '🖨️' },
         { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
@@ -331,11 +331,11 @@ export default function DashboardLayout({
   ]
 
   return (
-    <div className="min-h-screen bg-background transition-colors duration-200">
+    <div className="min-h-screen transition-colors duration-200 grid-mesh">
       {/* Búsqueda rápida modal */}
       {showSearch && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-32">
-          <div className="bg-card rounded-lg shadow-2xl w-full max-w-2xl border border-border animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-slate-950/55 backdrop-blur-sm z-50 flex items-start justify-center pt-28 px-3">
+          <div className="panel-surface-strong rounded-2xl w-full max-w-2xl animate-in fade-in zoom-in duration-200">
             <div className="p-4 border-b border-border">
               <div className="flex items-center gap-3">
                 <span className="text-xl">🔍</span>
@@ -368,7 +368,7 @@ export default function DashboardLayout({
                               setShowSearch(false)
                               setSearchTerm('')
                             }}
-                            className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                            className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-secondary transition-colors"
                           >
                             <span>{sub.icon}</span>
                             <span>{sub.name}</span>
@@ -386,7 +386,7 @@ export default function DashboardLayout({
                         setShowSearch(false)
                         setSearchTerm('')
                       }}
-                      className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+                      className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-secondary transition-colors"
                     >
                       <span className="text-xl">{item.icon}</span>
                       <span>{item.name}</span>
@@ -402,17 +402,17 @@ export default function DashboardLayout({
       )}
 
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 w-64 bg-card border-r border-border shadow-lg transition-all duration-300 z-50 
+      <div className={`fixed inset-y-0 left-0 w-72 panel-surface border-r border-border/70 transition-all duration-300 z-50 
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
         md:translate-x-0`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-6 border-b border-border">
+          <div className="p-5 border-b border-border/70">
             <div className="flex items-center gap-3">
-              <Image src="/logo.png" alt="DOFER" width={48} height={48} className="h-12 w-12 object-contain" />
+              <Image src="/logo.png" alt="DOFER" width={48} height={48} className="h-12 w-12 object-contain rounded-xl ring-1 ring-border/70" />
               <div>
-                <h1 className="text-2xl font-bold text-primary">DOFER Panel</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">Sistema operativo</p>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">DOFER Panel</h1>
+                <p className="text-xs text-muted-foreground mt-0.5 uppercase tracking-wide">Suite Operativa</p>
               </div>
             </div>
           </div>
@@ -421,17 +421,17 @@ export default function DashboardLayout({
           <div className="px-4 pt-4">
             <button
               onClick={() => setShowSearch(true)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg bg-accent/50 hover:bg-accent transition-all duration-200 text-muted-foreground hover:text-foreground group"
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border border-border/70 bg-background/60 hover:bg-background transition-all duration-200 text-muted-foreground hover:text-foreground group"
               aria-label="Abrir búsqueda rápida (⌘K)"
             >
               <span className="text-lg">🔍</span>
               <span className="text-sm flex-1 text-left">Buscar...</span>
-              <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded group-hover:bg-background">⌘K</kbd>
+              <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded group-hover:bg-secondary">⌘K</kbd>
             </button>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto" aria-label="Navegación principal">
+          <nav className="flex-1 p-4 space-y-2.5 overflow-y-auto scrollbar-thin" aria-label="Navegación principal">
             {navigation.map((item) => {
               const isActive = item.href ? pathname === item.href : item.subItems?.some(sub => pathname === sub.href) || false
               const isExpanded = item.subItems ? (expandedSections[item.name] ?? autoExpandedSections[item.name] ?? false) : undefined
@@ -459,7 +459,7 @@ export default function DashboardLayout({
           </nav>
 
           {/* Atajos de teclado info */}
-          <div className="px-4 py-2 border-t border-border/50">
+          <div className="px-4 py-2 border-t border-border/60">
             <details className="group">
               <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors list-none flex items-center gap-2">
                 <span>⌨️</span>
@@ -473,18 +473,18 @@ export default function DashboardLayout({
                 </div>
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span>Navegación rápida</span>
-                  <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘1-5</kbd>
+                  <kbd className="px-1.5 py-0.5 font-mono bg-muted rounded text-[10px]">⌘1-6</kbd>
                 </div>
               </div>
             </details>
           </div>
 
           {/* User info */}
-          <div className="p-4 border-t border-border">
+          <div className="p-4 border-t border-border/70">
             <div className="flex items-center justify-between mb-3">
               <ThemeToggle />
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/70 px-3 py-2.5">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
                   {userEmail || 'Usuario'}
@@ -512,9 +512,9 @@ export default function DashboardLayout({
       )}
 
       {/* Main content */}
-      <div className="md:ml-64">
+      <div className="md:ml-72">
         {/* Header con breadcrumbs */}
-        <header className="bg-card border-b border-border shadow-sm transition-colors duration-200 sticky top-0 z-40 backdrop-blur-sm bg-card/95">
+        <header className="panel-surface border-b border-border/70 transition-colors duration-200 sticky top-0 z-40">
           <div className="px-4 md:px-8 py-4">
             <div className="flex items-center justify-between gap-4">
               {/* Botón menú móvil */}
@@ -530,7 +530,7 @@ export default function DashboardLayout({
               </button>
               
               <div className="flex-1 min-w-0">
-                <h2 className="text-xl md:text-2xl font-semibold text-foreground transition-colors duration-200 truncate">
+                <h2 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground transition-colors duration-200 truncate">
                   {navigation.find(item => item.href === pathname)?.name || 
                    navigation.flatMap(item => item.subItems || []).find(sub => sub.href === pathname)?.name || 
                    'Dashboard'}
@@ -551,8 +551,8 @@ export default function DashboardLayout({
                   🔄
                 </button>
                 <Link
-                  href="/dashboard/quotes"
-                  className="flex items-center gap-2 px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md text-sm md:text-base"
+                  href="/dashboard/quotes/new"
+                  className="flex items-center gap-2 px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md text-sm md:text-base"
                   title="Nueva cotización"
                   aria-label="Crear nueva cotización"
                 >
@@ -565,8 +565,10 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="p-4 md:p-8 transition-colors duration-200">
-          {children}
+        <main className="p-4 md:p-8 lg:p-10 transition-colors duration-200">
+          <div className="mx-auto w-full max-w-[1520px]">
+            {children}
+          </div>
         </main>
       </div>
     </div>
