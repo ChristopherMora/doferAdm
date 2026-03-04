@@ -91,6 +91,21 @@ func (r *PostgresUserRepository) Create(user *domain.User) error {
 	return err
 }
 
+// UpsertUser inserta el usuario si no existe. Si ya existe, no hace nada.
+// El role por defecto es 'operator'; un admin puede cambiarlo después.
+func (r *PostgresUserRepository) UpsertUser(id, email, fullName string) error {
+	query := `
+		INSERT INTO users (id, email, full_name, role, created_at, updated_at)
+		VALUES ($1, $2, $3, 'operator', NOW(), NOW())
+		ON CONFLICT (id) DO NOTHING
+	`
+	if fullName == "" {
+		fullName = email
+	}
+	_, err := r.db.Exec(context.Background(), query, id, email, fullName)
+	return err
+}
+
 func (r *PostgresUserRepository) Update(user *domain.User) error {
 	query := `
 		UPDATE users

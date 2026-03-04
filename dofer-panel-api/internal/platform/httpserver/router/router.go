@@ -200,21 +200,27 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		// Ping test
+		// Ping test (público, sin auth)
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"message": "pong"})
 		})
 
-		// Register module routes
-		authTransport.RegisterRoutes(r, authHandler)
-		ordersTransport.RegisterRoutes(r, orderHandler)
-		costsTransport.RegisterRoutes(r, costHandler)
-		quotesTransport.RegisterRoutes(r, quoteHandler)
-		tracking.RegisterRoutes(r, trackingHandler)
-		customers.RegisterRoutes(r, customerHandler)
-		printers.RegisterRoutes(r, printerHandler)
-		products.RegisterRoutes(r, productHandler)
+		// Rutas protegidas: RequireAuth + SyncUser (asegura que el usuario exista en DB local)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth)
+			r.Use(middleware.SyncUser(userRepo))
+
+			// Register module routes
+			authTransport.RegisterRoutes(r, authHandler)
+			ordersTransport.RegisterRoutes(r, orderHandler)
+			costsTransport.RegisterRoutes(r, costHandler)
+			quotesTransport.RegisterRoutes(r, quoteHandler)
+			tracking.RegisterRoutes(r, trackingHandler)
+			customers.RegisterRoutes(r, customerHandler)
+			printers.RegisterRoutes(r, printerHandler)
+			products.RegisterRoutes(r, productHandler)
+		})
 	})
 
 	return r

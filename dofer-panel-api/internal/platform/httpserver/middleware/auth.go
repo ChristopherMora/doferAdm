@@ -24,6 +24,8 @@ type contextKey string
 
 const UserIDKey contextKey = "user_id"
 const UserRoleKey contextKey = "user_role"
+const UserEmailKey contextKey = "user_email"
+const UserNameKey contextKey = "user_name"
 
 const (
 	testAuthUserID         = "11111111-1111-1111-1111-111111111111"
@@ -47,10 +49,17 @@ type appMetadataClaims struct {
 	Role string `json:"role,omitempty"`
 }
 
+type userMetadataClaims struct {
+	FullName string `json:"full_name,omitempty"`
+	Name     string `json:"name,omitempty"`
+}
+
 type userClaims struct {
 	jwt.RegisteredClaims
-	Role        string            `json:"role,omitempty"`
-	AppMetadata appMetadataClaims `json:"app_metadata,omitempty"`
+	Email        string             `json:"email,omitempty"`
+	Role         string             `json:"role,omitempty"`
+	AppMetadata  appMetadataClaims  `json:"app_metadata,omitempty"`
+	UserMetadata userMetadataClaims `json:"user_metadata,omitempty"`
 }
 
 type jwksDocument struct {
@@ -464,6 +473,52 @@ func UserRoleFromContext(ctx context.Context) (string, bool) {
 	return role, true
 }
 
+func UserEmailFromContext(ctx context.Context) (string, bool) {
+	email, ok := ctx.Value(UserEmailKey).(string)
+	if !ok || strings.TrimSpace(email) == "" {
+		return "", false
+	}
+	return email, true
+}
+
+func UserNameFromContext(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(UserNameKey).(string)
+	if !ok || strings.TrimSpace(name) == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// UserSyncer es la interfaz que el repositorio de usuarios debe implementar
+// para sincronizar usuarios de Supabase a la base de datos local.
+type UserSyncer interface {
+	UpsertUser(id, email, fullName string) error
+}
+
+// SyncUser middleware que asegura que el usuario autenticado exista en la DB local.
+// Debe usarse DESPUES de RequireAuth en la cadena de middlewares.
+func SyncUser(syncer UserSyncer) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := UserIDFromContext(r.Context())
+			if ok && userID != "" {
+				email, _ := UserEmailFromContext(r.Context())
+				if email == "" {
+					email = userID + "@unknown.local"
+				}
+				name, _ := UserNameFromContext(r.Context())
+				if name == "" {
+					name = email
+				}
+				// Ignoramos el error: si falla el upsert, dejamos pasar igualmente
+				// para no bloquear requests por problemas de sync de usuario
+				_ = syncer.UpsertUser(userID, email, name)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequireAuth middleware para validar JWT.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -483,6 +538,8 @@ func RequireAuth(next http.Handler) http.Handler {
 		if cfg.allowTestAuthToken && isTestToken(token) {
 			ctx := context.WithValue(r.Context(), UserIDKey, testAuthUserID)
 			ctx = context.WithValue(ctx, UserRoleKey, testAuthUserRole)
+			ctx = context.WithValue(ctx, UserEmailKey, "test@dofer.local")
+			ctx = context.WithValue(ctx, UserNameKey, "Test Admin")
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -501,6 +558,12 @@ func RequireAuth(next http.Handler) http.Handler {
 
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		ctx = context.WithValue(ctx, UserRoleKey, resolveUserRole(claims))
+		ctx = context.WithValue(ctx, UserEmailKey, strings.TrimSpace(claims.Email))
+		userName := strings.TrimSpace(claims.UserMetadata.FullName)
+		if userName == "" {
+			userName = strings.TrimSpace(claims.UserMetadata.Name)
+		}
+		ctx = context.WithValue(ctx, UserNameKey, userName)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
