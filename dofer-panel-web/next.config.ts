@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Modo standalone para Docker (genera build auto-contenido)
+  output: 'standalone',
+
   // Optimizar imágenes
   images: {
     formats: ['image/avif', 'image/webp'],

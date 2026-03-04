@@ -31,21 +31,25 @@ WORKDIR /app
 # Install dumb-init and curl for health checks
 RUN apk add --no-cache dumb-init curl
 
-# Copy built app from builder
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/public ./public
-
-# Create non-root user
+# Create non-root user ANTES de copiar archivos
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+
+# Copiar archivos con --chown para asignar ownership correcto desde el inicio
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Pre-crear directorio de caché de imágenes con permisos correctos
+RUN mkdir -p .next/cache/images && chown -R nextjs:nodejs .next/cache
 
 USER nextjs
 
 EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 # Use dumb-init to properly handle signals
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the app
-CMD ["npm", "start"]
+# Standalone mode usa node server.js en vez de npm start
+CMD ["node", "server.js"]
