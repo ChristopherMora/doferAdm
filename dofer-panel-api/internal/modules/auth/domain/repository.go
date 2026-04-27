@@ -8,4 +8,8 @@ type UserRepository interface {
 	// UpsertUser inserta el usuario si no existe, o no hace nada si ya existe.
 	// Usado para sincronizar usuarios de Supabase a la DB local.
 	UpsertUser(id, email, fullName string) error
+	// ResolveOrganization obtiene la organizacion activa del usuario.
+	// Si no se solicita una organizacion y el usuario no tiene membresia,
+	// puede crear un workspace personal para beta.
+	ResolveOrganization(userID, requestedOrganizationID string) (organizationID string, role string, err error)
 }

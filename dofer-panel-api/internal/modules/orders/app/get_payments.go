@@ -19,5 +19,5 @@ func NewGetOrderPaymentsHandler(repo domain.OrderRepository) *GetOrderPaymentsHa
 }
 
 func (h *GetOrderPaymentsHandler) Handle(ctx context.Context, query GetOrderPaymentsQuery) ([]*domain.OrderPayment, error) {
-	return h.repo.GetPayments(query.OrderID)
+	return h.repo.GetPayments(query.OrderID, organizationIDFromContext(ctx))
 }

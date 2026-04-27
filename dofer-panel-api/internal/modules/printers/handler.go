@@ -34,6 +34,11 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 	})
 }
 
+func organizationIDFromRequest(r *http.Request) string {
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
+	return organizationID
+}
+
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -42,7 +47,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	printers, err := h.repo.List(r.Context(), status, limit, offset)
+	printers, err := h.repo.List(r.Context(), organizationIDFromRequest(r), status, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -59,7 +64,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	printer, err := h.repo.GetByID(r.Context(), id)
+	printer, err := h.repo.GetByID(r.Context(), organizationIDFromRequest(r), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -81,7 +86,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	printer, err := h.repo.Create(r.Context(), req)
+	printer, err := h.repo.Create(r.Context(), organizationIDFromRequest(r), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -105,7 +110,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	printer, err := h.repo.Update(r.Context(), id, req)
+	printer, err := h.repo.Update(r.Context(), organizationIDFromRequest(r), id, req)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			http.Error(w, "printer not found", http.StatusNotFound)
@@ -132,7 +137,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	printer, err := h.repo.UpdateStatus(r.Context(), id, req.Status)
+	printer, err := h.repo.UpdateStatus(r.Context(), organizationIDFromRequest(r), id, req.Status)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			http.Error(w, "printer not found", http.StatusNotFound)
@@ -153,7 +158,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.Delete(r.Context(), id); err != nil {
+	if err := h.repo.Delete(r.Context(), organizationIDFromRequest(r), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -168,6 +173,7 @@ func (h *Handler) AutoAssign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	req.OrganizationID = organizationIDFromRequest(r)
 
 	result, err := h.repo.AutoAssign(r.Context(), req)
 	if err != nil {
@@ -206,6 +212,7 @@ func (h *Handler) CompleteAssignment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	req.OrganizationID = organizationIDFromRequest(r)
 
 	printer, err := h.repo.CompleteAssignment(r.Context(), req)
 	if err != nil {

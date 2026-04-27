@@ -34,6 +34,11 @@ func NewAddQuoteItemHandler(quoteRepo quoteDomain.QuoteRepository, costCalc *cos
 }
 
 func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemCommand) error {
+	organizationID := organizationIDFromContext(ctx)
+	if _, err := h.quoteRepo.FindByID(cmd.QuoteID, organizationID); err != nil {
+		return err
+	}
+
 	var (
 		unitPrice float64
 		total     float64
@@ -67,6 +72,7 @@ func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemComman
 	// Crear item con costos calculados o precio personalizado
 	item := &quoteDomain.QuoteItem{
 		ID:             uuid.New().String(),
+		OrganizationID: organizationID,
 		QuoteID:        cmd.QuoteID,
 		ProductName:    cmd.ProductName,
 		Description:    cmd.Description,
@@ -95,12 +101,12 @@ func (h *AddQuoteItemHandler) Handle(ctx context.Context, cmd AddQuoteItemComman
 }
 
 func (h *AddQuoteItemHandler) updateQuoteTotals(ctx context.Context, quoteID string) error {
-	quote, err := h.quoteRepo.FindByID(quoteID)
+	quote, err := h.quoteRepo.FindByID(quoteID, organizationIDFromContext(ctx))
 	if err != nil {
 		return err
 	}
 
-	items, err := h.quoteRepo.GetItems(quoteID)
+	items, err := h.quoteRepo.GetItems(quoteID, organizationIDFromContext(ctx))
 	if err != nil {
 		return err
 	}

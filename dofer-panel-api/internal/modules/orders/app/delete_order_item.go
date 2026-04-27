@@ -20,18 +20,20 @@ func NewDeleteOrderItemHandler(repo domain.OrderRepository) *DeleteOrderItemHand
 }
 
 func (h *DeleteOrderItemHandler) Handle(ctx context.Context, cmd DeleteOrderItemCommand) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Eliminar el item
-	if err := h.repo.DeleteOrderItem(cmd.ItemID); err != nil {
+	if err := h.repo.DeleteOrderItem(cmd.OrderID, cmd.ItemID, organizationID); err != nil {
 		return err
 	}
 
 	// Recalcular el total de la orden
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationID)
 	if err != nil {
 		return err
 	}
 
-	items, err := h.repo.GetOrderItems(cmd.OrderID)
+	items, err := h.repo.GetOrderItems(cmd.OrderID, organizationID)
 	if err != nil {
 		return err
 	}

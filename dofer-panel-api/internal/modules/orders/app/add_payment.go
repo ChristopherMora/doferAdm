@@ -26,22 +26,25 @@ func NewAddOrderPaymentHandler(repo domain.OrderRepository) *AddOrderPaymentHand
 }
 
 func (h *AddOrderPaymentHandler) Handle(ctx context.Context, cmd AddOrderPaymentCommand) (*domain.OrderPayment, error) {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Verificar que la orden existe
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Crear el pago
 	payment := &domain.OrderPayment{
-		ID:            uuid.New().String(),
-		OrderID:       cmd.OrderID,
-		Amount:        cmd.Amount,
-		PaymentMethod: cmd.PaymentMethod,
-		PaymentDate:   cmd.PaymentDate,
-		Notes:         cmd.Notes,
-		CreatedBy:     cmd.CreatedBy,
-		CreatedAt:     time.Now(),
+		ID:             uuid.New().String(),
+		OrganizationID: organizationID,
+		OrderID:        cmd.OrderID,
+		Amount:         cmd.Amount,
+		PaymentMethod:  cmd.PaymentMethod,
+		PaymentDate:    cmd.PaymentDate,
+		Notes:          cmd.Notes,
+		CreatedBy:      cmd.CreatedBy,
+		CreatedAt:      time.Now(),
 	}
 
 	if err := h.repo.AddPayment(payment); err != nil {
@@ -52,7 +55,7 @@ func (h *AddOrderPaymentHandler) Handle(ctx context.Context, cmd AddOrderPayment
 	newAmountPaid := order.AmountPaid + cmd.Amount
 	newBalance := order.Amount - newAmountPaid
 
-	if err := h.repo.UpdateOrderPaymentTotals(cmd.OrderID, newAmountPaid, newBalance); err != nil {
+	if err := h.repo.UpdateOrderPaymentTotals(cmd.OrderID, organizationID, newAmountPaid, newBalance); err != nil {
 		return nil, err
 	}
 

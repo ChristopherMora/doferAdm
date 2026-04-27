@@ -51,8 +51,9 @@ func (h *SendSLARemindersHandler) Handle(ctx context.Context, cmd SendSLAReminde
 
 	scanLimit := 5000
 	orders, err := h.repo.FindAll(domain.OrderFilters{
-		Limit:  scanLimit,
-		Offset: 0,
+		OrganizationID: organizationIDFromContext(ctx),
+		Limit:          scanLimit,
+		Offset:         0,
 	})
 	if err != nil {
 		return nil, err

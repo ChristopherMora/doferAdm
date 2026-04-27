@@ -30,8 +30,6 @@ func NewCreateQuoteTemplateHandler(repo domain.QuoteRepository) *CreateQuoteTemp
 }
 
 func (h *CreateQuoteTemplateHandler) Handle(ctx context.Context, cmd CreateQuoteTemplateCommand) (*domain.QuoteTemplate, error) {
-	_ = ctx
-
 	name := strings.TrimSpace(cmd.Name)
 	if name == "" {
 		return nil, fmt.Errorf("template name is required")
@@ -60,6 +58,7 @@ func (h *CreateQuoteTemplateHandler) Handle(ctx context.Context, cmd CreateQuote
 
 	template := &domain.QuoteTemplate{
 		ID:               uuid.New().String(),
+		OrganizationID:   organizationIDFromContext(ctx),
 		Name:             name,
 		Description:      strings.TrimSpace(cmd.Description),
 		Material:         material,
@@ -75,7 +74,7 @@ func (h *CreateQuoteTemplateHandler) Handle(ctx context.Context, cmd CreateQuote
 		return nil, err
 	}
 
-	saved, err := h.repo.FindTemplateByID(template.ID)
+	saved, err := h.repo.FindTemplateByID(template.ID, template.OrganizationID)
 	if err != nil {
 		return template, nil
 	}

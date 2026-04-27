@@ -26,6 +26,8 @@ const UserIDKey contextKey = "user_id"
 const UserRoleKey contextKey = "user_role"
 const UserEmailKey contextKey = "user_email"
 const UserNameKey contextKey = "user_name"
+const OrganizationIDKey contextKey = "organization_id"
+const OrganizationRoleKey contextKey = "organization_role"
 
 const (
 	testAuthUserID         = "11111111-1111-1111-1111-111111111111"
@@ -489,10 +491,30 @@ func UserNameFromContext(ctx context.Context) (string, bool) {
 	return name, true
 }
 
+func OrganizationIDFromContext(ctx context.Context) (string, bool) {
+	organizationID, ok := ctx.Value(OrganizationIDKey).(string)
+	if !ok || strings.TrimSpace(organizationID) == "" {
+		return "", false
+	}
+	return organizationID, true
+}
+
+func OrganizationRoleFromContext(ctx context.Context) (string, bool) {
+	role, ok := ctx.Value(OrganizationRoleKey).(string)
+	if !ok || strings.TrimSpace(role) == "" {
+		return "", false
+	}
+	return role, true
+}
+
 // UserSyncer es la interfaz que el repositorio de usuarios debe implementar
 // para sincronizar usuarios de Supabase a la base de datos local.
 type UserSyncer interface {
 	UpsertUser(id, email, fullName string) error
+}
+
+type OrganizationResolver interface {
+	ResolveOrganization(userID, requestedOrganizationID string) (organizationID string, role string, err error)
 }
 
 // SyncUser middleware que asegura que el usuario autenticado exista en la DB local.
@@ -519,6 +541,32 @@ func SyncUser(syncer UserSyncer) func(http.Handler) http.Handler {
 	}
 }
 
+func RequireOrganization(resolver OrganizationResolver) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := UserIDFromContext(r.Context())
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			requestedOrganizationID := strings.TrimSpace(r.Header.Get("X-Organization-ID"))
+			organizationID, role, err := resolver.ResolveOrganization(userID, requestedOrganizationID)
+			if err != nil {
+				http.Error(w, "organization not available", http.StatusForbidden)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), OrganizationIDKey, organizationID)
+			ctx = context.WithValue(ctx, OrganizationRoleKey, role)
+			// En beta, el rol operativo efectivo sale de la membresia de organizacion.
+			ctx = context.WithValue(ctx, UserRoleKey, role)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // RequireAuth middleware para validar JWT.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -536,8 +584,12 @@ func RequireAuth(next http.Handler) http.Handler {
 
 		cfg := loadRuntimeAuthConfig()
 		if cfg.allowTestAuthToken && isTestToken(token) {
+			role := testAuthUserRole
+			if organizationRole, ok := OrganizationRoleFromContext(r.Context()); ok {
+				role = organizationRole
+			}
 			ctx := context.WithValue(r.Context(), UserIDKey, testAuthUserID)
-			ctx = context.WithValue(ctx, UserRoleKey, testAuthUserRole)
+			ctx = context.WithValue(ctx, UserRoleKey, role)
 			ctx = context.WithValue(ctx, UserEmailKey, "test@dofer.local")
 			ctx = context.WithValue(ctx, UserNameKey, "Test Admin")
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -556,8 +608,13 @@ func RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		role := resolveUserRole(claims)
+		if organizationRole, ok := OrganizationRoleFromContext(r.Context()); ok {
+			role = organizationRole
+		}
+
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
-		ctx = context.WithValue(ctx, UserRoleKey, resolveUserRole(claims))
+		ctx = context.WithValue(ctx, UserRoleKey, role)
 		ctx = context.WithValue(ctx, UserEmailKey, strings.TrimSpace(claims.Email))
 		userName := strings.TrimSpace(claims.UserMetadata.FullName)
 		if userName == "" {

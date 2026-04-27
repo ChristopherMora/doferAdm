@@ -1,5 +1,4 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/api/v1'
-const DEV_TEST_TOKEN = 'test-auth-token'
 
 type QueryValue = string | number | boolean | null | undefined
 
@@ -125,8 +124,7 @@ async function apiRequest<T>(
 
   const resolvedToken =
     token ||
-    getBrowserAuthToken() ||
-    (process.env.NODE_ENV === 'development' ? DEV_TEST_TOKEN : undefined)
+    getBrowserAuthToken()
 
   if (resolvedToken) {
     headers['Authorization'] = `Bearer ${resolvedToken}`

@@ -74,7 +74,7 @@ func (h *BulkUpdateOrderStatusHandler) Handle(ctx context.Context, cmd BulkUpdat
 		}
 		processed[orderID] = struct{}{}
 
-		order, err := h.repo.FindByID(orderID)
+		order, err := h.repo.FindByID(orderID, organizationIDFromContext(ctx))
 		if err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, BulkUpdateOrderError{

@@ -15,6 +15,7 @@ func NewListQuoteTemplatesHandler(repo domain.QuoteRepository) *ListQuoteTemplat
 }
 
 func (h *ListQuoteTemplatesHandler) Handle(ctx context.Context) ([]*domain.QuoteTemplate, error) {
-	_ = ctx
-	return h.repo.FindAllTemplates(nil)
+	return h.repo.FindAllTemplates(map[string]interface{}{
+		"organization_id": organizationIDFromContext(ctx),
+	})
 }

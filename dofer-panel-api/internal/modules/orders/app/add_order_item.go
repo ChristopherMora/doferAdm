@@ -24,8 +24,10 @@ func NewAddOrderItemHandler(repo domain.OrderRepository) *AddOrderItemHandler {
 }
 
 func (h *AddOrderItemHandler) Handle(ctx context.Context, cmd AddOrderItemCommand) (*domain.OrderItem, error) {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Verificar que la orden existe
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -33,14 +35,15 @@ func (h *AddOrderItemHandler) Handle(ctx context.Context, cmd AddOrderItemComman
 	total := float64(cmd.Quantity) * cmd.UnitPrice
 
 	item := &domain.OrderItem{
-		ID:          uuid.New().String(),
-		OrderID:     cmd.OrderID,
-		ProductName: cmd.ProductName,
-		Description: cmd.Description,
-		Quantity:    cmd.Quantity,
-		UnitPrice:   cmd.UnitPrice,
-		Total:       total,
-		IsCompleted: false,
+		ID:             uuid.New().String(),
+		OrganizationID: organizationID,
+		OrderID:        cmd.OrderID,
+		ProductName:    cmd.ProductName,
+		Description:    cmd.Description,
+		Quantity:       cmd.Quantity,
+		UnitPrice:      cmd.UnitPrice,
+		Total:          total,
+		IsCompleted:    false,
 	}
 
 	if err := h.repo.CreateOrderItem(item); err != nil {
@@ -48,7 +51,7 @@ func (h *AddOrderItemHandler) Handle(ctx context.Context, cmd AddOrderItemComman
 	}
 
 	// Recalcular el total de la orden sumando todos los items
-	items, err := h.repo.GetOrderItems(cmd.OrderID)
+	items, err := h.repo.GetOrderItems(cmd.OrderID, organizationID)
 	if err != nil {
 		return nil, err
 	}

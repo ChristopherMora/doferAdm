@@ -28,19 +28,20 @@ func NewCreateQuoteHandler(repo domain.QuoteRepository) *CreateQuoteHandler {
 
 func (h *CreateQuoteHandler) Handle(ctx context.Context, cmd CreateQuoteCommand) (*domain.Quote, error) {
 	quote := &domain.Quote{
-		ID:            uuid.New().String(),
-		QuoteNumber:   infra.GenerateQuoteNumber(),
-		CustomerName:  cmd.CustomerName,
-		CustomerEmail: cmd.CustomerEmail,
-		CustomerPhone: cmd.CustomerPhone,
-		Status:        "pending",
-		Subtotal:      0,
-		Discount:      0,
-		Tax:           0,
-		Total:         0,
-		Notes:         cmd.Notes,
-		ValidUntil:    cmd.ValidUntil,
-		CreatedBy:     cmd.CreatedBy,
+		ID:             uuid.New().String(),
+		OrganizationID: organizationIDFromContext(ctx),
+		QuoteNumber:    infra.GenerateQuoteNumber(),
+		CustomerName:   cmd.CustomerName,
+		CustomerEmail:  cmd.CustomerEmail,
+		CustomerPhone:  cmd.CustomerPhone,
+		Status:         "pending",
+		Subtotal:       0,
+		Discount:       0,
+		Tax:            0,
+		Total:          0,
+		Notes:          cmd.Notes,
+		ValidUntil:     cmd.ValidUntil,
+		CreatedBy:      cmd.CreatedBy,
 	}
 
 	if err := h.repo.Create(quote); err != nil {

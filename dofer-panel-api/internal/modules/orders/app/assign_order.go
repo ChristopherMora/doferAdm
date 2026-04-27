@@ -26,7 +26,7 @@ func NewAssignOrderHandler(repo domain.OrderRepository, historyRepo domain.Order
 }
 
 func (h *AssignOrderHandler) Handle(ctx context.Context, cmd AssignOrderCommand) (*domain.Order, error) {
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, ErrOrderNotFound
 	}

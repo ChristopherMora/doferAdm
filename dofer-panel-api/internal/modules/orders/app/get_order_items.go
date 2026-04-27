@@ -19,5 +19,5 @@ func NewGetOrderItemsHandler(repo domain.OrderRepository) *GetOrderItemsHandler 
 }
 
 func (h *GetOrderItemsHandler) Handle(ctx context.Context, query GetOrderItemsQuery) ([]*domain.OrderItem, error) {
-	return h.repo.GetOrderItems(query.OrderID)
+	return h.repo.GetOrderItems(query.OrderID, organizationIDFromContext(ctx))
 }

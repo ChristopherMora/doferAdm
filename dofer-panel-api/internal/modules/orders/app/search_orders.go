@@ -28,7 +28,9 @@ type SearchOrdersParams struct {
 
 func (h *SearchOrdersHandler) Handle(ctx context.Context, params SearchOrdersParams) ([]domain.Order, error) {
 	// Get all orders (no filters to get everything)
-	orderPtrs, err := h.repo.FindAll(domain.OrderFilters{})
+	orderPtrs, err := h.repo.FindAll(domain.OrderFilters{
+		OrganizationID: organizationIDFromContext(ctx),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error getting orders: %w", err)
 	}

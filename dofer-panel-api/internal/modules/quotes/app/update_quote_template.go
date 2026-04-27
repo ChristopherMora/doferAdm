@@ -30,9 +30,9 @@ func NewUpdateQuoteTemplateHandler(repo domain.QuoteRepository) *UpdateQuoteTemp
 }
 
 func (h *UpdateQuoteTemplateHandler) Handle(ctx context.Context, cmd UpdateQuoteTemplateCommand) (*domain.QuoteTemplate, error) {
-	_ = ctx
+	organizationID := organizationIDFromContext(ctx)
 
-	template, err := h.repo.FindTemplateByID(cmd.TemplateID)
+	template, err := h.repo.FindTemplateByID(cmd.TemplateID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -99,5 +99,5 @@ func (h *UpdateQuoteTemplateHandler) Handle(ctx context.Context, cmd UpdateQuote
 		return nil, err
 	}
 
-	return h.repo.FindTemplateByID(cmd.TemplateID)
+	return h.repo.FindTemplateByID(cmd.TemplateID, organizationID)
 }

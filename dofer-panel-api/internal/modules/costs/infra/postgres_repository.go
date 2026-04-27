@@ -21,19 +21,25 @@ func NewPostgresCostSettingsRepository(db *pgxpool.Pool) *PostgresCostSettingsRe
 	return &PostgresCostSettingsRepository{db: db}
 }
 
-func (r *PostgresCostSettingsRepository) Get() (*domain.CostSettings, error) {
+func (r *PostgresCostSettingsRepository) Get(organizationID ...string) (*domain.CostSettings, error) {
 	query := `
-		SELECT id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
+		SELECT id, organization_id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
 		       profit_margin_percentage, updated_at
 		FROM cost_settings
+		WHERE ($1 = '' OR organization_id = $1)
 		ORDER BY updated_at DESC
 		LIMIT 1
 	`
 
 	var settings domain.CostSettings
+	orgID := ""
+	if len(organizationID) > 0 {
+		orgID = organizationID[0]
+	}
 
-	err := r.db.QueryRow(context.Background(), query).Scan(
+	err := r.db.QueryRow(context.Background(), query, orgID).Scan(
 		&settings.ID,
+		&settings.OrganizationID,
 		&settings.MaterialName,
 		&settings.MaterialCostPerGram,
 		&settings.ElectricityCostPerHour,
@@ -49,15 +55,21 @@ func (r *PostgresCostSettingsRepository) Get() (*domain.CostSettings, error) {
 	return &settings, nil
 }
 
-func (r *PostgresCostSettingsRepository) GetAll() ([]domain.CostSettings, error) {
+func (r *PostgresCostSettingsRepository) GetAll(organizationID ...string) ([]domain.CostSettings, error) {
 	query := `
-		SELECT id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
+		SELECT id, organization_id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
 		       profit_margin_percentage, updated_at
 		FROM cost_settings
+		WHERE ($1 = '' OR organization_id = $1)
 		ORDER BY material_name
 	`
 
-	rows, err := r.db.Query(context.Background(), query)
+	orgID := ""
+	if len(organizationID) > 0 {
+		orgID = organizationID[0]
+	}
+
+	rows, err := r.db.Query(context.Background(), query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +81,7 @@ func (r *PostgresCostSettingsRepository) GetAll() ([]domain.CostSettings, error)
 		var settings domain.CostSettings
 		err := rows.Scan(
 			&settings.ID,
+			&settings.OrganizationID,
 			&settings.MaterialName,
 			&settings.MaterialCostPerGram,
 			&settings.ElectricityCostPerHour,
@@ -85,19 +98,25 @@ func (r *PostgresCostSettingsRepository) GetAll() ([]domain.CostSettings, error)
 	return materials, nil
 }
 
-func (r *PostgresCostSettingsRepository) GetByMaterial(materialName string) (*domain.CostSettings, error) {
+func (r *PostgresCostSettingsRepository) GetByMaterial(materialName string, organizationID ...string) (*domain.CostSettings, error) {
 	query := `
-		SELECT id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
+		SELECT id, organization_id, material_name, material_cost_per_gram, electricity_cost_per_hour, labor_cost_per_hour,
 		       profit_margin_percentage, updated_at
 		FROM cost_settings
 		WHERE material_name = $1
+		  AND ($2 = '' OR organization_id = $2)
 		LIMIT 1
 	`
 
 	var settings domain.CostSettings
+	orgID := ""
+	if len(organizationID) > 0 {
+		orgID = organizationID[0]
+	}
 
-	err := r.db.QueryRow(context.Background(), query, materialName).Scan(
+	err := r.db.QueryRow(context.Background(), query, materialName, orgID).Scan(
 		&settings.ID,
+		&settings.OrganizationID,
 		&settings.MaterialName,
 		&settings.MaterialCostPerGram,
 		&settings.ElectricityCostPerHour,
@@ -122,6 +141,7 @@ func (r *PostgresCostSettingsRepository) Update(settings *domain.CostSettings) e
 		    profit_margin_percentage = $4,
 		    updated_at = $5
 		WHERE id = $6
+		  AND ($7 = '' OR organization_id = $7)
 	`
 
 	_, err := r.db.Exec(context.Background(), query,
@@ -131,6 +151,7 @@ func (r *PostgresCostSettingsRepository) Update(settings *domain.CostSettings) e
 		settings.ProfitMarginPercentage,
 		time.Now(),
 		settings.ID,
+		settings.OrganizationID,
 	)
 
 	return err
@@ -144,7 +165,7 @@ func (r *PostgresCostSettingsRepository) CalculateCost(input domain.CalculationI
 
 	materialName := strings.TrimSpace(input.MaterialName)
 	if materialName != "" {
-		settings, err = r.GetByMaterial(materialName)
+		settings, err = r.GetByMaterial(materialName, input.OrganizationID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, fmt.Errorf("%w: %s", domain.ErrMaterialNotFound, materialName)
@@ -152,7 +173,7 @@ func (r *PostgresCostSettingsRepository) CalculateCost(input domain.CalculationI
 			return nil, err
 		}
 	} else {
-		settings, err = r.Get()
+		settings, err = r.Get(input.OrganizationID)
 		if err != nil {
 			return nil, err
 		}

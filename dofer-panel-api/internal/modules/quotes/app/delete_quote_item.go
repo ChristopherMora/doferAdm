@@ -20,13 +20,15 @@ func NewDeleteQuoteItemHandler(repo domain.QuoteRepository) *DeleteQuoteItemHand
 }
 
 func (h *DeleteQuoteItemHandler) Handle(ctx context.Context, cmd DeleteQuoteItemCommand) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Eliminar el item
-	if err := h.repo.DeleteQuoteItem(ctx, cmd.QuoteID, cmd.ItemID); err != nil {
+	if err := h.repo.DeleteQuoteItem(ctx, cmd.QuoteID, cmd.ItemID, organizationID); err != nil {
 		return err
 	}
 
 	// Recalcular totales de la cotización
-	items, err := h.repo.GetItems(cmd.QuoteID)
+	items, err := h.repo.GetItems(cmd.QuoteID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -38,7 +40,7 @@ func (h *DeleteQuoteItemHandler) Handle(ctx context.Context, cmd DeleteQuoteItem
 	}
 
 	// Obtener la cotización actual
-	quote, err := h.repo.FindByID(cmd.QuoteID)
+	quote, err := h.repo.FindByID(cmd.QuoteID, organizationIDFromContext(ctx))
 	if err != nil {
 		return err
 	}

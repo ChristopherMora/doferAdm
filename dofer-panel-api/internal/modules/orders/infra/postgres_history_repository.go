@@ -19,8 +19,11 @@ func NewPostgresOrderHistoryRepository(db *pgxpool.Pool) *PostgresOrderHistoryRe
 func (r *PostgresOrderHistoryRepository) Create(entry *domain.OrderHistoryEntry) error {
 	query := `
 		INSERT INTO order_history (
-			id, order_id, changed_by, change_type, field_name, old_value, new_value, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			id, organization_id, order_id, changed_by, change_type, field_name, old_value, new_value, created_at
+		)
+		SELECT $1, organization_id, $2, $3, $4, $5, $6, $7, $8
+		FROM orders
+		WHERE id = $2
 	`
 
 	_, err := r.db.Exec(
@@ -39,15 +42,15 @@ func (r *PostgresOrderHistoryRepository) Create(entry *domain.OrderHistoryEntry)
 	return err
 }
 
-func (r *PostgresOrderHistoryRepository) FindByOrderID(orderID string) ([]*domain.OrderHistoryEntry, error) {
+func (r *PostgresOrderHistoryRepository) FindByOrderID(orderID, organizationID string) ([]*domain.OrderHistoryEntry, error) {
 	query := `
-		SELECT id, order_id, changed_by, change_type, field_name, old_value, new_value, created_at
+		SELECT id, organization_id, order_id, changed_by, change_type, field_name, old_value, new_value, created_at
 		FROM order_history
-		WHERE order_id = $1
+		WHERE order_id = $1 AND organization_id = $2
 		ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.Query(context.Background(), query, orderID)
+	rows, err := r.db.Query(context.Background(), query, orderID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +62,7 @@ func (r *PostgresOrderHistoryRepository) FindByOrderID(orderID string) ([]*domai
 		var entry domain.OrderHistoryEntry
 		err := rows.Scan(
 			&entry.ID,
+			&entry.OrganizationID,
 			&entry.OrderID,
 			&entry.ChangedBy,
 			&entry.ChangeType,

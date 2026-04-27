@@ -24,7 +24,7 @@ func NewUpdateCostSettingsHandler(repo domain.CostSettingsRepository) *UpdateCos
 
 func (h *UpdateCostSettingsHandler) Handle(ctx context.Context, cmd UpdateCostSettingsCommand) error {
 	// Obtener settings actuales
-	settings, err := h.repo.Get()
+	settings, err := h.repo.Get(organizationIDFromContext(ctx))
 	if err != nil {
 		return err
 	}

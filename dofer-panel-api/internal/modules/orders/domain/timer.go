@@ -13,15 +13,16 @@ var (
 
 // TimeEntry representa una sesión de trabajo en una orden
 type TimeEntry struct {
-	ID           string     `json:"id" db:"id"`
-	OrderID      string     `json:"order_id" db:"order_id"`
-	OperatorID   *string    `json:"operator_id" db:"operator_id"`
-	StartedAt    time.Time  `json:"started_at" db:"started_at"`
-	EndedAt      *time.Time `json:"ended_at" db:"ended_at"`
-	DurationMins *int       `json:"duration_minutes" db:"duration_minutes"`
-	Status       string     `json:"status" db:"status"` // active, paused, completed
-	Notes        *string    `json:"notes" db:"notes"`
-	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
+	ID             string     `json:"id" db:"id"`
+	OrganizationID string     `json:"organization_id" db:"organization_id"`
+	OrderID        string     `json:"order_id" db:"order_id"`
+	OperatorID     *string    `json:"operator_id" db:"operator_id"`
+	StartedAt      time.Time  `json:"started_at" db:"started_at"`
+	EndedAt        *time.Time `json:"ended_at" db:"ended_at"`
+	DurationMins   *int       `json:"duration_minutes" db:"duration_minutes"`
+	Status         string     `json:"status" db:"status"` // active, paused, completed
+	Notes          *string    `json:"notes" db:"notes"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 }
 
 // TimerState representa el estado actual del timer de una orden
@@ -53,31 +54,31 @@ type OperatorStats struct {
 // TimerRepository define métodos para gestión de timers
 type TimerRepository interface {
 	// StartTimer inicia el timer de una orden
-	StartTimer(orderID string, operatorID *string) error
+	StartTimer(orderID, organizationID string, operatorID *string) error
 
 	// PauseTimer pausa el timer actual
-	PauseTimer(orderID string) error
+	PauseTimer(orderID, organizationID string) error
 
 	// StopTimer detiene y completa el timer
-	StopTimer(orderID string) error
+	StopTimer(orderID, organizationID string) error
 
 	// GetTimerState obtiene el estado actual del timer
-	GetTimerState(orderID string) (*TimerState, error)
+	GetTimerState(orderID, organizationID string) (*TimerState, error)
 
 	// CreateTimeEntry crea una entrada de tiempo
 	CreateTimeEntry(entry *TimeEntry) error
 
 	// GetTimeEntries obtiene todas las entradas de una orden
-	GetTimeEntries(orderID string) ([]*TimeEntry, error)
+	GetTimeEntries(orderID, organizationID string) ([]*TimeEntry, error)
 
 	// GetOperatorStats obtiene estadísticas de un operador
-	GetOperatorStats(operatorID string) (*OperatorStats, error)
+	GetOperatorStats(operatorID, organizationID string) (*OperatorStats, error)
 
 	// GetAllOperatorsStats obtiene estadísticas de todos los operadores
-	GetAllOperatorsStats() ([]*OperatorStats, error)
+	GetAllOperatorsStats(organizationID string) ([]*OperatorStats, error)
 
 	// UpdateEstimatedTime actualiza el tiempo estimado de una orden
-	UpdateEstimatedTime(orderID string, minutes int) error
+	UpdateEstimatedTime(orderID, organizationID string, minutes int) error
 }
 
 // CalculateCurrentSessionMinutes calcula los minutos de la sesión actual

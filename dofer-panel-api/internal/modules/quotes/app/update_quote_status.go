@@ -20,7 +20,7 @@ func NewUpdateQuoteStatusHandler(repo domain.QuoteRepository) *UpdateQuoteStatus
 }
 
 func (h *UpdateQuoteStatusHandler) Handle(ctx context.Context, cmd UpdateQuoteStatusCommand) error {
-	quote, err := h.repo.FindByID(cmd.QuoteID)
+	quote, err := h.repo.FindByID(cmd.QuoteID, organizationIDFromContext(ctx))
 	if err != nil {
 		return err
 	}

@@ -24,8 +24,9 @@ func NewListOrdersHandler(repo domain.OrderRepository) *ListOrdersHandler {
 
 func (h *ListOrdersHandler) Handle(ctx context.Context, query ListOrdersQuery) ([]*domain.Order, error) {
 	filters := domain.OrderFilters{
-		Limit:  query.Limit,
-		Offset: query.Offset,
+		OrganizationID: organizationIDFromContext(ctx),
+		Limit:          query.Limit,
+		Offset:         query.Offset,
 	}
 
 	if query.Status != "" {

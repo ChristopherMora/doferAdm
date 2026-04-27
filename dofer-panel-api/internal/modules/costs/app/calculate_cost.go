@@ -15,5 +15,6 @@ func NewCalculateCostHandler(repo domain.CostSettingsRepository) *CalculateCostH
 }
 
 func (h *CalculateCostHandler) Handle(ctx context.Context, input domain.CalculationInput) (*domain.CostBreakdown, error) {
+	input.OrganizationID = organizationIDFromContext(ctx)
 	return h.repo.CalculateCost(input)
 }

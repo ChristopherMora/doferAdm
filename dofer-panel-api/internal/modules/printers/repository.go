@@ -21,7 +21,7 @@ var allowedPrinterStatus = map[string]struct{}{
 }
 
 const (
-	printerSelectColumns = "id, name, model, material, status, created_at, updated_at"
+	printerSelectColumns = "id, organization_id, name, model, material, status, created_at, updated_at"
 	defaultEstimateHours = 4.0
 )
 
@@ -68,6 +68,7 @@ func scanPrinterRow(row pgx.Row) (*Printer, error) {
 
 	err := row.Scan(
 		&printer.ID,
+		&printer.OrganizationID,
 		&printer.Name,
 		&model,
 		&material,
@@ -105,6 +106,7 @@ func scanSelectedPrinterRaw(row pgx.Row) (*Printer, int, error) {
 
 	err := row.Scan(
 		&printer.ID,
+		&printer.OrganizationID,
 		&printer.Name,
 		&model,
 		&material,
@@ -146,9 +148,9 @@ func materialSupported(printerMaterial *string, requested string) bool {
 	return strings.Contains(strings.ToUpper(*printerMaterial), requested)
 }
 
-func (r *Repository) List(ctx context.Context, status string, limit, offset int) ([]PrinterWithQueue, error) {
+func (r *Repository) List(ctx context.Context, organizationID string, status string, limit, offset int) ([]PrinterWithQueue, error) {
 	query := `
-		SELECT p.id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
+		SELECT p.id, p.organization_id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
 		       current_job.order_id::text AS current_order_id,
 		       current_job.assigned_at AS current_assigned_at,
 		       COALESCE(active_jobs.active_count, 0) AS active_count
@@ -157,6 +159,7 @@ func (r *Repository) List(ctx context.Context, status string, limit, offset int)
 			SELECT pa.order_id, pa.assigned_at
 			FROM printer_assignments pa
 			WHERE pa.printer_id = p.id
+			  AND pa.organization_id = p.organization_id
 			  AND pa.completed_at IS NULL
 			ORDER BY pa.assigned_at ASC
 			LIMIT 1
@@ -165,13 +168,14 @@ func (r *Repository) List(ctx context.Context, status string, limit, offset int)
 			SELECT COUNT(*)::int AS active_count
 			FROM printer_assignments pa
 			WHERE pa.printer_id = p.id
+			  AND pa.organization_id = p.organization_id
 			  AND pa.completed_at IS NULL
 		) active_jobs ON true
-		WHERE 1=1
+		WHERE p.organization_id = $1
 	`
 
-	args := []interface{}{}
-	argNum := 1
+	args := []interface{}{organizationID}
+	argNum := 2
 
 	if strings.TrimSpace(status) != "" {
 		normalizedStatus, err := normalizePrinterStatus(status)
@@ -211,6 +215,7 @@ func (r *Repository) List(ctx context.Context, status string, limit, offset int)
 
 		err := rows.Scan(
 			&printer.ID,
+			&printer.OrganizationID,
 			&printer.Name,
 			&model,
 			&material,
@@ -255,8 +260,8 @@ func (r *Repository) List(ctx context.Context, status string, limit, offset int)
 	return printers, rows.Err()
 }
 
-func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Printer, error) {
-	row := r.db.QueryRow(ctx, "SELECT "+printerSelectColumns+" FROM printers WHERE id = $1", id)
+func (r *Repository) GetByID(ctx context.Context, organizationID string, id uuid.UUID) (*Printer, error) {
+	row := r.db.QueryRow(ctx, "SELECT "+printerSelectColumns+" FROM printers WHERE id = $1 AND organization_id = $2", id, organizationID)
 	printer, err := scanPrinterRow(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -268,7 +273,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Printer, error
 	return printer, nil
 }
 
-func (r *Repository) Create(ctx context.Context, req CreatePrinterRequest) (*Printer, error) {
+func (r *Repository) Create(ctx context.Context, organizationID string, req CreatePrinterRequest) (*Printer, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("name is required")
 	}
@@ -279,14 +284,15 @@ func (r *Repository) Create(ctx context.Context, req CreatePrinterRequest) (*Pri
 	}
 
 	query := `
-		INSERT INTO printers (name, model, material, status)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, model, material, status, created_at, updated_at
+		INSERT INTO printers (organization_id, name, model, material, status)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING ` + printerSelectColumns + `
 	`
 
 	row := r.db.QueryRow(
 		ctx,
 		query,
+		organizationID,
 		strings.TrimSpace(req.Name),
 		sanitizeOptionalString(req.Model),
 		sanitizeOptionalString(req.Material),
@@ -296,7 +302,7 @@ func (r *Repository) Create(ctx context.Context, req CreatePrinterRequest) (*Pri
 	return scanPrinterRow(row)
 }
 
-func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdatePrinterRequest) (*Printer, error) {
+func (r *Repository) Update(ctx context.Context, organizationID string, id uuid.UUID, req UpdatePrinterRequest) (*Printer, error) {
 	query := "UPDATE printers SET updated_at = CURRENT_TIMESTAMP"
 	args := []interface{}{}
 	argNum := 1
@@ -333,8 +339,12 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdatePrinter
 		argNum++
 	}
 
-	query += fmt.Sprintf(" WHERE id = $%d RETURNING %s", argNum, printerSelectColumns)
+	query += fmt.Sprintf(" WHERE id = $%d", argNum)
 	args = append(args, id)
+	argNum++
+
+	query += fmt.Sprintf(" AND organization_id = $%d RETURNING %s", argNum, printerSelectColumns)
+	args = append(args, organizationID)
 
 	row := r.db.QueryRow(ctx, query, args...)
 	printer, err := scanPrinterRow(row)
@@ -345,7 +355,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdatePrinter
 	return printer, nil
 }
 
-func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*Printer, error) {
+func (r *Repository) UpdateStatus(ctx context.Context, organizationID string, id uuid.UUID, status string) (*Printer, error) {
 	normalizedStatus, err := normalizePrinterStatus(status)
 	if err != nil {
 		return nil, err
@@ -353,9 +363,10 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status stri
 
 	row := r.db.QueryRow(
 		ctx,
-		"UPDATE printers SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING "+printerSelectColumns,
+		"UPDATE printers SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3 RETURNING "+printerSelectColumns,
 		normalizedStatus,
 		id,
+		organizationID,
 	)
 	printer, err := scanPrinterRow(row)
 	if err != nil {
@@ -365,19 +376,19 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status stri
 	return printer, nil
 }
 
-func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, "DELETE FROM printers WHERE id = $1", id)
+func (r *Repository) Delete(ctx context.Context, organizationID string, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, "DELETE FROM printers WHERE id = $1 AND organization_id = $2", id, organizationID)
 	return err
 }
 
-func (r *Repository) selectPreferredPrinter(ctx context.Context, tx pgx.Tx, preferredPrinterID, material string) (*selectedPrinter, error) {
+func (r *Repository) selectPreferredPrinter(ctx context.Context, tx pgx.Tx, organizationID, preferredPrinterID, material string) (*selectedPrinter, error) {
 	printerID, err := uuid.Parse(preferredPrinterID)
 	if err != nil {
 		return nil, ErrInvalidPrinterID
 	}
 
 	query := `
-		SELECT p.id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
+		SELECT p.id, p.organization_id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
 		       COALESCE(active_jobs.active_count, 0) AS active_count
 		FROM printers p
 		LEFT JOIN LATERAL (
@@ -387,10 +398,11 @@ func (r *Repository) selectPreferredPrinter(ctx context.Context, tx pgx.Tx, pref
 			  AND pa.completed_at IS NULL
 		) active_jobs ON true
 		WHERE p.id = $1
+		  AND p.organization_id = $2
 		FOR UPDATE
 	`
 
-	printer, err := scanSelectedPrinterRow(tx.QueryRow(ctx, query, printerID))
+	printer, err := scanSelectedPrinterRow(tx.QueryRow(ctx, query, printerID, organizationID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrPrinterNotFound
@@ -408,9 +420,9 @@ func (r *Repository) selectPreferredPrinter(ctx context.Context, tx pgx.Tx, pref
 	return printer, nil
 }
 
-func (r *Repository) selectAutoPrinter(ctx context.Context, tx pgx.Tx, material string) (*selectedPrinter, error) {
+func (r *Repository) selectAutoPrinter(ctx context.Context, tx pgx.Tx, organizationID, material string) (*selectedPrinter, error) {
 	availableQuery := `
-		SELECT p.id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
+		SELECT p.id, p.organization_id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
 		       COALESCE(active_jobs.active_count, 0) AS active_count
 		FROM printers p
 		LEFT JOIN LATERAL (
@@ -420,13 +432,14 @@ func (r *Repository) selectAutoPrinter(ctx context.Context, tx pgx.Tx, material 
 			  AND pa.completed_at IS NULL
 		) active_jobs ON true
 		WHERE p.status = 'available'
-		  AND ($1 = '' OR COALESCE(p.material, '') ILIKE ('%' || $1 || '%'))
+		  AND p.organization_id = $1
+		  AND ($2 = '' OR COALESCE(p.material, '') ILIKE ('%' || $2 || '%'))
 		ORDER BY active_jobs.active_count ASC, p.created_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
 	`
 
-	printer, err := scanSelectedPrinterRow(tx.QueryRow(ctx, availableQuery, material))
+	printer, err := scanSelectedPrinterRow(tx.QueryRow(ctx, availableQuery, organizationID, material))
 	if err == nil {
 		return printer, nil
 	}
@@ -435,7 +448,7 @@ func (r *Repository) selectAutoPrinter(ctx context.Context, tx pgx.Tx, material 
 	}
 
 	busyQuery := `
-		SELECT p.id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
+		SELECT p.id, p.organization_id, p.name, p.model, p.material, p.status, p.created_at, p.updated_at,
 		       COALESCE(active_jobs.active_count, 0) AS active_count
 		FROM printers p
 		LEFT JOIN LATERAL (
@@ -445,13 +458,14 @@ func (r *Repository) selectAutoPrinter(ctx context.Context, tx pgx.Tx, material 
 			  AND pa.completed_at IS NULL
 		) active_jobs ON true
 		WHERE p.status = 'busy'
-		  AND ($1 = '' OR COALESCE(p.material, '') ILIKE ('%' || $1 || '%'))
+		  AND p.organization_id = $1
+		  AND ($2 = '' OR COALESCE(p.material, '') ILIKE ('%' || $2 || '%'))
 		ORDER BY active_jobs.active_count ASC, p.created_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
 	`
 
-	printer, err = scanSelectedPrinterRow(tx.QueryRow(ctx, busyQuery, material))
+	printer, err = scanSelectedPrinterRow(tx.QueryRow(ctx, busyQuery, organizationID, material))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNoCompatiblePrinter
@@ -480,6 +494,10 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 
 	material := strings.TrimSpace(req.Material)
 	preferredPrinterID := strings.TrimSpace(req.PrinterID)
+	organizationID := strings.TrimSpace(req.OrganizationID)
+	if organizationID == "" {
+		return nil, ErrNoCompatiblePrinter
+	}
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -488,7 +506,7 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 	defer tx.Rollback(ctx)
 
 	var orderStatus string
-	err = tx.QueryRow(ctx, "SELECT status FROM orders WHERE id = $1 FOR UPDATE", orderUUID).Scan(&orderStatus)
+	err = tx.QueryRow(ctx, "SELECT status FROM orders WHERE id = $1 AND organization_id = $2 FOR UPDATE", orderUUID, organizationID).Scan(&orderStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrOrderNotFound
@@ -498,8 +516,9 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 
 	var activeAssignmentID string
 	err = tx.QueryRow(ctx,
-		"SELECT id::text FROM printer_assignments WHERE order_id = $1 AND completed_at IS NULL LIMIT 1",
+		"SELECT id::text FROM printer_assignments WHERE order_id = $1 AND organization_id = $2 AND completed_at IS NULL LIMIT 1",
 		orderUUID,
+		organizationID,
 	).Scan(&activeAssignmentID)
 	if err == nil {
 		return nil, ErrOrderAlreadyAssigned
@@ -510,9 +529,9 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 
 	var selected *selectedPrinter
 	if preferredPrinterID != "" {
-		selected, err = r.selectPreferredPrinter(ctx, tx, preferredPrinterID, material)
+		selected, err = r.selectPreferredPrinter(ctx, tx, organizationID, preferredPrinterID, material)
 	} else {
-		selected, err = r.selectAutoPrinter(ctx, tx, material)
+		selected, err = r.selectAutoPrinter(ctx, tx, organizationID, material)
 	}
 	if err != nil {
 		return nil, err
@@ -523,8 +542,9 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 	assignmentID := uuid.New()
 
 	_, err = tx.Exec(ctx,
-		"INSERT INTO printer_assignments (id, order_id, printer_id, assigned_at) VALUES ($1, $2, $3, $4)",
+		"INSERT INTO printer_assignments (id, organization_id, order_id, printer_id, assigned_at) VALUES ($1, $2, $3, $4, $5)",
 		assignmentID,
+		organizationID,
 		orderUUID,
 		selected.ID,
 		assignedAt,
@@ -535,8 +555,9 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 
 	if selected.Status != "busy" {
 		_, err = tx.Exec(ctx,
-			"UPDATE printers SET status = 'busy', updated_at = NOW() WHERE id = $1",
+			"UPDATE printers SET status = 'busy', updated_at = NOW() WHERE id = $1 AND organization_id = $2",
 			selected.ID,
+			organizationID,
 		)
 		if err != nil {
 			return nil, err
@@ -545,8 +566,9 @@ func (r *Repository) AutoAssign(ctx context.Context, req AutoAssignRequest) (*Au
 
 	if orderStatus == "new" {
 		_, err = tx.Exec(ctx,
-			"UPDATE orders SET status = 'printing', updated_at = NOW() WHERE id = $1",
+			"UPDATE orders SET status = 'printing', updated_at = NOW() WHERE id = $1 AND organization_id = $2",
 			orderUUID,
+			organizationID,
 		)
 		if err != nil {
 			return nil, err
@@ -582,6 +604,10 @@ func (r *Repository) CompleteAssignment(ctx context.Context, req CompleteAssignm
 	if err != nil {
 		return nil, ErrInvalidOrderID
 	}
+	organizationID := strings.TrimSpace(req.OrganizationID)
+	if organizationID == "" {
+		return nil, ErrAssignmentNotFound
+	}
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -595,11 +621,12 @@ func (r *Repository) CompleteAssignment(ctx context.Context, req CompleteAssignm
 		SELECT id, printer_id
 		FROM printer_assignments
 		WHERE order_id = $1
+		  AND organization_id = $2
 		  AND completed_at IS NULL
 		ORDER BY assigned_at ASC
 		LIMIT 1
 		FOR UPDATE
-	`, orderUUID).Scan(&assignmentID, &printerID)
+	`, orderUUID, organizationID).Scan(&assignmentID, &printerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrAssignmentNotFound
@@ -608,8 +635,9 @@ func (r *Repository) CompleteAssignment(ctx context.Context, req CompleteAssignm
 	}
 
 	_, err = tx.Exec(ctx,
-		"UPDATE printer_assignments SET completed_at = NOW() WHERE id = $1",
+		"UPDATE printer_assignments SET completed_at = NOW() WHERE id = $1 AND organization_id = $2",
 		assignmentID,
+		organizationID,
 	)
 	if err != nil {
 		return nil, err
@@ -617,8 +645,9 @@ func (r *Repository) CompleteAssignment(ctx context.Context, req CompleteAssignm
 
 	var remainingActiveJobs int
 	err = tx.QueryRow(ctx,
-		"SELECT COUNT(*)::int FROM printer_assignments WHERE printer_id = $1 AND completed_at IS NULL",
+		"SELECT COUNT(*)::int FROM printer_assignments WHERE printer_id = $1 AND organization_id = $2 AND completed_at IS NULL",
 		printerID,
+		organizationID,
 	).Scan(&remainingActiveJobs)
 	if err != nil {
 		return nil, err
@@ -630,9 +659,10 @@ func (r *Repository) CompleteAssignment(ctx context.Context, req CompleteAssignm
 	}
 
 	row := tx.QueryRow(ctx,
-		"UPDATE printers SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING "+printerSelectColumns,
+		"UPDATE printers SET status = $1, updated_at = NOW() WHERE id = $2 AND organization_id = $3 RETURNING "+printerSelectColumns,
 		nextStatus,
 		printerID,
+		organizationID,
 	)
 	printer, err := scanPrinterRow(row)
 	if err != nil {

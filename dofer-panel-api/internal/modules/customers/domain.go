@@ -40,12 +40,13 @@ func (a StringArray) Value() (driver.Value, error) {
 }
 
 type Customer struct {
-	ID      uuid.UUID `json:"id" db:"id"`
-	Name    string    `json:"name" db:"name"`
-	Email   string    `json:"email" db:"email"`
-	Phone   *string   `json:"phone,omitempty" db:"phone"`
-	Company *string   `json:"company,omitempty" db:"company"`
-	TaxID   *string   `json:"tax_id,omitempty" db:"tax_id"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	OrganizationID uuid.UUID `json:"organization_id" db:"organization_id"`
+	Name           string    `json:"name" db:"name"`
+	Email          string    `json:"email" db:"email"`
+	Phone          *string   `json:"phone,omitempty" db:"phone"`
+	Company        *string   `json:"company,omitempty" db:"company"`
+	TaxID          *string   `json:"tax_id,omitempty" db:"tax_id"`
 
 	// Address
 	AddressLine1 *string `json:"address_line1,omitempty" db:"address_line1"`

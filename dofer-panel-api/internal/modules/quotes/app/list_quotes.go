@@ -15,5 +15,7 @@ func NewListQuotesHandler(repo domain.QuoteRepository) *ListQuotesHandler {
 }
 
 func (h *ListQuotesHandler) Handle(ctx context.Context) ([]*domain.Quote, error) {
-	return h.repo.FindAll(nil)
+	return h.repo.FindAll(map[string]interface{}{
+		"organization_id": organizationIDFromContext(ctx),
+	})
 }

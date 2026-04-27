@@ -210,6 +210,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth)
 			r.Use(middleware.SyncUser(userRepo))
+			r.Use(middleware.RequireOrganization(userRepo))
 
 			// Register module routes
 			authTransport.RegisterRoutes(r, authHandler)

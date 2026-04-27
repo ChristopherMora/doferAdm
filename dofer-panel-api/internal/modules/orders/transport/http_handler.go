@@ -608,7 +608,7 @@ func (h *OrderHandler) StartTimer(w http.ResponseWriter, r *http.Request) {
 		req.OrderID = orderID
 	}
 
-	err := h.startTimerHandler.Handle(req)
+	err := h.startTimerHandler.Handle(r.Context(), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -624,7 +624,7 @@ func (h *OrderHandler) StartTimer(w http.ResponseWriter, r *http.Request) {
 func (h *OrderHandler) PauseTimer(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
 
-	err := h.pauseTimerHandler.Handle(orderID)
+	err := h.pauseTimerHandler.Handle(r.Context(), orderID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -640,7 +640,7 @@ func (h *OrderHandler) PauseTimer(w http.ResponseWriter, r *http.Request) {
 func (h *OrderHandler) StopTimer(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
 
-	err := h.stopTimerHandler.Handle(orderID)
+	err := h.stopTimerHandler.Handle(r.Context(), orderID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -656,7 +656,7 @@ func (h *OrderHandler) StopTimer(w http.ResponseWriter, r *http.Request) {
 func (h *OrderHandler) GetTimer(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "id")
 
-	state, err := h.getTimerHandler.Handle(orderID)
+	state, err := h.getTimerHandler.Handle(r.Context(), orderID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -677,7 +677,7 @@ func (h *OrderHandler) UpdateEstimatedTime(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err := h.updateEstimatedHandler.Handle(app.UpdateEstimatedTimeRequest{
+	err := h.updateEstimatedHandler.Handle(r.Context(), app.UpdateEstimatedTimeRequest{
 		OrderID: orderID,
 		Minutes: req.Minutes,
 	})
@@ -696,7 +696,7 @@ func (h *OrderHandler) GetOperatorStats(w http.ResponseWriter, r *http.Request) 
 	operatorID := r.URL.Query().Get("operator_id")
 
 	if operatorID != "" {
-		stats, err := h.operatorStatsHandler.HandleSingle(operatorID)
+		stats, err := h.operatorStatsHandler.HandleSingle(r.Context(), operatorID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -704,7 +704,7 @@ func (h *OrderHandler) GetOperatorStats(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
 	} else {
-		stats, err := h.operatorStatsHandler.HandleAll()
+		stats, err := h.operatorStatsHandler.HandleAll(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -740,6 +740,7 @@ func (h *OrderHandler) GetOrderItems(w http.ResponseWriter, r *http.Request) {
 
 // UpdateOrderItemStatus actualiza el estado de un item
 func (h *OrderHandler) UpdateOrderItemStatus(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "id")
 	itemID := chi.URLParam(r, "itemId")
 
 	var req struct {
@@ -751,6 +752,7 @@ func (h *OrderHandler) UpdateOrderItemStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	cmd := app.UpdateOrderItemStatusCommand{
+		OrderID:     orderID,
 		ItemID:      itemID,
 		IsCompleted: req.IsCompleted,
 	}

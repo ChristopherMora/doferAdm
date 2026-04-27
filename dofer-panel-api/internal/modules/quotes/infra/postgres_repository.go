@@ -21,16 +21,17 @@ func NewPostgresQuoteRepository(db *pgxpool.Pool) *PostgresQuoteRepository {
 func (r *PostgresQuoteRepository) Create(quote *domain.Quote) error {
 	// Calcular balance inicial
 	quote.Balance = quote.Total - quote.AmountPaid
-	
+
 	query := `
 		INSERT INTO quotes (
-			id, quote_number, customer_name, customer_email, customer_phone,
+			id, organization_id, quote_number, customer_name, customer_email, customer_phone,
 			status, subtotal, discount, tax, total, amount_paid, balance, notes, valid_until, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
 	_, err := r.db.Exec(context.Background(), query,
 		quote.ID,
+		quote.OrganizationID,
 		quote.QuoteNumber,
 		quote.CustomerName,
 		quote.CustomerEmail,
@@ -50,9 +51,9 @@ func (r *PostgresQuoteRepository) Create(quote *domain.Quote) error {
 	return err
 }
 
-func (r *PostgresQuoteRepository) FindByID(id string) (*domain.Quote, error) {
+func (r *PostgresQuoteRepository) FindByID(id string, organizationID ...string) (*domain.Quote, error) {
 	query := `
-		SELECT id, quote_number, customer_name, customer_email, customer_phone,
+		SELECT id, organization_id, quote_number, customer_name, customer_email, customer_phone,
 		       status, subtotal, discount, tax, total, amount_paid, balance, notes, valid_until,
 		       created_by, created_at, updated_at, 
 		       COALESCE(converted_to_order_id::text, '') as converted_to_order_id
@@ -60,12 +61,19 @@ func (r *PostgresQuoteRepository) FindByID(id string) (*domain.Quote, error) {
 		WHERE id = $1
 	`
 
+	args := []interface{}{id}
+	if len(organizationID) > 0 && organizationID[0] != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID[0])
+	}
+
 	var quote domain.Quote
 	var validUntil, createdAt, updatedAt time.Time
 	var customerPhone, notes, convertedToOrderID sql.NullString
 
-	err := r.db.QueryRow(context.Background(), query, id).Scan(
+	err := r.db.QueryRow(context.Background(), query, args...).Scan(
 		&quote.ID,
+		&quote.OrganizationID,
 		&quote.QuoteNumber,
 		&quote.CustomerName,
 		&quote.CustomerEmail,
@@ -108,15 +116,24 @@ func (r *PostgresQuoteRepository) FindByID(id string) (*domain.Quote, error) {
 
 func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*domain.Quote, error) {
 	query := `
-		SELECT id, quote_number, customer_name, customer_email, customer_phone,
+		SELECT id, organization_id, quote_number, customer_name, customer_email, customer_phone,
 		       status, subtotal, discount, tax, total, amount_paid, balance, notes, valid_until,
 		       created_by, created_at, updated_at,
 		       COALESCE(converted_to_order_id::text, '') as converted_to_order_id
 		FROM quotes
-		ORDER BY created_at DESC
+		WHERE 1=1
 	`
 
-	rows, err := r.db.Query(context.Background(), query)
+	args := []interface{}{}
+	if filters != nil {
+		if organizationID, ok := filters["organization_id"].(string); ok && organizationID != "" {
+			query += " AND organization_id = $1"
+			args = append(args, organizationID)
+		}
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := r.db.Query(context.Background(), query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +148,7 @@ func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*do
 
 		err := rows.Scan(
 			&quote.ID,
+			&quote.OrganizationID,
 			&quote.QuoteNumber,
 			&quote.CustomerName,
 			&quote.CustomerEmail,
@@ -169,7 +187,7 @@ func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*do
 		quote.UpdatedAt = updatedAt
 
 		// Cargar items de la cotización
-		items, err := r.GetItems(quote.ID)
+		items, err := r.GetItems(quote.ID, quote.OrganizationID)
 		if err == nil {
 			quote.Items = items
 		}
@@ -183,14 +201,14 @@ func (r *PostgresQuoteRepository) FindAll(filters map[string]interface{}) ([]*do
 func (r *PostgresQuoteRepository) Update(quote *domain.Quote) error {
 	// Calcular balance
 	quote.Balance = quote.Total - quote.AmountPaid
-	
+
 	query := `
 		UPDATE quotes
 		SET customer_name = $1, customer_email = $2, customer_phone = $3,
 		    status = $4, subtotal = $5, discount = $6, tax = $7, total = $8,
 		    amount_paid = $9, balance = $10, notes = $11, valid_until = $12, updated_at = NOW(),
 		    converted_to_order_id = $13
-		WHERE id = $14
+		WHERE id = $14 AND organization_id = $15
 	`
 
 	var convertedToOrderID *string
@@ -213,24 +231,34 @@ func (r *PostgresQuoteRepository) Update(quote *domain.Quote) error {
 		quote.ValidUntil,
 		convertedToOrderID,
 		quote.ID,
+		quote.OrganizationID,
 	)
 
 	return err
 }
 
-func (r *PostgresQuoteRepository) Delete(id string) error {
+func (r *PostgresQuoteRepository) Delete(id string, organizationID ...string) error {
 	query := `DELETE FROM quotes WHERE id = $1`
-	_, err := r.db.Exec(context.Background(), query, id)
+	args := []interface{}{id}
+	if len(organizationID) > 0 && organizationID[0] != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID[0])
+	}
+
+	_, err := r.db.Exec(context.Background(), query, args...)
 	return err
 }
 
 func (r *PostgresQuoteRepository) AddItem(item *domain.QuoteItem) error {
 	query := `
 		INSERT INTO quote_items (
-			id, quote_id, product_name, description, weight_grams, print_time_hours,
+			id, organization_id, quote_id, product_name, description, weight_grams, print_time_hours,
 			material_cost, labor_cost, electricity_cost, other_costs, subtotal,
 			quantity, unit_price, total
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		)
+		SELECT $1, organization_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+		FROM quotes
+		WHERE id = $2 AND organization_id = $15
 	`
 
 	_, err := r.db.Exec(context.Background(), query,
@@ -248,22 +276,23 @@ func (r *PostgresQuoteRepository) AddItem(item *domain.QuoteItem) error {
 		item.Quantity,
 		item.UnitPrice,
 		item.Total,
+		item.OrganizationID,
 	)
 
 	return err
 }
 
-func (r *PostgresQuoteRepository) GetItems(quoteID string) ([]*domain.QuoteItem, error) {
+func (r *PostgresQuoteRepository) GetItems(quoteID, organizationID string) ([]*domain.QuoteItem, error) {
 	query := `
-		SELECT id, quote_id, product_name, description, weight_grams, print_time_hours,
+		SELECT id, organization_id, quote_id, product_name, description, weight_grams, print_time_hours,
 		       material_cost, labor_cost, electricity_cost, other_costs, subtotal,
 		       quantity, unit_price, total, created_at
 		FROM quote_items
-		WHERE quote_id = $1
+		WHERE quote_id = $1 AND organization_id = $2
 		ORDER BY created_at ASC
 	`
 
-	rows, err := r.db.Query(context.Background(), query, quoteID)
+	rows, err := r.db.Query(context.Background(), query, quoteID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -277,6 +306,7 @@ func (r *PostgresQuoteRepository) GetItems(quoteID string) ([]*domain.QuoteItem,
 
 		err := rows.Scan(
 			&item.ID,
+			&item.OrganizationID,
 			&item.QuoteID,
 			&item.ProductName,
 			&description,
@@ -341,12 +371,12 @@ func (r *PostgresQuoteRepository) DeleteItem(itemID string) error {
 	return err
 }
 
-func (r *PostgresQuoteRepository) DeleteQuoteItem(ctx context.Context, quoteID, itemID string) error {
+func (r *PostgresQuoteRepository) DeleteQuoteItem(ctx context.Context, quoteID, itemID, organizationID string) error {
 	// Use a new context with background to avoid deadline issues
 	bgCtx := context.Background()
-	query := `DELETE FROM quote_items WHERE id = $1 AND quote_id = $2`
+	query := `DELETE FROM quote_items WHERE id = $1 AND quote_id = $2 AND organization_id = $3`
 	println("DEBUG REPO: About to execute DELETE with itemID:", itemID, "quoteID:", quoteID)
-	result, err := r.db.Exec(bgCtx, query, itemID, quoteID)
+	result, err := r.db.Exec(bgCtx, query, itemID, quoteID, organizationID)
 	if err != nil {
 		println("DEBUG REPO: Exec error:", err.Error())
 		return err

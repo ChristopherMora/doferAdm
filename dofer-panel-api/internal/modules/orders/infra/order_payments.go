@@ -11,8 +11,11 @@ import (
 func (r *PostgresOrderRepository) AddPayment(payment *domain.OrderPayment) error {
 	query := `
 		INSERT INTO order_payments (
-			id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			id, organization_id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
+		)
+		SELECT $1, organization_id, $2, $3, $4, $5, $6, $7, $8
+		FROM orders
+		WHERE id = $2 AND organization_id = $9
 	`
 
 	_, err := r.db.Exec(
@@ -26,21 +29,22 @@ func (r *PostgresOrderRepository) AddPayment(payment *domain.OrderPayment) error
 		payment.Notes,
 		payment.CreatedBy,
 		payment.CreatedAt,
+		payment.OrganizationID,
 	)
 
 	return err
 }
 
 // GetPayments obtiene todos los pagos de una orden
-func (r *PostgresOrderRepository) GetPayments(orderID string) ([]*domain.OrderPayment, error) {
+func (r *PostgresOrderRepository) GetPayments(orderID, organizationID string) ([]*domain.OrderPayment, error) {
 	query := `
-		SELECT id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
+		SELECT id, organization_id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
 		FROM order_payments
-		WHERE order_id = $1
+		WHERE order_id = $1 AND organization_id = $2
 		ORDER BY payment_date DESC
 	`
 
-	rows, err := r.db.Query(context.Background(), query, orderID)
+	rows, err := r.db.Query(context.Background(), query, orderID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +57,7 @@ func (r *PostgresOrderRepository) GetPayments(orderID string) ([]*domain.OrderPa
 
 		err := rows.Scan(
 			&payment.ID,
+			&payment.OrganizationID,
 			&payment.OrderID,
 			&payment.Amount,
 			&paymentMethod,
@@ -82,18 +87,19 @@ func (r *PostgresOrderRepository) GetPayments(orderID string) ([]*domain.OrderPa
 }
 
 // GetPaymentByID obtiene un pago por su ID
-func (r *PostgresOrderRepository) GetPaymentByID(paymentID string) (*domain.OrderPayment, error) {
+func (r *PostgresOrderRepository) GetPaymentByID(paymentID, organizationID string) (*domain.OrderPayment, error) {
 	query := `
-		SELECT id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
+		SELECT id, organization_id, order_id, amount, payment_method, payment_date, notes, created_by, created_at
 		FROM order_payments
-		WHERE id = $1
+		WHERE id = $1 AND organization_id = $2
 	`
 
 	var payment domain.OrderPayment
 	var paymentMethod, notes, createdBy sql.NullString
 
-	err := r.db.QueryRow(context.Background(), query, paymentID).Scan(
+	err := r.db.QueryRow(context.Background(), query, paymentID, organizationID).Scan(
 		&payment.ID,
+		&payment.OrganizationID,
 		&payment.OrderID,
 		&payment.Amount,
 		&paymentMethod,
@@ -121,20 +127,20 @@ func (r *PostgresOrderRepository) GetPaymentByID(paymentID string) (*domain.Orde
 }
 
 // DeletePayment elimina un pago
-func (r *PostgresOrderRepository) DeletePayment(paymentID string) error {
-	query := `DELETE FROM order_payments WHERE id = $1`
-	_, err := r.db.Exec(context.Background(), query, paymentID)
+func (r *PostgresOrderRepository) DeletePayment(paymentID, organizationID string) error {
+	query := `DELETE FROM order_payments WHERE id = $1 AND organization_id = $2`
+	_, err := r.db.Exec(context.Background(), query, paymentID, organizationID)
 	return err
 }
 
 // UpdateOrderPaymentTotals actualiza los totales de pago de una orden
-func (r *PostgresOrderRepository) UpdateOrderPaymentTotals(orderID string, amountPaid float64, balance float64) error {
+func (r *PostgresOrderRepository) UpdateOrderPaymentTotals(orderID, organizationID string, amountPaid float64, balance float64) error {
 	query := `
 		UPDATE orders
 		SET amount_paid = $1, balance = $2, updated_at = NOW()
-		WHERE id = $3
+		WHERE id = $3 AND organization_id = $4
 	`
 
-	_, err := r.db.Exec(context.Background(), query, amountPaid, balance, orderID)
+	_, err := r.db.Exec(context.Background(), query, amountPaid, balance, orderID, organizationID)
 	return err
 }

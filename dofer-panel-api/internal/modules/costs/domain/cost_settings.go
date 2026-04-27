@@ -9,6 +9,7 @@ var ErrMaterialNotFound = errors.New("material not found")
 
 type CostSettings struct {
 	ID                     string    `json:"id"`
+	OrganizationID         string    `json:"organization_id,omitempty"`
 	MaterialName           string    `json:"material_name"`
 	MaterialCostPerGram    float64   `json:"material_cost_per_gram"`
 	ElectricityCostPerHour float64   `json:"electricity_cost_per_hour"`
@@ -19,6 +20,7 @@ type CostSettings struct {
 }
 
 type CalculationInput struct {
+	OrganizationID string  `json:"organization_id,omitempty"`
 	WeightGrams    float64 `json:"weight_grams"`
 	PrintTimeHours float64 `json:"print_time_hours"`
 	Quantity       int     `json:"quantity"`
@@ -39,9 +41,9 @@ type CostBreakdown struct {
 }
 
 type CostSettingsRepository interface {
-	Get() (*CostSettings, error)
-	GetAll() ([]CostSettings, error)
-	GetByMaterial(materialName string) (*CostSettings, error)
+	Get(organizationID ...string) (*CostSettings, error)
+	GetAll(organizationID ...string) ([]CostSettings, error)
+	GetByMaterial(materialName string, organizationID ...string) (*CostSettings, error)
 	Update(settings *CostSettings) error
 	CalculateCost(input CalculationInput) (*CostBreakdown, error)
 }
