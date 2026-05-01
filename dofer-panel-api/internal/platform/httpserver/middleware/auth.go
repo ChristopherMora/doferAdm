@@ -518,6 +518,10 @@ type OrganizationResolver interface {
 	ResolveOrganization(userID, requestedOrganizationID string) (organizationID string, role string, err error)
 }
 
+type OrganizationAccessResolver interface {
+	ResolveOrganizationAccess(organizationID string) (status string, subscriptionEndsAt *time.Time, graceEndsAt *time.Time, accessSuspendedAt *time.Time, suspensionReason string, err error)
+}
+
 // SyncUser middleware que asegura que el usuario autenticado exista en la DB local.
 // Debe usarse DESPUES de RequireAuth en la cadena de middlewares.
 func SyncUser(syncer UserSyncer) func(http.Handler) http.Handler {
@@ -573,6 +577,72 @@ func RequireOrganization(resolver OrganizationResolver) func(http.Handler) http.
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+func RequireActiveOrganization(resolver OrganizationAccessResolver) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			organizationID, ok := OrganizationIDFromContext(r.Context())
+			if !ok {
+				http.Error(w, "organization not available", http.StatusForbidden)
+				return
+			}
+
+			status, subscriptionEndsAt, graceEndsAt, accessSuspendedAt, suspensionReason, err := resolver.ResolveOrganizationAccess(organizationID)
+			if err != nil {
+				slog.Warn("organization access resolution failed", slog.Any("error", err), slog.String("organization_id", organizationID))
+				http.Error(w, "organization access not available", http.StatusForbidden)
+				return
+			}
+
+			if !isOrganizationAccessAllowed(status, subscriptionEndsAt, graceEndsAt, accessSuspendedAt) {
+				message := organizationAccessMessage(status, subscriptionEndsAt, graceEndsAt, suspensionReason)
+				w.Header().Set("X-Organization-Access-Status", status)
+				http.Error(w, message, http.StatusPaymentRequired)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func isOrganizationAccessAllowed(status string, subscriptionEndsAt, graceEndsAt, accessSuspendedAt *time.Time) bool {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = "active"
+	}
+	if status == "suspended" || status == "cancelled" || accessSuspendedAt != nil {
+		return false
+	}
+
+	now := time.Now()
+	if subscriptionEndsAt != nil && now.After(*subscriptionEndsAt) {
+		return graceEndsAt != nil && now.Before(*graceEndsAt)
+	}
+
+	return true
+}
+
+func organizationAccessMessage(status string, subscriptionEndsAt, graceEndsAt *time.Time, suspensionReason string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if strings.TrimSpace(suspensionReason) != "" {
+		return suspensionReason
+	}
+	switch status {
+	case "cancelled":
+		return "organization subscription is cancelled"
+	case "suspended":
+		return "organization access is suspended"
+	default:
+		if subscriptionEndsAt != nil && time.Now().After(*subscriptionEndsAt) {
+			if graceEndsAt != nil {
+				return "organization grace period has expired"
+			}
+			return "organization subscription has expired"
+		}
+		return "organization access is not active"
 	}
 }
 
@@ -661,4 +731,30 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func RequirePlatformAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		configuredEmails := strings.TrimSpace(os.Getenv("PLATFORM_ADMIN_EMAILS"))
+		if configuredEmails == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		userEmail, ok := UserEmailFromContext(r.Context())
+		if !ok {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		userEmail = strings.ToLower(strings.TrimSpace(userEmail))
+		for _, allowedEmail := range strings.Split(configuredEmails, ",") {
+			if userEmail == strings.ToLower(strings.TrimSpace(allowedEmail)) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		http.Error(w, "forbidden", http.StatusForbidden)
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,7 @@ func (r *Repository) GetOrganizationSummary(ctx context.Context, organizationID 
 	}
 
 	var summary OrganizationSummary
+	var subscriptionStartsAt, subscriptionEndsAt, graceEndsAt, accessSuspendedAt sql.NullTime
 	err := r.db.QueryRow(ctx, `
 		SELECT
 			o.id::text,
@@ -37,6 +39,16 @@ func (r *Repository) GetOrganizationSummary(ctx context.Context, organizationID 
 			(SELECT COUNT(*) FROM quotes WHERE organization_id = o.id) AS quotes,
 			(SELECT COUNT(*) FROM customers WHERE organization_id = o.id) AS customers,
 			(SELECT COUNT(*) FROM products WHERE organization_id = o.id) AS products,
+			COALESCE(o.subscription_plan, 'professional'),
+			COALESCE(o.subscription_status, 'active'),
+			o.subscription_starts_at,
+			o.subscription_ends_at,
+			o.grace_ends_at,
+			o.access_suspended_at,
+			COALESCE(o.suspension_reason, ''),
+			COALESCE(o.billing_notes, ''),
+			COALESCE(o.max_members, 0),
+			COALESCE(o.max_orders_per_month, 0),
 			o.created_at,
 			o.updated_at
 		FROM organizations o
@@ -50,6 +62,16 @@ func (r *Repository) GetOrganizationSummary(ctx context.Context, organizationID 
 		&summary.Quotes,
 		&summary.Customers,
 		&summary.Products,
+		&summary.SubscriptionPlan,
+		&summary.SubscriptionStatus,
+		&subscriptionStartsAt,
+		&subscriptionEndsAt,
+		&graceEndsAt,
+		&accessSuspendedAt,
+		&summary.SuspensionReason,
+		&summary.BillingNotes,
+		&summary.MaxMembers,
+		&summary.MaxOrdersPerMonth,
 		&summary.CreatedAt,
 		&summary.UpdatedAt,
 	)
@@ -59,6 +81,9 @@ func (r *Repository) GetOrganizationSummary(ctx context.Context, organizationID 
 		}
 		return nil, err
 	}
+
+	applyNullableOrganizationTimes(&summary, subscriptionStartsAt, subscriptionEndsAt, graceEndsAt, accessSuspendedAt)
+	applyOrganizationAccessState(&summary)
 
 	return &summary, nil
 }
@@ -94,6 +119,59 @@ func (r *Repository) UpdateOrganization(ctx context.Context, organizationID stri
 	return r.GetOrganizationSummary(ctx, organizationID)
 }
 
+func (r *Repository) UpdateOrganizationSubscription(ctx context.Context, organizationID string, request UpdateOrganizationSubscriptionRequest) (*OrganizationSummary, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	plan := strings.ToLower(strings.TrimSpace(request.SubscriptionPlan))
+	status := strings.ToLower(strings.TrimSpace(request.SubscriptionStatus))
+	reason := strings.TrimSpace(request.SuspensionReason)
+	notes := strings.TrimSpace(request.BillingNotes)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if plan == "" {
+		plan = "professional"
+	}
+	if status == "" {
+		status = "active"
+	}
+	if !isValidSubscriptionPlan(plan) {
+		return nil, errors.New("invalid subscription plan")
+	}
+	if !isValidSubscriptionStatus(status) {
+		return nil, errors.New("invalid subscription status")
+	}
+	if request.MaxMembers < 0 {
+		return nil, errors.New("max members cannot be negative")
+	}
+	if request.MaxOrdersPerMonth < 0 {
+		return nil, errors.New("max orders per month cannot be negative")
+	}
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE organizations
+		SET subscription_plan = $2,
+		    subscription_status = $3,
+		    subscription_starts_at = $4,
+		    subscription_ends_at = $5,
+		    grace_ends_at = $6,
+		    access_suspended_at = CASE
+		        WHEN $3 IN ('suspended', 'cancelled') THEN COALESCE(access_suspended_at, NOW())
+		        ELSE NULL
+		    END,
+		    suspension_reason = $7,
+		    billing_notes = $8,
+		    max_members = $9,
+		    max_orders_per_month = $10,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, organizationID, plan, status, request.SubscriptionStartsAt, request.SubscriptionEndsAt, request.GraceEndsAt, reason, notes, request.MaxMembers, request.MaxOrdersPerMonth)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.GetOrganizationSummary(ctx, organizationID)
+}
+
 func (r *Repository) ListOrganizationsForUser(ctx context.Context, userID string) ([]OrganizationSummary, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -110,6 +188,16 @@ func (r *Repository) ListOrganizationsForUser(ctx context.Context, userID string
 			(SELECT COUNT(*) FROM quotes WHERE organization_id = o.id) AS quotes,
 			(SELECT COUNT(*) FROM customers WHERE organization_id = o.id) AS customers,
 			(SELECT COUNT(*) FROM products WHERE organization_id = o.id) AS products,
+			COALESCE(o.subscription_plan, 'professional'),
+			COALESCE(o.subscription_status, 'active'),
+			o.subscription_starts_at,
+			o.subscription_ends_at,
+			o.grace_ends_at,
+			o.access_suspended_at,
+			COALESCE(o.suspension_reason, ''),
+			COALESCE(o.billing_notes, ''),
+			COALESCE(o.max_members, 0),
+			COALESCE(o.max_orders_per_month, 0),
 			o.created_at,
 			o.updated_at
 		FROM organizations o
@@ -125,6 +213,7 @@ func (r *Repository) ListOrganizationsForUser(ctx context.Context, userID string
 	organizations := make([]OrganizationSummary, 0)
 	for rows.Next() {
 		var organization OrganizationSummary
+		var subscriptionStartsAt, subscriptionEndsAt, graceEndsAt, accessSuspendedAt sql.NullTime
 		if err := rows.Scan(
 			&organization.ID,
 			&organization.Name,
@@ -134,11 +223,23 @@ func (r *Repository) ListOrganizationsForUser(ctx context.Context, userID string
 			&organization.Quotes,
 			&organization.Customers,
 			&organization.Products,
+			&organization.SubscriptionPlan,
+			&organization.SubscriptionStatus,
+			&subscriptionStartsAt,
+			&subscriptionEndsAt,
+			&graceEndsAt,
+			&accessSuspendedAt,
+			&organization.SuspensionReason,
+			&organization.BillingNotes,
+			&organization.MaxMembers,
+			&organization.MaxOrdersPerMonth,
 			&organization.CreatedAt,
 			&organization.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
+		applyNullableOrganizationTimes(&organization, subscriptionStartsAt, subscriptionEndsAt, graceEndsAt, accessSuspendedAt)
+		applyOrganizationAccessState(&organization)
 		organizations = append(organizations, organization)
 	}
 
@@ -851,6 +952,120 @@ func normalizeSlug(value string) string {
 	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "-")
 	value = strings.Trim(value, "-")
 	return value
+}
+
+func applyNullableOrganizationTimes(summary *OrganizationSummary, startsAt, endsAt, graceEndsAt, suspendedAt sql.NullTime) {
+	if startsAt.Valid {
+		value := startsAt.Time
+		summary.SubscriptionStartsAt = &value
+	}
+	if endsAt.Valid {
+		value := endsAt.Time
+		summary.SubscriptionEndsAt = &value
+	}
+	if graceEndsAt.Valid {
+		value := graceEndsAt.Time
+		summary.GraceEndsAt = &value
+	}
+	if suspendedAt.Valid {
+		value := suspendedAt.Time
+		summary.AccessSuspendedAt = &value
+	}
+}
+
+func applyOrganizationAccessState(summary *OrganizationSummary) {
+	if summary.SubscriptionPlan == "" {
+		summary.SubscriptionPlan = "professional"
+	}
+	if summary.SubscriptionStatus == "" {
+		summary.SubscriptionStatus = "active"
+	}
+
+	now := time.Now()
+	status := strings.ToLower(strings.TrimSpace(summary.SubscriptionStatus))
+	switch status {
+	case "suspended":
+		summary.IsAccessBlocked = true
+		if summary.SuspensionReason != "" {
+			summary.AccessMessage = summary.SuspensionReason
+		} else {
+			summary.AccessMessage = "Acceso suspendido"
+		}
+		return
+	case "cancelled":
+		summary.IsAccessBlocked = true
+		summary.AccessMessage = "Membresia cancelada"
+		return
+	}
+
+	if summary.SubscriptionEndsAt != nil && now.After(*summary.SubscriptionEndsAt) {
+		if summary.GraceEndsAt != nil && now.Before(*summary.GraceEndsAt) {
+			days := daysUntil(now, *summary.GraceEndsAt)
+			summary.DaysUntilAccessChange = &days
+			summary.AccessMessage = "Periodo de gracia activo"
+			return
+		}
+
+		summary.IsAccessBlocked = true
+		summary.AccessMessage = "Membresia vencida"
+		return
+	}
+
+	if summary.GraceEndsAt != nil && now.Before(*summary.GraceEndsAt) && status == "past_due" {
+		days := daysUntil(now, *summary.GraceEndsAt)
+		summary.DaysUntilAccessChange = &days
+		summary.AccessMessage = "Pago vencido con gracia activa"
+		return
+	}
+
+	if summary.SubscriptionEndsAt != nil {
+		days := daysUntil(now, *summary.SubscriptionEndsAt)
+		summary.DaysUntilAccessChange = &days
+		if days <= 7 {
+			summary.AccessMessage = "Membresia por vencer"
+			return
+		}
+	}
+
+	if status == "trialing" {
+		summary.AccessMessage = "Prueba activa"
+		return
+	}
+	if status == "past_due" {
+		summary.AccessMessage = "Pago vencido"
+		return
+	}
+	summary.AccessMessage = "Acceso activo"
+}
+
+func daysUntil(now, target time.Time) int {
+	hours := target.Sub(now).Hours()
+	if hours <= 0 {
+		return 0
+	}
+	days := int(hours / 24)
+	if hours > float64(days*24) {
+		days++
+	}
+	return days
+}
+
+func isValidSubscriptionPlan(plan string) bool {
+	switch plan {
+	case "trial", "starter", "professional", "enterprise", "custom", "internal":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidSubscriptionStatus(status string) bool {
+	switch status {
+	case "trialing", "active", "past_due", "suspended", "cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 func isUUID(value string) bool {

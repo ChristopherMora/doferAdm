@@ -7,10 +7,13 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Ban,
   Building2,
+  CalendarClock,
   CheckCircle2,
   Clock3,
   CreditCard,
+  Lock,
   PackageCheck,
   Printer,
   RefreshCw,
@@ -39,6 +42,19 @@ interface OrganizationSummary {
   quotes: number
   customers: number
   products: number
+  subscription_plan: string
+  subscription_status: string
+  subscription_starts_at?: string
+  subscription_ends_at?: string
+  grace_ends_at?: string
+  access_suspended_at?: string
+  suspension_reason: string
+  billing_notes: string
+  max_members: number
+  max_orders_per_month: number
+  is_access_blocked: boolean
+  access_message: string
+  days_until_access_change?: number
   created_at: string
   updated_at: string
 }
@@ -152,8 +168,26 @@ const platformLabels: Record<string, string> = {
   other: 'Otro',
 }
 
+const subscriptionPlanLabels: Record<string, string> = {
+  trial: 'Prueba',
+  starter: 'Starter',
+  professional: 'Professional',
+  enterprise: 'Enterprise',
+  custom: 'Personalizado',
+  internal: 'Interno',
+}
+
+const subscriptionStatusLabels: Record<string, string> = {
+  trialing: 'Prueba',
+  active: 'Activa',
+  past_due: 'Pago vencido',
+  suspended: 'Suspendida',
+  cancelled: 'Cancelada',
+}
+
 const actionLabels: Record<string, string> = {
   'organization.updated': 'Organizacion actualizada',
+  'organization.subscription_updated': 'Membresia actualizada',
   'organization_member.invited': 'Miembro invitado',
   'organization_member.profile_updated': 'Perfil actualizado',
   'organization_member.role_updated': 'Rol actualizado',
@@ -179,10 +213,33 @@ export default function OrganizationSettingsPage() {
   const [activeOrganizationID, setActiveOrganizationIDState] = useState('')
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
+  const [subscriptionPlan, setSubscriptionPlan] = useState('professional')
+  const [subscriptionStatus, setSubscriptionStatus] = useState('active')
+  const [subscriptionStartsAt, setSubscriptionStartsAt] = useState('')
+  const [subscriptionEndsAt, setSubscriptionEndsAt] = useState('')
+  const [graceEndsAt, setGraceEndsAt] = useState('')
+  const [suspensionReason, setSuspensionReason] = useState('')
+  const [billingNotes, setBillingNotes] = useState('')
+  const [maxMembers, setMaxMembers] = useState('0')
+  const [maxOrdersPerMonth, setMaxOrdersPerMonth] = useState('0')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingSubscription, setSavingSubscription] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [apiNotice, setApiNotice] = useState<string | null>(null)
+
+  const syncSubscriptionForm = useCallback((nextOrganization: OrganizationSummary) => {
+    setSubscriptionPlan(nextOrganization.subscription_plan)
+    setSubscriptionStatus(nextOrganization.subscription_status)
+    setSubscriptionStartsAt(toDateTimeLocal(nextOrganization.subscription_starts_at))
+    setSubscriptionEndsAt(toDateTimeLocal(nextOrganization.subscription_ends_at))
+    setGraceEndsAt(toDateTimeLocal(nextOrganization.grace_ends_at))
+    setSuspensionReason(nextOrganization.suspension_reason || '')
+    setBillingNotes(nextOrganization.billing_notes || '')
+    setMaxMembers(String(nextOrganization.max_members || 0))
+    setMaxOrdersPerMonth(String(nextOrganization.max_orders_per_month || 0))
+  }, [])
 
   const loadOrganization = useCallback(async (showSpinner = false) => {
     if (showSpinner) setRefreshing(true)
@@ -198,22 +255,26 @@ export default function OrganizationSettingsPage() {
         apiClient.get<{ members: OrganizationMember[] }>('/auth/organization/members'),
       ])
 
-      setOrganization(organizationData)
+      const nextOrganization = normalizeOrganizationSummary(organizationData)
+      const nextOrganizations = (organizationsData.organizations || []).map(normalizeOrganizationSummary)
+
+      setOrganization(nextOrganization)
       setOverview(overviewData)
-      setOrganizations(organizationsData.organizations || [])
+      setOrganizations(nextOrganizations)
       setAuditLogs(auditData.logs || [])
       setUserMetrics(metricsData.metrics || [])
       setMembers((membersData.members || []).map(normalizeOrganizationMember))
-      setName(organizationData.name)
-      setSlug(organizationData.slug)
-      setActiveOrganizationIDState(getActiveOrganizationID() || organizationData.id)
+      setName(nextOrganization.name)
+      setSlug(nextOrganization.slug)
+      syncSubscriptionForm(nextOrganization)
+      setActiveOrganizationIDState(getActiveOrganizationID() || nextOrganization.id)
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'No se pudo cargar la organizacion'))
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [syncSubscriptionForm])
 
   useEffect(() => {
     void loadOrganization()
@@ -245,6 +306,31 @@ export default function OrganizationSettingsPage() {
         title: 'Administrador de respaldo',
         value: 'Falta',
         href: '/dashboard/settings/users',
+        tone: 'warning',
+      })
+    }
+    if (organization?.is_access_blocked) {
+      items.push({
+        title: 'Acceso bloqueado',
+        value: subscriptionStatusLabels[organization.subscription_status] || organization.subscription_status,
+        href: '/dashboard/settings/organization',
+        tone: 'danger',
+      })
+    } else if (organization?.subscription_status === 'past_due') {
+      items.push({
+        title: 'Pago vencido',
+        value: organization.days_until_access_change !== undefined ? `${organization.days_until_access_change} dias` : 'Revisar',
+        href: '/dashboard/settings/organization',
+        tone: 'warning',
+      })
+    } else if (
+      organization?.days_until_access_change !== undefined &&
+      organization.days_until_access_change <= 7
+    ) {
+      items.push({
+        title: 'Membresia por vencer',
+        value: `${organization.days_until_access_change} dias`,
+        href: '/dashboard/settings/organization',
         tone: 'warning',
       })
     }
@@ -282,7 +368,7 @@ export default function OrganizationSettingsPage() {
     }
 
     return items
-  }, [overview, pendingMembers])
+  }, [organization, overview, pendingMembers])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -300,6 +386,63 @@ export default function OrganizationSettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const buildSubscriptionPayload = (overrides: Partial<Record<string, string | number | null>> = {}) => ({
+    subscription_plan: subscriptionPlan,
+    subscription_status: subscriptionStatus,
+    subscription_starts_at: fromDateTimeLocal(subscriptionStartsAt),
+    subscription_ends_at: fromDateTimeLocal(subscriptionEndsAt),
+    grace_ends_at: fromDateTimeLocal(graceEndsAt),
+    suspension_reason: suspensionReason,
+    billing_notes: billingNotes,
+    max_members: parseNonNegativeInt(maxMembers),
+    max_orders_per_month: parseNonNegativeInt(maxOrdersPerMonth),
+    ...overrides,
+  })
+
+  const saveSubscription = async (payload = buildSubscriptionPayload()) => {
+    setSavingSubscription(true)
+    setApiError(null)
+    setApiNotice(null)
+
+    try {
+      const updated = normalizeOrganizationSummary(
+        await apiClient.patch<OrganizationSummary>('/admin/organization/subscription', payload)
+      )
+      setOrganization(updated)
+      syncSubscriptionForm(updated)
+      setApiNotice('Membresia y acceso actualizados')
+      void loadOrganization(true)
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo guardar la membresia'))
+    } finally {
+      setSavingSubscription(false)
+    }
+  }
+
+  const handleSubscriptionSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    await saveSubscription()
+  }
+
+  const handleSuspendAccess = async () => {
+    const reason = suspensionReason.trim() || 'Acceso suspendido por pago pendiente'
+    setSubscriptionStatus('suspended')
+    setSuspensionReason(reason)
+    await saveSubscription(buildSubscriptionPayload({
+      subscription_status: 'suspended',
+      suspension_reason: reason,
+    }))
+  }
+
+  const handleActivateAccess = async () => {
+    setSubscriptionStatus('active')
+    setSuspensionReason('')
+    await saveSubscription(buildSubscriptionPayload({
+      subscription_status: 'active',
+      suspension_reason: '',
+    }))
   }
 
   const handleOrganizationChange = (organizationID: string) => {
@@ -335,6 +478,12 @@ export default function OrganizationSettingsPage() {
       {apiError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           {apiError}
+        </div>
+      )}
+
+      {apiNotice && (
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+          {apiNotice}
         </div>
       )}
 
@@ -513,6 +662,184 @@ export default function OrganizationSettingsPage() {
             </PanelCard>
           </section>
         </>
+      )}
+
+      {organization && (
+        <PanelCard>
+          <form onSubmit={handleSubscriptionSubmit} className="space-y-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-md ${organization.is_access_blocked ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {organization.is_access_blocked ? <Lock className="h-5 w-5" /> : <CalendarClock className="h-5 w-5" />}
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">Membresia y acceso</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Controla el periodo pagado, gracia y bloqueo operativo de esta organizacion.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge variant="outline" className={subscriptionStatusClass(organization.subscription_status, organization.is_access_blocked)}>
+                      {subscriptionStatusLabels[organization.subscription_status] || organization.subscription_status}
+                    </Badge>
+                    <Badge variant="outline">
+                      {subscriptionPlanLabels[organization.subscription_plan] || organization.subscription_plan}
+                    </Badge>
+                    {organization.days_until_access_change !== undefined && (
+                      <Badge variant="secondary">
+                        {organization.days_until_access_change} dias
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 text-sm lg:min-w-72">
+                <InfoRow label="Estado" value={organization.access_message || 'Acceso activo'} />
+                <InfoRow label="Pagado hasta" value={organization.subscription_ends_at ? formatDateTime(organization.subscription_ends_at) : 'Sin vencimiento'} />
+                <InfoRow label="Gracia" value={organization.grace_ends_at ? formatDateTime(organization.grace_ends_at) : 'Sin gracia'} />
+              </div>
+            </div>
+
+            {organization.is_access_blocked && (
+              <div className="flex gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+                <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-semibold">Uso operativo bloqueado.</p>
+                  <p>Ordenes, cotizaciones, clientes, impresoras y productos responderan con pago requerido hasta reactivar la membresia.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plan</span>
+                <select
+                  value={subscriptionPlan}
+                  onChange={(event) => setSubscriptionPlan(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="trial">Prueba</option>
+                  <option value="starter">Starter</option>
+                  <option value="professional">Professional</option>
+                  <option value="enterprise">Enterprise</option>
+                  <option value="custom">Personalizado</option>
+                  <option value="internal">Interno</option>
+                </select>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</span>
+                <select
+                  value={subscriptionStatus}
+                  onChange={(event) => setSubscriptionStatus(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="trialing">Prueba</option>
+                  <option value="active">Activa</option>
+                  <option value="past_due">Pago vencido</option>
+                  <option value="suspended">Suspendida</option>
+                  <option value="cancelled">Cancelada</option>
+                </select>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inicio</span>
+                <input
+                  type="datetime-local"
+                  value={subscriptionStartsAt}
+                  onChange={(event) => setSubscriptionStartsAt(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagado hasta</span>
+                <input
+                  type="datetime-local"
+                  value={subscriptionEndsAt}
+                  onChange={(event) => setSubscriptionEndsAt(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Gracia hasta</span>
+                <input
+                  type="datetime-local"
+                  value={graceEndsAt}
+                  onChange={(event) => setGraceEndsAt(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Max miembros</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={maxMembers}
+                  onChange={(event) => setMaxMembers(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ordenes / mes</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={maxOrdersPerMonth}
+                  onChange={(event) => setMaxOrdersPerMonth(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Motivo de suspension</span>
+                <textarea
+                  value={suspensionReason}
+                  onChange={(event) => setSuspensionReason(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="Pago pendiente, contrato vencido..."
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notas internas</span>
+                <textarea
+                  value={billingNotes}
+                  onChange={(event) => setBillingNotes(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="Contacto, condiciones, acuerdos..."
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
+              <div className="text-xs text-muted-foreground">
+                Los limites en 0 quedan sin tope. El bloqueo operativo se aplica en backend.
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => void handleActivateAccess()} disabled={savingSubscription}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Reactivar
+                </Button>
+                <Button type="button" variant="destructive" onClick={() => void handleSuspendAccess()} disabled={savingSubscription}>
+                  <Ban className="h-4 w-4" />
+                  Suspender
+                </Button>
+                <Button type="submit" disabled={savingSubscription}>
+                  <Save className="h-4 w-4" />
+                  Guardar membresia
+                </Button>
+              </div>
+            </div>
+          </form>
+        </PanelCard>
       )}
 
       <PanelCard>
@@ -759,6 +1086,40 @@ function actionToneClass(tone: 'danger' | 'warning' | 'neutral') {
   }
 }
 
+function subscriptionStatusClass(status: string, isBlocked: boolean) {
+  if (isBlocked || status === 'suspended' || status === 'cancelled') {
+    return 'border-red-200 bg-red-50 text-red-700'
+  }
+  if (status === 'past_due') {
+    return 'border-amber-200 bg-amber-50 text-amber-700'
+  }
+  if (status === 'trialing') {
+    return 'border-blue-200 bg-blue-50 text-blue-700'
+  }
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+}
+
+function toDateTimeLocal(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return localDate.toISOString().slice(0, 16)
+}
+
+function fromDateTimeLocal(value: string) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
+}
+
+function parseNonNegativeInt(value: string) {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed) || parsed < 0) return 0
+  return parsed
+}
+
 function formatMinutes(minutes: number) {
   if (!minutes) return '0 min'
   const hours = Math.floor(minutes / 60)
@@ -799,5 +1160,19 @@ function normalizeOrganizationMember(member: OrganizationMember): OrganizationMe
     membership_created_at: member.membership_created_at || new Date().toISOString(),
     auth_linked: member.auth_linked ?? true,
     active_orders: Number(member.active_orders || 0),
+  }
+}
+
+function normalizeOrganizationSummary(organization: OrganizationSummary): OrganizationSummary {
+  return {
+    ...organization,
+    subscription_plan: organization.subscription_plan || 'professional',
+    subscription_status: organization.subscription_status || 'active',
+    suspension_reason: organization.suspension_reason || '',
+    billing_notes: organization.billing_notes || '',
+    max_members: Number(organization.max_members || 0),
+    max_orders_per_month: Number(organization.max_orders_per_month || 0),
+    is_access_blocked: Boolean(organization.is_access_blocked),
+    access_message: organization.access_message || 'Acceso activo',
   }
 }

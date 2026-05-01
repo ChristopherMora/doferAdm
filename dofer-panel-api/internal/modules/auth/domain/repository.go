@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type UserRepository interface {
 	FindByID(id string) (*User, error)
 	FindByEmail(email string) (*User, error)
@@ -17,4 +19,6 @@ type UserRepository interface {
 	// Si no se solicita una organizacion y el usuario no tiene membresia,
 	// puede crear un workspace personal para beta.
 	ResolveOrganization(userID, requestedOrganizationID string) (organizationID string, role string, err error)
+	// ResolveOrganizationAccess obtiene el estado de acceso operativo de la organizacion.
+	ResolveOrganizationAccess(organizationID string) (status string, subscriptionEndsAt *time.Time, graceEndsAt *time.Time, accessSuspendedAt *time.Time, suspensionReason string, err error)
 }

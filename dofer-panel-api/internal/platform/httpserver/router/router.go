@@ -219,14 +219,19 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 			// Register module routes
 			authTransport.RegisterRoutes(r, authHandler)
-			ordersTransport.RegisterRoutes(r, orderHandler)
-			costsTransport.RegisterRoutes(r, costHandler)
-			quotesTransport.RegisterRoutes(r, quoteHandler)
-			tracking.RegisterRoutes(r, trackingHandler)
-			customers.RegisterRoutes(r, customerHandler)
-			printers.RegisterRoutes(r, printerHandler)
-			products.RegisterRoutes(r, productHandler)
 			admin.RegisterRoutes(r, adminHandler)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireActiveOrganization(userRepo))
+
+				ordersTransport.RegisterRoutes(r, orderHandler)
+				costsTransport.RegisterRoutes(r, costHandler)
+				quotesTransport.RegisterRoutes(r, quoteHandler)
+				tracking.RegisterRoutes(r, trackingHandler)
+				customers.RegisterRoutes(r, customerHandler)
+				printers.RegisterRoutes(r, printerHandler)
+				products.RegisterRoutes(r, productHandler)
+			})
 		})
 	})
 

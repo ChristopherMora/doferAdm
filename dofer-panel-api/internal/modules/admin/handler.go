@@ -25,6 +25,7 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Get("/organizations", h.ListOrganizations)
 		r.Get("/organization", h.GetOrganization)
 		r.Put("/organization", h.UpdateOrganization)
+		r.With(middleware.RequirePlatformAdmin).Patch("/organization/subscription", h.UpdateOrganizationSubscription)
 		r.Get("/organization/overview", h.GetOrganizationOverview)
 		r.Get("/organization/audit", h.ListAuditLogs)
 		r.Get("/organization/user-metrics", h.ListUserMetrics)
@@ -99,6 +100,41 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "organization.updated", "organization", organizationID, map[string]interface{}{
 			"name": summary.Name,
 			"slug": summary.Slug,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
+}
+
+func (h *Handler) UpdateOrganizationSubscription(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	var request UpdateOrganizationSubscriptionRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	summary, err := h.repo.UpdateOrganizationSubscription(r.Context(), organizationID, request)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "organization.subscription_updated", "organization", organizationID, map[string]interface{}{
+			"subscription_plan":    summary.SubscriptionPlan,
+			"subscription_status":  summary.SubscriptionStatus,
+			"subscription_ends_at": summary.SubscriptionEndsAt,
+			"grace_ends_at":        summary.GraceEndsAt,
+			"is_access_blocked":    summary.IsAccessBlocked,
+			"max_members":          summary.MaxMembers,
+			"max_orders_per_month": summary.MaxOrdersPerMonth,
 		})
 	}
 

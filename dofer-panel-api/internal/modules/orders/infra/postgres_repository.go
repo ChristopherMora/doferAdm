@@ -21,6 +21,10 @@ func NewPostgresOrderRepository(db *pgxpool.Pool) *PostgresOrderRepository {
 }
 
 func (r *PostgresOrderRepository) Create(order *domain.Order) error {
+	if err := r.ensureMonthlyOrderLimit(order.OrganizationID); err != nil {
+		return err
+	}
+
 	query := `
 		INSERT INTO orders (
 			id, organization_id, public_id, order_number, platform, status, priority,
@@ -60,6 +64,38 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 	)
 
 	return err
+}
+
+func (r *PostgresOrderRepository) ensureMonthlyOrderLimit(organizationID string) error {
+	if organizationID == "" {
+		return nil
+	}
+
+	var maxOrdersPerMonth, currentMonthOrders int
+	err := r.db.QueryRow(context.Background(), `
+		SELECT
+			COALESCE(max_orders_per_month, 0),
+			(
+				SELECT COUNT(*)
+				FROM orders
+				WHERE organization_id = $1
+				  AND created_at >= date_trunc('month', NOW())
+			)
+		FROM organizations
+		WHERE id = $1
+	`, organizationID).Scan(&maxOrdersPerMonth, &currentMonthOrders)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	if maxOrdersPerMonth > 0 && currentMonthOrders >= maxOrdersPerMonth {
+		return errors.New("organization monthly order limit reached")
+	}
+
+	return nil
 }
 
 func (r *PostgresOrderRepository) FindByID(id string, organizationID ...string) (*domain.Order, error) {

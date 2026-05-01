@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/dofer/panel-api/internal/modules/auth/domain"
 	"github.com/google/uuid"
@@ -289,6 +290,35 @@ func (r *PostgresUserRepository) ResolveOrganization(userID, requestedOrganizati
 	return r.createPersonalOrganization(ctx, userID)
 }
 
+func (r *PostgresUserRepository) ResolveOrganizationAccess(organizationID string) (string, *time.Time, *time.Time, *time.Time, string, error) {
+	ctx := context.Background()
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return "", nil, nil, nil, "", errors.New("organization ID is required")
+	}
+
+	var status, suspensionReason string
+	var subscriptionEndsAt, graceEndsAt, accessSuspendedAt sql.NullTime
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COALESCE(subscription_status, 'active'),
+			subscription_ends_at,
+			grace_ends_at,
+			access_suspended_at,
+			COALESCE(suspension_reason, '')
+		FROM organizations
+		WHERE id = $1
+	`, organizationID).Scan(&status, &subscriptionEndsAt, &graceEndsAt, &accessSuspendedAt, &suspensionReason)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil, nil, nil, "", errors.New("organization not found")
+		}
+		return "", nil, nil, nil, "", err
+	}
+
+	return status, nullableTimePointer(subscriptionEndsAt), nullableTimePointer(graceEndsAt), nullableTimePointer(accessSuspendedAt), suspensionReason, nil
+}
+
 func (r *PostgresUserRepository) createPersonalOrganization(ctx context.Context, userID string) (string, string, error) {
 	var email, fullName string
 	err := r.db.QueryRow(ctx, `
@@ -560,6 +590,34 @@ func (r *PostgresUserRepository) InviteOrganizationMember(organizationID, email,
 		}
 	} else {
 		return nil, err
+	}
+
+	var membershipExists bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM organization_members
+			WHERE organization_id = $1 AND user_id = $2
+		)
+	`, organizationID, userID).Scan(&membershipExists)
+	if err != nil {
+		return nil, err
+	}
+	if !membershipExists {
+		var maxMembers, memberCount int
+		err = tx.QueryRow(ctx, `
+			SELECT
+				COALESCE(max_members, 0),
+				(SELECT COUNT(*) FROM organization_members WHERE organization_id = $1)
+			FROM organizations
+			WHERE id = $1
+		`, organizationID).Scan(&maxMembers, &memberCount)
+		if err != nil {
+			return nil, err
+		}
+		if maxMembers > 0 && memberCount >= maxMembers {
+			return nil, errors.New("organization member limit reached")
+		}
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -838,4 +896,12 @@ func isValidRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+func nullableTimePointer(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	next := value.Time
+	return &next
 }

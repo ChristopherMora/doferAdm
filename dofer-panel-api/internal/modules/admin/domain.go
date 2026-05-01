@@ -3,21 +3,46 @@ package admin
 import "time"
 
 type OrganizationSummary struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	Members   int       `json:"members"`
-	Orders    int       `json:"orders"`
-	Quotes    int       `json:"quotes"`
-	Customers int       `json:"customers"`
-	Products  int       `json:"products"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                    string     `json:"id"`
+	Name                  string     `json:"name"`
+	Slug                  string     `json:"slug"`
+	Members               int        `json:"members"`
+	Orders                int        `json:"orders"`
+	Quotes                int        `json:"quotes"`
+	Customers             int        `json:"customers"`
+	Products              int        `json:"products"`
+	SubscriptionPlan      string     `json:"subscription_plan"`
+	SubscriptionStatus    string     `json:"subscription_status"`
+	SubscriptionStartsAt  *time.Time `json:"subscription_starts_at,omitempty"`
+	SubscriptionEndsAt    *time.Time `json:"subscription_ends_at,omitempty"`
+	GraceEndsAt           *time.Time `json:"grace_ends_at,omitempty"`
+	AccessSuspendedAt     *time.Time `json:"access_suspended_at,omitempty"`
+	SuspensionReason      string     `json:"suspension_reason"`
+	BillingNotes          string     `json:"billing_notes"`
+	MaxMembers            int        `json:"max_members"`
+	MaxOrdersPerMonth     int        `json:"max_orders_per_month"`
+	IsAccessBlocked       bool       `json:"is_access_blocked"`
+	AccessMessage         string     `json:"access_message"`
+	DaysUntilAccessChange *int       `json:"days_until_access_change,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 type UpdateOrganizationRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+}
+
+type UpdateOrganizationSubscriptionRequest struct {
+	SubscriptionPlan     string     `json:"subscription_plan"`
+	SubscriptionStatus   string     `json:"subscription_status"`
+	SubscriptionStartsAt *time.Time `json:"subscription_starts_at"`
+	SubscriptionEndsAt   *time.Time `json:"subscription_ends_at"`
+	GraceEndsAt          *time.Time `json:"grace_ends_at"`
+	SuspensionReason     string     `json:"suspension_reason"`
+	BillingNotes         string     `json:"billing_notes"`
+	MaxMembers           int        `json:"max_members"`
+	MaxOrdersPerMonth    int        `json:"max_orders_per_month"`
 }
 
 type OrganizationOverview struct {
