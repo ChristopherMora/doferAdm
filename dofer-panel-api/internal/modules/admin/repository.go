@@ -145,6 +145,230 @@ func (r *Repository) ListOrganizationsForUser(ctx context.Context, userID string
 	return organizations, rows.Err()
 }
 
+func (r *Repository) GetOrganizationOverview(ctx context.Context, organizationID string) (*OrganizationOverview, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+
+	var overview OrganizationOverview
+	var lastOrderAt, lastPaymentAt sql.NullTime
+	err := r.db.QueryRow(ctx, `
+		WITH
+		member_totals AS (
+			SELECT
+				COUNT(*) FILTER (WHERE role = 'admin') AS admins,
+				COUNT(*) FILTER (WHERE role = 'operator') AS operators,
+				COUNT(*) FILTER (WHERE role = 'viewer') AS viewers
+			FROM organization_members
+			WHERE organization_id = $1
+		),
+		order_totals AS (
+			SELECT
+				COUNT(*) FILTER (WHERE status NOT IN ('delivered', 'cancelled')) AS active_orders,
+				COUNT(*) FILTER (WHERE status = 'delivered') AS delivered_orders,
+				COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('delivered', 'cancelled')) AS urgent_orders,
+				COUNT(*) FILTER (WHERE delivery_deadline IS NOT NULL AND delivery_deadline < NOW() AND status NOT IN ('delivered', 'cancelled')) AS overdue_production_orders,
+				COUNT(*) FILTER (WHERE assigned_to IS NULL AND status NOT IN ('delivered', 'cancelled')) AS unassigned_orders,
+				COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS orders_last_30_days,
+				MAX(created_at) AS last_order_at,
+				COUNT(*) AS total_orders,
+				COALESCE(SUM(amount), 0) AS order_value,
+				COALESCE(SUM(amount_paid), 0) AS order_collected,
+				COALESCE(SUM(GREATEST(balance, 0)), 0) AS order_pending,
+				COALESCE(SUM(CASE WHEN delivery_deadline < NOW() AND balance > 0 THEN balance ELSE 0 END), 0) AS order_overdue
+			FROM orders
+			WHERE organization_id = $1
+		),
+		quote_totals AS (
+			SELECT
+				COUNT(*) FILTER (WHERE status = 'draft') AS draft_quotes,
+				COUNT(*) FILTER (WHERE status = 'sent') AS sent_quotes,
+				COUNT(*) FILTER (WHERE status = 'accepted') AS accepted_quotes,
+				COUNT(*) FILTER (WHERE status = 'expired') AS expired_quotes,
+				COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS quotes_last_30_days,
+				COUNT(*) AS total_quotes,
+				COALESCE(SUM(total), 0) AS quote_value,
+				COALESCE(SUM(amount_paid), 0) AS quote_collected,
+				COALESCE(SUM(GREATEST(balance, 0)), 0) AS quote_pending,
+				COALESCE(SUM(CASE WHEN valid_until < NOW() AND balance > 0 THEN balance ELSE 0 END), 0) AS quote_overdue
+			FROM quotes
+			WHERE organization_id = $1
+		),
+		printer_totals AS (
+			SELECT
+				COUNT(*) FILTER (WHERE status = 'available') AS available_printers,
+				COUNT(*) FILTER (WHERE status = 'busy') AS busy_printers,
+				COUNT(*) FILTER (WHERE status = 'maintenance') AS maintenance_printers,
+				COUNT(*) FILTER (WHERE status = 'offline') AS offline_printers
+			FROM printers
+			WHERE organization_id = $1
+		),
+		product_totals AS (
+			SELECT
+				COUNT(*) FILTER (WHERE is_active) AS active_products,
+				COUNT(*) FILTER (WHERE NOT is_active) AS inactive_products
+			FROM products
+			WHERE organization_id = $1
+		),
+		customer_totals AS (
+			SELECT COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS customers_last_30_days
+			FROM customers
+			WHERE organization_id = $1
+		),
+		payment_totals AS (
+			SELECT
+				COUNT(*) FILTER (WHERE payment_date >= NOW() - INTERVAL '30 days') AS payments_last_30_days,
+				MAX(payment_date) AS last_payment_at
+			FROM (
+				SELECT payment_date FROM order_payments WHERE organization_id = $1
+				UNION ALL
+				SELECT payment_date FROM quote_payments WHERE organization_id = $1
+			) payments
+		)
+		SELECT
+			mt.admins,
+			mt.operators,
+			mt.viewers,
+			ot.active_orders,
+			ot.delivered_orders,
+			ot.urgent_orders,
+			ot.overdue_production_orders,
+			ot.unassigned_orders,
+			qt.draft_quotes,
+			qt.sent_quotes,
+			qt.accepted_quotes,
+			qt.expired_quotes,
+			pt.available_printers,
+			pt.busy_printers,
+			pt.maintenance_printers,
+			pt.offline_printers,
+			pr.active_products,
+			pr.inactive_products,
+			ot.orders_last_30_days,
+			qt.quotes_last_30_days,
+			ct.customers_last_30_days,
+			pay.payments_last_30_days,
+			ot.order_value,
+			qt.quote_value,
+			ot.order_collected + qt.quote_collected AS collected,
+			ot.order_pending + qt.quote_pending AS pending,
+			ot.order_overdue + qt.quote_overdue AS overdue,
+			CASE WHEN (ot.order_value + qt.quote_value) > 0 THEN ((ot.order_collected + qt.quote_collected) / (ot.order_value + qt.quote_value)) * 100 ELSE 0 END AS collection_rate,
+			CASE WHEN ot.total_orders > 0 THEN (ot.delivered_orders::numeric / ot.total_orders::numeric) * 100 ELSE 0 END AS completion_rate,
+			CASE WHEN qt.total_quotes > 0 THEN (qt.accepted_quotes::numeric / qt.total_quotes::numeric) * 100 ELSE 0 END AS quote_acceptance_rate,
+			ot.last_order_at,
+			pay.last_payment_at
+		FROM member_totals mt, order_totals ot, quote_totals qt, printer_totals pt, product_totals pr, customer_totals ct, payment_totals pay
+	`, organizationID).Scan(
+		&overview.Admins,
+		&overview.Operators,
+		&overview.Viewers,
+		&overview.ActiveOrders,
+		&overview.DeliveredOrders,
+		&overview.UrgentOrders,
+		&overview.OverdueProductionOrders,
+		&overview.UnassignedOrders,
+		&overview.DraftQuotes,
+		&overview.SentQuotes,
+		&overview.AcceptedQuotes,
+		&overview.ExpiredQuotes,
+		&overview.AvailablePrinters,
+		&overview.BusyPrinters,
+		&overview.MaintenancePrinters,
+		&overview.OfflinePrinters,
+		&overview.ActiveProducts,
+		&overview.InactiveProducts,
+		&overview.OrdersLast30Days,
+		&overview.QuotesLast30Days,
+		&overview.CustomersLast30Days,
+		&overview.PaymentsLast30Days,
+		&overview.OrderValue,
+		&overview.QuoteValue,
+		&overview.Collected,
+		&overview.Pending,
+		&overview.Overdue,
+		&overview.CollectionRate,
+		&overview.CompletionRate,
+		&overview.QuoteAcceptanceRate,
+		&lastOrderAt,
+		&lastPaymentAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if lastOrderAt.Valid {
+		overview.LastOrderAt = &lastOrderAt.Time
+	}
+	if lastPaymentAt.Valid {
+		overview.LastPaymentAt = &lastPaymentAt.Time
+	}
+
+	var errBreakdown error
+	overview.RoleBreakdown, errBreakdown = r.listOrganizationBreakdown(ctx, `
+		SELECT role, COUNT(*)
+		FROM organization_members
+		WHERE organization_id = $1
+		GROUP BY role
+		ORDER BY COUNT(*) DESC, role
+	`, organizationID)
+	if errBreakdown != nil {
+		return nil, errBreakdown
+	}
+	overview.OrderStatusBreakdown, errBreakdown = r.listOrganizationBreakdown(ctx, `
+		SELECT status, COUNT(*)
+		FROM orders
+		WHERE organization_id = $1
+		GROUP BY status
+		ORDER BY COUNT(*) DESC, status
+	`, organizationID)
+	if errBreakdown != nil {
+		return nil, errBreakdown
+	}
+	overview.QuoteStatusBreakdown, errBreakdown = r.listOrganizationBreakdown(ctx, `
+		SELECT status, COUNT(*)
+		FROM quotes
+		WHERE organization_id = $1
+		GROUP BY status
+		ORDER BY COUNT(*) DESC, status
+	`, organizationID)
+	if errBreakdown != nil {
+		return nil, errBreakdown
+	}
+	overview.PlatformBreakdown, errBreakdown = r.listOrganizationBreakdown(ctx, `
+		SELECT platform, COUNT(*)
+		FROM orders
+		WHERE organization_id = $1
+		GROUP BY platform
+		ORDER BY COUNT(*) DESC, platform
+	`, organizationID)
+	if errBreakdown != nil {
+		return nil, errBreakdown
+	}
+
+	return &overview, nil
+}
+
+func (r *Repository) listOrganizationBreakdown(ctx context.Context, query, organizationID string) ([]OrganizationBreakdown, error) {
+	rows, err := r.db.Query(ctx, query, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	breakdown := make([]OrganizationBreakdown, 0)
+	for rows.Next() {
+		var item OrganizationBreakdown
+		if err := rows.Scan(&item.Key, &item.Count); err != nil {
+			return nil, err
+		}
+		breakdown = append(breakdown, item)
+	}
+
+	return breakdown, rows.Err()
+}
+
 func (r *Repository) CreateAuditLog(ctx context.Context, organizationID, actorUserID, action, entityType, entityID string, metadata map[string]interface{}) error {
 	organizationID = strings.TrimSpace(organizationID)
 	actorUserID = strings.TrimSpace(actorUserID)

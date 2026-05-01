@@ -2,7 +2,19 @@
 
 import type { FormEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, Building2, Clock3, RefreshCw, Save, ShieldCheck, Users } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  Building2,
+  Clock3,
+  CreditCard,
+  PackageCheck,
+  Printer,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Users,
+} from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -50,10 +62,79 @@ interface UserMetric {
   average_minutes: number
 }
 
+interface OrganizationOverview {
+  admins: number
+  operators: number
+  viewers: number
+  active_orders: number
+  delivered_orders: number
+  urgent_orders: number
+  overdue_production_orders: number
+  unassigned_orders: number
+  draft_quotes: number
+  sent_quotes: number
+  accepted_quotes: number
+  expired_quotes: number
+  available_printers: number
+  busy_printers: number
+  maintenance_printers: number
+  offline_printers: number
+  active_products: number
+  inactive_products: number
+  orders_last_30_days: number
+  quotes_last_30_days: number
+  customers_last_30_days: number
+  payments_last_30_days: number
+  order_value: number
+  quote_value: number
+  collected: number
+  pending: number
+  overdue: number
+  collection_rate: number
+  completion_rate: number
+  quote_acceptance_rate: number
+  last_order_at?: string
+  last_payment_at?: string
+  role_breakdown: OrganizationBreakdown[]
+  order_status_breakdown: OrganizationBreakdown[]
+  quote_status_breakdown: OrganizationBreakdown[]
+  platform_breakdown: OrganizationBreakdown[]
+}
+
+interface OrganizationBreakdown {
+  key: string
+  count: number
+}
+
 const roleLabels: Record<string, string> = {
   admin: 'Administrador',
   operator: 'Operador',
   viewer: 'Lectura',
+}
+
+const orderStatusLabels: Record<string, string> = {
+  new: 'Nuevas',
+  printing: 'Impresion',
+  post: 'Postproceso',
+  packed: 'Empacadas',
+  ready: 'Listas',
+  delivered: 'Entregadas',
+  cancelled: 'Canceladas',
+}
+
+const quoteStatusLabels: Record<string, string> = {
+  draft: 'Borrador',
+  sent: 'Enviadas',
+  accepted: 'Aceptadas',
+  rejected: 'Rechazadas',
+  expired: 'Expiradas',
+}
+
+const platformLabels: Record<string, string> = {
+  tiktok: 'TikTok',
+  shopify: 'Shopify',
+  local: 'Local',
+  other: 'Otro',
 }
 
 const actionLabels: Record<string, string> = {
@@ -67,8 +148,14 @@ const actionLabels: Record<string, string> = {
   'quote_payments.deleted': 'Pago de cotizacion eliminado',
 }
 
+const currency = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+})
+
 export default function OrganizationSettingsPage() {
   const [organization, setOrganization] = useState<OrganizationSummary | null>(null)
+  const [overview, setOverview] = useState<OrganizationOverview | null>(null)
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [userMetrics, setUserMetrics] = useState<UserMetric[]>([])
@@ -85,14 +172,16 @@ export default function OrganizationSettingsPage() {
     setApiError(null)
 
     try {
-      const [organizationData, organizationsData, auditData, metricsData] = await Promise.all([
+      const [organizationData, overviewData, organizationsData, auditData, metricsData] = await Promise.all([
         apiClient.get<OrganizationSummary>('/admin/organization'),
+        apiClient.get<OrganizationOverview>('/admin/organization/overview'),
         apiClient.get<{ organizations: OrganizationSummary[] }>('/admin/organizations'),
         apiClient.get<{ logs: AuditLog[] }>('/admin/organization/audit', { params: { limit: 80 } }),
         apiClient.get<{ metrics: UserMetric[] }>('/admin/organization/user-metrics'),
       ])
 
       setOrganization(organizationData)
+      setOverview(overviewData)
       setOrganizations(organizationsData.organizations || [])
       setAuditLogs(auditData.logs || [])
       setUserMetrics(metricsData.metrics || [])
@@ -192,6 +281,91 @@ export default function OrganizationSettingsPage() {
           <Metric label="Clientes" value={organization.customers} icon={<Users className="h-4 w-4" />} />
           <Metric label="Productos" value={organization.products} icon={<ShieldCheck className="h-4 w-4" />} />
         </div>
+      )}
+
+      {overview && (
+        <>
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+            <ControlCard
+              icon={<AlertTriangle className="h-5 w-5" />}
+              title="Salud operativa"
+              tone={overview.overdue_production_orders > 0 || overview.urgent_orders > 0 ? 'warning' : 'good'}
+              items={[
+                { label: 'Activas', value: overview.active_orders },
+                { label: 'Urgentes', value: overview.urgent_orders },
+                { label: 'Vencidas produccion', value: overview.overdue_production_orders },
+                { label: 'Sin asignar', value: overview.unassigned_orders },
+              ]}
+            />
+            <ControlCard
+              icon={<CreditCard className="h-5 w-5" />}
+              title="Cobranza"
+              tone={overview.overdue > 0 ? 'danger' : overview.pending > 0 ? 'warning' : 'good'}
+              items={[
+                { label: 'Cobrado', value: currency.format(overview.collected) },
+                { label: 'Por cobrar', value: currency.format(overview.pending) },
+                { label: 'Vencido', value: currency.format(overview.overdue) },
+                { label: 'Tasa', value: `${overview.collection_rate.toFixed(1)}%` },
+              ]}
+            />
+            <ControlCard
+              icon={<Activity className="h-5 w-5" />}
+              title="Ultimos 30 dias"
+              tone="neutral"
+              items={[
+                { label: 'Ordenes', value: overview.orders_last_30_days },
+                { label: 'Cotizaciones', value: overview.quotes_last_30_days },
+                { label: 'Clientes', value: overview.customers_last_30_days },
+                { label: 'Pagos', value: overview.payments_last_30_days },
+              ]}
+            />
+            <ControlCard
+              icon={<Printer className="h-5 w-5" />}
+              title="Infraestructura"
+              tone={overview.offline_printers > 0 || overview.maintenance_printers > 0 ? 'warning' : 'neutral'}
+              items={[
+                { label: 'Impresoras libres', value: overview.available_printers },
+                { label: 'Ocupadas', value: overview.busy_printers },
+                { label: 'Mantenimiento', value: overview.maintenance_printers },
+                { label: 'Productos activos', value: overview.active_products },
+              ]}
+            />
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <PanelCard>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tasa de completado</p>
+                  <p className="mt-2 text-3xl font-semibold">{overview.completion_rate.toFixed(1)}%</p>
+                </div>
+                <PackageCheck className="h-5 w-5 text-emerald-600" />
+              </div>
+            </PanelCard>
+            <PanelCard>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Aceptacion de cotizaciones</p>
+                  <p className="mt-2 text-3xl font-semibold">{overview.quote_acceptance_rate.toFixed(1)}%</p>
+                </div>
+                <Activity className="h-5 w-5 text-primary" />
+              </div>
+            </PanelCard>
+            <PanelCard>
+              <div className="grid gap-3 text-sm">
+                <InfoRow label="Ultima orden" value={overview.last_order_at ? formatDateTime(overview.last_order_at) : 'Sin ordenes'} />
+                <InfoRow label="Ultimo pago" value={overview.last_payment_at ? formatDateTime(overview.last_payment_at) : 'Sin pagos'} />
+              </div>
+            </PanelCard>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+            <BreakdownCard title="Roles" data={overview.role_breakdown} labels={roleLabels} />
+            <BreakdownCard title="Estados de ordenes" data={overview.order_status_breakdown} labels={orderStatusLabels} />
+            <BreakdownCard title="Plataformas" data={overview.platform_breakdown} labels={platformLabels} />
+            <BreakdownCard title="Cotizaciones" data={overview.quote_status_breakdown} labels={quoteStatusLabels} />
+          </section>
+        </>
       )}
 
       <PanelCard>
@@ -312,6 +486,92 @@ export default function OrganizationSettingsPage() {
         )}
       </section>
     </div>
+  )
+}
+
+function ControlCard({
+  icon,
+  title,
+  tone,
+  items,
+}: {
+  icon: ReactNode
+  title: string
+  tone: 'good' | 'warning' | 'danger' | 'neutral'
+  items: Array<{ label: string; value: string | number }>
+}) {
+  const toneClasses: Record<typeof tone, string> = {
+    good: 'text-emerald-600 bg-emerald-50',
+    warning: 'text-amber-600 bg-amber-50',
+    danger: 'text-red-600 bg-red-50',
+    neutral: 'text-primary bg-primary/10',
+  }
+
+  return (
+    <PanelCard className="space-y-4">
+      <div className="flex items-center gap-3">
+        <span className={`flex h-10 w-10 items-center justify-center rounded-md ${toneClasses[tone]}`}>
+          {icon}
+        </span>
+        <h2 className="font-semibold">{title}</h2>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <InfoRow key={item.label} label={item.label} value={item.value} />
+        ))}
+      </div>
+    </PanelCard>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-right text-sm font-semibold">{value}</span>
+    </div>
+  )
+}
+
+function BreakdownCard({
+  title,
+  data,
+  labels,
+}: {
+  title: string
+  data: OrganizationBreakdown[]
+  labels: Record<string, string>
+}) {
+  const total = data.reduce((sum, item) => sum + item.count, 0)
+
+  return (
+    <PanelCard className="space-y-3">
+      <div>
+        <h2 className="font-semibold">{title}</h2>
+        <p className="text-xs text-muted-foreground">{total} registros</p>
+      </div>
+
+      {data.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Sin datos</p>
+      ) : (
+        <div className="space-y-3">
+          {data.map((item) => {
+            const percent = total > 0 ? (item.count / total) * 100 : 0
+            return (
+              <div key={item.key} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">{labels[item.key] || item.key}</span>
+                  <span className="font-semibold">{item.count}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(percent, 4)}%` }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </PanelCard>
   )
 }
 

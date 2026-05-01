@@ -20,6 +20,50 @@ type UpdateOrganizationRequest struct {
 	Slug string `json:"slug"`
 }
 
+type OrganizationOverview struct {
+	Admins                  int                     `json:"admins"`
+	Operators               int                     `json:"operators"`
+	Viewers                 int                     `json:"viewers"`
+	ActiveOrders            int                     `json:"active_orders"`
+	DeliveredOrders         int                     `json:"delivered_orders"`
+	UrgentOrders            int                     `json:"urgent_orders"`
+	OverdueProductionOrders int                     `json:"overdue_production_orders"`
+	UnassignedOrders        int                     `json:"unassigned_orders"`
+	DraftQuotes             int                     `json:"draft_quotes"`
+	SentQuotes              int                     `json:"sent_quotes"`
+	AcceptedQuotes          int                     `json:"accepted_quotes"`
+	ExpiredQuotes           int                     `json:"expired_quotes"`
+	AvailablePrinters       int                     `json:"available_printers"`
+	BusyPrinters            int                     `json:"busy_printers"`
+	MaintenancePrinters     int                     `json:"maintenance_printers"`
+	OfflinePrinters         int                     `json:"offline_printers"`
+	ActiveProducts          int                     `json:"active_products"`
+	InactiveProducts        int                     `json:"inactive_products"`
+	OrdersLast30Days        int                     `json:"orders_last_30_days"`
+	QuotesLast30Days        int                     `json:"quotes_last_30_days"`
+	CustomersLast30Days     int                     `json:"customers_last_30_days"`
+	PaymentsLast30Days      int                     `json:"payments_last_30_days"`
+	OrderValue              float64                 `json:"order_value"`
+	QuoteValue              float64                 `json:"quote_value"`
+	Collected               float64                 `json:"collected"`
+	Pending                 float64                 `json:"pending"`
+	Overdue                 float64                 `json:"overdue"`
+	CollectionRate          float64                 `json:"collection_rate"`
+	CompletionRate          float64                 `json:"completion_rate"`
+	QuoteAcceptanceRate     float64                 `json:"quote_acceptance_rate"`
+	LastOrderAt             *time.Time              `json:"last_order_at,omitempty"`
+	LastPaymentAt           *time.Time              `json:"last_payment_at,omitempty"`
+	RoleBreakdown           []OrganizationBreakdown `json:"role_breakdown"`
+	OrderStatusBreakdown    []OrganizationBreakdown `json:"order_status_breakdown"`
+	QuoteStatusBreakdown    []OrganizationBreakdown `json:"quote_status_breakdown"`
+	PlatformBreakdown       []OrganizationBreakdown `json:"platform_breakdown"`
+}
+
+type OrganizationBreakdown struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+}
+
 type FinanceSummary struct {
 	TotalOrders        int     `json:"total_orders"`
 	TotalQuotes        int     `json:"total_quotes"`

@@ -23,6 +23,12 @@
 - Selector de organizacion activo cuando un usuario admin tenga acceso a mas de una organizacion.
 - Auditoria administrativa para cambios de organizacion, miembros, roles y pagos.
 - Metricas por usuario: ordenes asignadas, entregadas, activas y tiempo registrado.
+- Centro de control de organizacion con salud operativa, urgencias, ordenes vencidas y ordenes sin asignar.
+- Resumen de cobranza dentro de organizacion: cobrado, por cobrar, vencido y tasa de cobranza.
+- Actividad reciente de organizacion en ultimos 30 dias: ordenes, cotizaciones, clientes y pagos.
+- Resumen de infraestructura y catalogo: impresoras disponibles, ocupadas, mantenimiento y productos activos.
+- Desgloses de organizacion por roles, estados de orden, plataformas y estados de cotizacion.
+- Indicadores de tasa de completado y aceptacion de cotizaciones.
 - Vista de cobranza `Por cobrar` con saldos pendientes, parciales y vencidos.
 - Alertas de pagos vencidos en la seccion de finanzas.
 - Cortes de cobranza diarios, semanales y mensuales.
@@ -99,6 +105,9 @@
 
 - [x] Agregar selector de organizacion activo en layout y pantalla de organizacion.
 - [x] Agregar endpoint de organizaciones disponibles para el usuario admin.
+- [x] Agregar endpoint de resumen amplio de organizacion.
+- [x] Agregar centro de control de organizacion con salud operativa, cobranza, actividad e infraestructura.
+- [x] Agregar desgloses por roles, estados, plataformas y cotizaciones.
 - [x] Agregar auditoria de cambios de roles, miembros, organizacion y pagos.
 - [x] Agregar pantalla de auditoria en `Configuracion > Organizacion`.
 - [x] Agregar metricas por usuario en `Configuracion > Organizacion`.

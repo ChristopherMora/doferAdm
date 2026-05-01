@@ -25,6 +25,7 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Get("/organizations", h.ListOrganizations)
 		r.Get("/organization", h.GetOrganization)
 		r.Put("/organization", h.UpdateOrganization)
+		r.Get("/organization/overview", h.GetOrganizationOverview)
 		r.Get("/organization/audit", h.ListAuditLogs)
 		r.Get("/organization/user-metrics", h.ListUserMetrics)
 		r.Get("/finance/summary", h.GetFinanceSummary)
@@ -103,6 +104,23 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(summary)
+}
+
+func (h *Handler) GetOrganizationOverview(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	overview, err := h.repo.GetOrganizationOverview(r.Context(), organizationID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(overview)
 }
 
 func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
