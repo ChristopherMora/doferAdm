@@ -46,10 +46,27 @@ type organizationMemberResponse struct {
 	OrganizationID      string `json:"organization_id"`
 	OrganizationRole    string `json:"organization_role"`
 	MembershipCreatedAt string `json:"membership_created_at"`
+	MembershipUpdatedAt string `json:"membership_updated_at"`
+	AccountCreatedAt    string `json:"account_created_at"`
+	AccountUpdatedAt    string `json:"account_updated_at"`
+	LastActivityAt      string `json:"last_activity_at,omitempty"`
+	AuthLinked          bool   `json:"auth_linked"`
+	IsCurrentUser       bool   `json:"is_current_user"`
+	IsLastAdmin         bool   `json:"is_last_admin"`
+	CanRemove           bool   `json:"can_remove"`
+	CanChangeRole       bool   `json:"can_change_role"`
+	AssignedOrders      int    `json:"assigned_orders"`
+	ActiveOrders        int    `json:"active_orders"`
+	DeliveredOrders     int    `json:"delivered_orders"`
+	TotalMinutes        int    `json:"total_minutes"`
 }
 
 type updateMemberRoleRequest struct {
 	Role string `json:"role"`
+}
+
+type updateMemberProfileRequest struct {
+	FullName string `json:"full_name"`
 }
 
 type inviteMemberRequest struct {
@@ -105,17 +122,10 @@ func (h *AuthHandler) ListOrganizationMembers(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	currentUserID, _ := middleware.UserIDFromContext(r.Context())
 	response := make([]organizationMemberResponse, 0, len(members))
 	for _, member := range members {
-		response = append(response, organizationMemberResponse{
-			UserID:              member.UserID,
-			Email:               member.Email,
-			FullName:            member.FullName,
-			UserRole:            string(member.UserRole),
-			OrganizationID:      member.OrganizationID,
-			OrganizationRole:    string(member.OrganizationRole),
-			MembershipCreatedAt: member.MembershipCreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
+		response = append(response, organizationMemberToResponse(member, currentUserID))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -166,16 +176,57 @@ func (h *AuthHandler) InviteOrganizationMember(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
-		"member": organizationMemberResponse{
-			UserID:              member.UserID,
-			Email:               member.Email,
-			FullName:            member.FullName,
-			UserRole:            string(member.UserRole),
-			OrganizationID:      member.OrganizationID,
-			OrganizationRole:    string(member.OrganizationRole),
-			MembershipCreatedAt: member.MembershipCreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		},
+		"member":        organizationMemberToResponse(*member, currentUserIDFromRequest(r)),
 		"invite_status": inviteStatus,
+	})
+}
+
+func (h *AuthHandler) UpdateOrganizationMemberProfile(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := middleware.OrganizationIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	userID := strings.TrimSpace(chi.URLParam(r, "userID"))
+	if userID == "" {
+		http.Error(w, "user ID is required", http.StatusBadRequest)
+		return
+	}
+
+	var request updateMemberProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	fullName := strings.TrimSpace(request.FullName)
+	if fullName == "" {
+		http.Error(w, "full name is required", http.StatusBadRequest)
+		return
+	}
+
+	member, err := h.userRepo.UpdateOrganizationMemberProfile(organizationID, userID, fullName)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err.Error() == "organization member not found" {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		_ = h.userRepo.LogOrganizationAudit(organizationID, actorUserID, "organization_member.profile_updated", "organization_member", userID, map[string]interface{}{
+			"target_user_id": userID,
+			"target_email":   member.Email,
+			"full_name":      member.FullName,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"member": organizationMemberToResponse(*member, currentUserIDFromRequest(r)),
 	})
 }
 
@@ -318,4 +369,42 @@ func (h *AuthHandler) sendSupabaseInvite(ctx context.Context, email, fullName, r
 	}
 
 	return nil
+}
+
+func currentUserIDFromRequest(r *http.Request) string {
+	currentUserID, _ := middleware.UserIDFromContext(r.Context())
+	return currentUserID
+}
+
+func organizationMemberToResponse(member domain.OrganizationMember, currentUserID string) organizationMemberResponse {
+	lastActivityAt := ""
+	if member.LastActivityAt != nil {
+		lastActivityAt = member.LastActivityAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+
+	isCurrentUser := member.UserID == currentUserID
+	canRemove := !isCurrentUser && !member.IsLastAdmin
+
+	return organizationMemberResponse{
+		UserID:              member.UserID,
+		Email:               member.Email,
+		FullName:            member.FullName,
+		UserRole:            string(member.UserRole),
+		OrganizationID:      member.OrganizationID,
+		OrganizationRole:    string(member.OrganizationRole),
+		MembershipCreatedAt: member.MembershipCreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		MembershipUpdatedAt: member.MembershipUpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		AccountCreatedAt:    member.AccountCreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		AccountUpdatedAt:    member.AccountUpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		LastActivityAt:      lastActivityAt,
+		AuthLinked:          member.AuthLinked,
+		IsCurrentUser:       isCurrentUser,
+		IsLastAdmin:         member.IsLastAdmin,
+		CanRemove:           canRemove,
+		CanChangeRole:       !member.IsLastAdmin,
+		AssignedOrders:      member.AssignedOrders,
+		ActiveOrders:        member.ActiveOrders,
+		DeliveredOrders:     member.DeliveredOrders,
+		TotalMinutes:        member.TotalMinutes,
+	}
 }

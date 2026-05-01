@@ -7,6 +7,7 @@ type UserRepository interface {
 	Update(user *User) error
 	ListOrganizationMembers(organizationID string) ([]OrganizationMember, error)
 	InviteOrganizationMember(organizationID, email, fullName, role string) (*OrganizationMember, error)
+	UpdateOrganizationMemberProfile(organizationID, userID, fullName string) (*OrganizationMember, error)
 	UpdateOrganizationMemberRole(organizationID, userID, role string) error
 	RemoveOrganizationMember(organizationID, userID string) error
 	LogOrganizationAudit(organizationID, actorUserID, action, entityType, entityID string, metadata map[string]interface{}) error

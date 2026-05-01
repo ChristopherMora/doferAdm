@@ -1,11 +1,14 @@
 'use client'
 
 import type { FormEvent, ReactNode } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Building2,
+  CheckCircle2,
   Clock3,
   CreditCard,
   PackageCheck,
@@ -13,6 +16,7 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
+  UserPlus,
   Users,
 } from 'lucide-react'
 
@@ -60,6 +64,17 @@ interface UserMetric {
   active_orders: number
   total_minutes: number
   average_minutes: number
+}
+
+interface OrganizationMember {
+  user_id: string
+  email: string
+  full_name: string
+  organization_role: string
+  membership_created_at: string
+  last_activity_at?: string
+  auth_linked: boolean
+  active_orders: number
 }
 
 interface OrganizationOverview {
@@ -140,6 +155,7 @@ const platformLabels: Record<string, string> = {
 const actionLabels: Record<string, string> = {
   'organization.updated': 'Organizacion actualizada',
   'organization_member.invited': 'Miembro invitado',
+  'organization_member.profile_updated': 'Perfil actualizado',
   'organization_member.role_updated': 'Rol actualizado',
   'organization_member.removed': 'Acceso removido',
   'order_payments.created': 'Pago de orden creado',
@@ -159,6 +175,7 @@ export default function OrganizationSettingsPage() {
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [userMetrics, setUserMetrics] = useState<UserMetric[]>([])
+  const [members, setMembers] = useState<OrganizationMember[]>([])
   const [activeOrganizationID, setActiveOrganizationIDState] = useState('')
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -172,12 +189,13 @@ export default function OrganizationSettingsPage() {
     setApiError(null)
 
     try {
-      const [organizationData, overviewData, organizationsData, auditData, metricsData] = await Promise.all([
+      const [organizationData, overviewData, organizationsData, auditData, metricsData, membersData] = await Promise.all([
         apiClient.get<OrganizationSummary>('/admin/organization'),
         apiClient.get<OrganizationOverview>('/admin/organization/overview'),
         apiClient.get<{ organizations: OrganizationSummary[] }>('/admin/organizations'),
         apiClient.get<{ logs: AuditLog[] }>('/admin/organization/audit', { params: { limit: 80 } }),
         apiClient.get<{ metrics: UserMetric[] }>('/admin/organization/user-metrics'),
+        apiClient.get<{ members: OrganizationMember[] }>('/auth/organization/members'),
       ])
 
       setOrganization(organizationData)
@@ -185,6 +203,7 @@ export default function OrganizationSettingsPage() {
       setOrganizations(organizationsData.organizations || [])
       setAuditLogs(auditData.logs || [])
       setUserMetrics(metricsData.metrics || [])
+      setMembers((membersData.members || []).map(normalizeOrganizationMember))
       setName(organizationData.name)
       setSlug(organizationData.slug)
       setActiveOrganizationIDState(getActiveOrganizationID() || organizationData.id)
@@ -199,6 +218,71 @@ export default function OrganizationSettingsPage() {
   useEffect(() => {
     void loadOrganization()
   }, [loadOrganization])
+
+  const recentMembers = useMemo(() => (
+    [...members]
+      .sort((a, b) => new Date(b.membership_created_at).getTime() - new Date(a.membership_created_at).getTime())
+      .slice(0, 5)
+  ), [members])
+
+  const pendingMembers = useMemo(
+    () => members.filter((member) => !member.auth_linked),
+    [members]
+  )
+
+  const actionItems = useMemo(() => {
+    if (!overview) return []
+
+    const items: Array<{
+      title: string
+      value: string | number
+      href: string
+      tone: 'danger' | 'warning' | 'neutral'
+    }> = []
+
+    if (overview.admins <= 1) {
+      items.push({
+        title: 'Administrador de respaldo',
+        value: 'Falta',
+        href: '/dashboard/settings/users',
+        tone: 'warning',
+      })
+    }
+    if (pendingMembers.length > 0) {
+      items.push({
+        title: 'Invitaciones pendientes',
+        value: pendingMembers.length,
+        href: '/dashboard/settings/users',
+        tone: 'warning',
+      })
+    }
+    if (overview.unassigned_orders > 0) {
+      items.push({
+        title: 'Ordenes sin asignar',
+        value: overview.unassigned_orders,
+        href: '/dashboard/orders',
+        tone: 'warning',
+      })
+    }
+    if (overview.overdue > 0) {
+      items.push({
+        title: 'Cobranza vencida',
+        value: currency.format(overview.overdue),
+        href: '/dashboard/finance',
+        tone: 'danger',
+      })
+    }
+    if (overview.offline_printers > 0 || overview.maintenance_printers > 0) {
+      items.push({
+        title: 'Impresoras con atencion',
+        value: overview.offline_printers + overview.maintenance_printers,
+        href: '/dashboard/printers',
+        tone: 'warning',
+      })
+    }
+
+    return items
+  }, [overview, pendingMembers])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -365,6 +449,69 @@ export default function OrganizationSettingsPage() {
             <BreakdownCard title="Plataformas" data={overview.platform_breakdown} labels={platformLabels} />
             <BreakdownCard title="Cotizaciones" data={overview.quote_status_breakdown} labels={quoteStatusLabels} />
           </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <PanelCard className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <SectionTitle icon={<AlertTriangle className="h-5 w-5" />} title="Centro de control" />
+                <Link href="/dashboard/settings/users" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+                  Membresias
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+
+              {actionItems.length === 0 ? (
+                <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="font-medium">Sin alertas criticas en este momento.</span>
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {actionItems.map((item) => (
+                    <Link
+                      key={item.title}
+                      href={item.href}
+                      className={`group flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors ${actionToneClass(item.tone)}`}
+                    >
+                      <div>
+                        <p className="text-sm text-muted-foreground">{item.title}</p>
+                        <p className="mt-1 text-2xl font-semibold">{item.value}</p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </PanelCard>
+
+            <PanelCard className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <SectionTitle icon={<UserPlus className="h-5 w-5" />} title="Miembros recientes" />
+                <Badge variant="outline">{members.length} total</Badge>
+              </div>
+
+              {recentMembers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sin miembros registrados.</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentMembers.map((member) => (
+                    <div key={member.user_id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{member.full_name || member.email}</p>
+                        <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                      </div>
+                      <div className="text-right">
+                        <Badge variant="outline" className={member.auth_linked ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>
+                          {member.auth_linked ? roleLabels[member.organization_role] || member.organization_role : 'Pendiente'}
+                        </Badge>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDate(member.membership_created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </PanelCard>
+          </section>
         </>
       )}
 
@@ -403,7 +550,12 @@ export default function OrganizationSettingsPage() {
           </div>
 
           <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
-            <div className="text-xs text-muted-foreground">ID: {organization?.id}</div>
+            <div className="grid gap-1 text-xs text-muted-foreground">
+              <span>ID: {organization?.id}</span>
+              {organization && (
+                <span>Creada {formatDate(organization.created_at)} | Actualizada {formatDate(organization.updated_at)}</span>
+              )}
+            </div>
             <Button type="submit" disabled={saving}>
               <Save className="h-4 w-4" />
               Guardar
@@ -596,6 +748,17 @@ function SectionTitle({ icon, title }: { icon: ReactNode; title: string }) {
   )
 }
 
+function actionToneClass(tone: 'danger' | 'warning' | 'neutral') {
+  switch (tone) {
+    case 'danger':
+      return 'border-red-200 bg-red-50 text-red-900 hover:bg-red-100'
+    case 'warning':
+      return 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
+    default:
+      return 'border-border bg-background hover:bg-secondary'
+  }
+}
+
 function formatMinutes(minutes: number) {
   if (!minutes) return '0 min'
   const hours = Math.floor(minutes / 60)
@@ -603,6 +766,12 @@ function formatMinutes(minutes: number) {
   if (hours === 0) return `${remainingMinutes} min`
   if (remainingMinutes === 0) return `${hours} h`
   return `${hours} h ${remainingMinutes} min`
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('es-MX', {
+    dateStyle: 'medium',
+  })
 }
 
 function formatDateTime(value: string) {
@@ -620,4 +789,15 @@ function formatMetadata(metadata: Record<string, unknown>) {
     .slice(0, 4)
     .map(([key, value]) => `${key}: ${String(value)}`)
     .join(' | ')
+}
+
+function normalizeOrganizationMember(member: OrganizationMember): OrganizationMember {
+  return {
+    ...member,
+    full_name: member.full_name || '',
+    organization_role: member.organization_role || 'operator',
+    membership_created_at: member.membership_created_at || new Date().toISOString(),
+    auth_linked: member.auth_linked ?? true,
+    active_orders: Number(member.active_orders || 0),
+  }
 }

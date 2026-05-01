@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -386,6 +387,42 @@ func (r *PostgresUserRepository) ListOrganizationMembers(organizationID string) 
 	}
 
 	rows, err := r.db.Query(context.Background(), `
+		WITH admin_totals AS (
+			SELECT COUNT(*) AS admins
+			FROM organization_members
+			WHERE organization_id = $1 AND role = 'admin'
+		),
+		order_metrics AS (
+			SELECT
+				assigned_to AS user_id,
+				COUNT(*) AS assigned_orders,
+				COUNT(*) FILTER (WHERE status NOT IN ('delivered', 'cancelled')) AS active_orders,
+				COUNT(*) FILTER (WHERE status = 'delivered') AS delivered_orders,
+				MAX(updated_at) AS last_order_activity_at
+			FROM orders
+			WHERE organization_id = $1
+			  AND assigned_to IS NOT NULL
+			GROUP BY assigned_to
+		),
+		time_metrics AS (
+			SELECT
+				operator_id AS user_id,
+				COALESCE(SUM(duration_minutes), 0) AS total_minutes,
+				MAX(COALESCE(ended_at, started_at, created_at)) AS last_timer_activity_at
+			FROM order_time_entries
+			WHERE organization_id = $1
+			  AND operator_id IS NOT NULL
+			GROUP BY operator_id
+		),
+		audit_metrics AS (
+			SELECT
+				actor_user_id AS user_id,
+				MAX(created_at) AS last_audit_activity_at
+			FROM organization_audit_logs
+			WHERE organization_id = $1
+			  AND actor_user_id IS NOT NULL
+			GROUP BY actor_user_id
+		)
 		SELECT
 			u.id::text,
 			u.email,
@@ -393,9 +430,29 @@ func (r *PostgresUserRepository) ListOrganizationMembers(organizationID string) 
 			u.role,
 			om.organization_id::text,
 			om.role,
-			om.created_at
+			om.created_at,
+			om.updated_at,
+			u.created_at,
+			u.updated_at,
+			u.auth_user_id IS NOT NULL AS auth_linked,
+			(om.role = 'admin' AND admin_totals.admins = 1) AS is_last_admin,
+			COALESCE(order_metrics.assigned_orders, 0) AS assigned_orders,
+			COALESCE(order_metrics.active_orders, 0) AS active_orders,
+			COALESCE(order_metrics.delivered_orders, 0) AS delivered_orders,
+			COALESCE(time_metrics.total_minutes, 0) AS total_minutes,
+			GREATEST(
+				u.updated_at,
+				om.updated_at,
+				COALESCE(order_metrics.last_order_activity_at, om.updated_at),
+				COALESCE(time_metrics.last_timer_activity_at, om.updated_at),
+				COALESCE(audit_metrics.last_audit_activity_at, om.updated_at)
+			) AS last_activity_at
 		FROM organization_members om
 		INNER JOIN users u ON u.id = om.user_id
+		CROSS JOIN admin_totals
+		LEFT JOIN order_metrics ON order_metrics.user_id = u.id
+		LEFT JOIN time_metrics ON time_metrics.user_id = u.id
+		LEFT JOIN audit_metrics ON audit_metrics.user_id = u.id
 		WHERE om.organization_id = $1
 		ORDER BY
 			CASE om.role
@@ -414,6 +471,7 @@ func (r *PostgresUserRepository) ListOrganizationMembers(organizationID string) 
 	for rows.Next() {
 		var member domain.OrganizationMember
 		var userRole, organizationRole string
+		var lastActivityAt sql.NullTime
 		if err := rows.Scan(
 			&member.UserID,
 			&member.Email,
@@ -422,11 +480,25 @@ func (r *PostgresUserRepository) ListOrganizationMembers(organizationID string) 
 			&member.OrganizationID,
 			&organizationRole,
 			&member.MembershipCreatedAt,
+			&member.MembershipUpdatedAt,
+			&member.AccountCreatedAt,
+			&member.AccountUpdatedAt,
+			&member.AuthLinked,
+			&member.IsLastAdmin,
+			&member.AssignedOrders,
+			&member.ActiveOrders,
+			&member.DeliveredOrders,
+			&member.TotalMinutes,
+			&lastActivityAt,
 		); err != nil {
 			return nil, err
 		}
 		member.UserRole = domain.Role(userRole)
 		member.OrganizationRole = domain.Role(organizationRole)
+		if lastActivityAt.Valid {
+			lastActivity := lastActivityAt.Time
+			member.LastActivityAt = &lastActivity
+		}
 		members = append(members, member)
 	}
 
@@ -497,6 +569,78 @@ func (r *PostgresUserRepository) InviteOrganizationMember(organizationID, email,
 		SET role = EXCLUDED.role,
 		    updated_at = NOW()
 	`, organizationID, userID, role)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	members, err := r.ListOrganizationMembers(organizationID)
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range members {
+		if member.UserID == userID {
+			return &member, nil
+		}
+	}
+
+	return nil, errors.New("organization member not found")
+}
+
+func (r *PostgresUserRepository) UpdateOrganizationMemberProfile(organizationID, userID, fullName string) (*domain.OrganizationMember, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	userID = strings.TrimSpace(userID)
+	fullName = strings.TrimSpace(fullName)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if userID == "" {
+		return nil, errors.New("user ID is required")
+	}
+	if fullName == "" {
+		return nil, errors.New("full name is required")
+	}
+
+	ctx := context.Background()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	err = tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM organization_members
+			WHERE organization_id = $1 AND user_id = $2
+		)
+	`, organizationID, userID).Scan(&exists)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("organization member not found")
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE users
+		SET full_name = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, userID, fullName)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE organization_members
+		SET updated_at = NOW()
+		WHERE organization_id = $1 AND user_id = $2
+	`, organizationID, userID)
 	if err != nil {
 		return nil, err
 	}
