@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, ShieldCheck, UserCog, Users } from 'lucide-react'
+import { RefreshCw, ShieldCheck, Trash2, UserCog, UserPlus, Users } from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -42,6 +42,10 @@ export default function UsersSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [savingUserID, setSavingUserID] = useState<string | null>(null)
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteName, setInviteName] = useState('')
+  const [inviteRole, setInviteRole] = useState<Role>('operator')
   const [apiError, setApiError] = useState<string | null>(null)
 
   const stats = useMemo(() => ({
@@ -94,6 +98,46 @@ export default function UsersSettingsPage() {
     }
   }
 
+  const handleInviteMember = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSavingUserID('invite')
+    setApiError(null)
+
+    try {
+      await apiClient.post('/auth/organization/members', {
+        email: inviteEmail,
+        full_name: inviteName,
+        role: inviteRole,
+      })
+      setInviteEmail('')
+      setInviteName('')
+      setInviteRole('operator')
+      setShowInviteForm(false)
+      await loadMembers()
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo invitar el usuario'))
+    } finally {
+      setSavingUserID(null)
+    }
+  }
+
+  const handleRemoveMember = async (member: OrganizationMember) => {
+    const confirmed = window.confirm(`Quitar acceso a ${member.email}?`)
+    if (!confirmed) return
+
+    setSavingUserID(member.user_id)
+    setApiError(null)
+
+    try {
+      await apiClient.delete(`/auth/organization/members/${member.user_id}`)
+      await loadMembers()
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo quitar el acceso'))
+    } finally {
+      setSavingUserID(null)
+    }
+  }
+
   if (loading) {
     return <LoadingState label="Cargando usuarios..." />
   }
@@ -105,16 +149,27 @@ export default function UsersSettingsPage() {
         badge="Administracion"
         description="Miembros y roles de la organizacion DOFER."
         actions={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void loadMembers(true)}
-            disabled={refreshing}
-            className="bg-white/15 text-white hover:bg-white/25"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowInviteForm((current) => !current)}
+              className="bg-white/15 text-white hover:bg-white/25"
+            >
+              <UserPlus className="h-4 w-4" />
+              Invitar
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void loadMembers(true)}
+              disabled={refreshing}
+              className="bg-white/15 text-white hover:bg-white/25"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
+          </>
         }
       />
 
@@ -122,6 +177,39 @@ export default function UsersSettingsPage() {
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           {apiError}
         </div>
+      )}
+
+      {showInviteForm && (
+        <form onSubmit={handleInviteMember} className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-[1fr_1fr_180px_auto]">
+          <input
+            type="email"
+            value={inviteEmail}
+            onChange={(event) => setInviteEmail(event.target.value)}
+            placeholder="correo@empresa.com"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            required
+          />
+          <input
+            type="text"
+            value={inviteName}
+            onChange={(event) => setInviteName(event.target.value)}
+            placeholder="Nombre"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          <select
+            value={inviteRole}
+            onChange={(event) => setInviteRole(event.target.value as Role)}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="admin">Administrador</option>
+            <option value="operator">Operador</option>
+            <option value="viewer">Lectura</option>
+          </select>
+          <Button type="submit" disabled={savingUserID === 'invite'}>
+            <UserPlus className="h-4 w-4" />
+            Agregar
+          </Button>
+        </form>
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -169,7 +257,7 @@ export default function UsersSettingsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Usuario</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Rol</th>
                 <th className="hidden px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell">Alta</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Cambiar rol</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -188,17 +276,29 @@ export default function UsersSettingsPage() {
                     {new Date(member.membership_created_at).toLocaleDateString('es-MX')}
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <select
-                      value={member.organization_role}
-                      disabled={savingUserID === member.user_id}
-                      onChange={(event) => void handleRoleChange(member, event.target.value as Role)}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
-                      aria-label={`Cambiar rol de ${member.email}`}
-                    >
-                      <option value="admin">Administrador</option>
-                      <option value="operator">Operador</option>
-                      <option value="viewer">Lectura</option>
-                    </select>
+                    <div className="flex justify-end gap-2">
+                      <select
+                        value={member.organization_role}
+                        disabled={savingUserID === member.user_id}
+                        onChange={(event) => void handleRoleChange(member, event.target.value as Role)}
+                        className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+                        aria-label={`Cambiar rol de ${member.email}`}
+                      >
+                        <option value="admin">Administrador</option>
+                        <option value="operator">Operador</option>
+                        <option value="viewer">Lectura</option>
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        disabled={savingUserID === member.user_id}
+                        onClick={() => void handleRemoveMember(member)}
+                        title={`Quitar acceso a ${member.email}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

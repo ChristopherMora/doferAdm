@@ -15,28 +15,27 @@
 - Pantalla de administracion de usuarios y roles dentro de la organizacion.
 - Endpoints internos para listar miembros y cambiar roles sin tocar la base por terminal.
 - Barra lateral mostrando el rol real devuelto por el API.
+- Invitacion/alta de miembros por correo desde `Configuracion > Usuarios`.
+- Baja de acceso de miembros sin borrar datos historicos.
+- Pantalla `Configuracion > Organizacion` con nombre, slug y metricas base.
+- Seccion `Finanzas` con resumen de cobrado, pendiente, vencido y pagos recientes.
+- Permisos visuales basicos para ocultar finanzas y administracion a roles no admin.
 
 ## Pendiente Por Implementar
 
 ### Administracion De Usuarios
 
-- Ocultar o deshabilitar acciones no permitidas segun rol.
-- Flujo de invitacion de usuarios con Supabase.
-- Reenvio de invitaciones y baja de usuarios.
+- Reenvio de invitaciones.
+- Estado de invitacion pendiente/aceptada.
+- Integracion visible con reset de contrasena de Supabase.
 
 ### Organizacion
 
-- Crear pantalla `Configuracion > Organizacion`.
-- Editar nombre y slug de la organizacion.
-- Ver miembros, conteo de ordenes, cotizaciones, clientes y productos.
 - Soportar selector de organizacion si un usuario pertenece a mas de una.
 - Mostrar auditoria basica de cambios administrativos.
 
 ### Finanzas Y Pagos
 
-- Crear seccion `Finanzas` o `Pagos`.
-- Dashboard financiero con cobrado, pendiente, vencido y tasa de cobranza.
-- Listado consolidado de pagos de ordenes y cotizaciones.
 - Filtros por rango de fechas, metodo, cliente, estado y plataforma.
 - Registrar pagos desde una vista financiera central.
 - Exportar pagos a CSV.
@@ -51,7 +50,7 @@
   - `operator`: ordenes, kanban, impresoras y tareas operativas.
   - `viewer`: lectura de informacion y estadisticas.
 - Aplicar permisos en backend por endpoint.
-- Aplicar permisos en frontend para menus, botones y formularios.
+- Ampliar permisos frontend a botones y formularios de cada modulo.
 - Agregar pruebas de acceso por rol.
 
 ### Calidad Y Deploy
@@ -68,3 +67,13 @@
 - [x] Agregar pantalla `Configuracion > Usuarios`.
 - [x] Conectar la navegacion lateral a la nueva pantalla.
 - [x] Validar con `go test ./...`, `npm run lint` y `npm run build`.
+
+## Segundo Corte De Trabajo
+
+- [x] Agregar invitacion/alta de miembros por email.
+- [x] Agregar baja de acceso de miembros desde UI.
+- [x] Agregar endpoint y pantalla de organizacion.
+- [x] Agregar endpoint y pantalla de finanzas/pagos.
+- [x] Ocultar rutas administrativas del menu para roles no admin.
+- [ ] Agregar filtros avanzados y exportacion CSV de finanzas.
+- [ ] Agregar auditoria de cambios de roles y organizacion.

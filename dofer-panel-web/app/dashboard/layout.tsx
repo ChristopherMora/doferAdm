@@ -20,6 +20,15 @@ interface CurrentUser {
   organization_role?: 'admin' | 'operator' | 'viewer' | string
 }
 
+interface NavigationEntry {
+  name: string
+  href?: string
+  icon: string
+  shortcut?: string
+  adminOnly?: boolean
+  subItems?: Array<{ name: string; href: string; icon: string; adminOnly?: boolean }>
+}
+
 const roleLabels: Record<string, string> = {
   admin: 'Administrador',
   operator: 'Operador',
@@ -61,7 +70,7 @@ Breadcrumbs.displayName = 'Breadcrumbs'
 
 // Memoizar la navegación para evitar re-renderizados innecesarios
 const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm, onClose, badge }: { 
-  item: { name: string; href?: string; icon: string; shortcut?: string; subItems?: Array<{ name: string; href: string; icon: string }> }, 
+  item: NavigationEntry,
   isActive: boolean,
   isExpanded?: boolean,
   onToggle?: () => void,
@@ -314,7 +323,8 @@ export default function DashboardLayout({
     router.push('/login')
   }
 
-  const navigation = [
+  const navigation = useMemo<NavigationEntry[]>(() => {
+    const items: NavigationEntry[] = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊', shortcut: '⌘1' },
     { 
       name: 'Órdenes', 
@@ -337,6 +347,7 @@ export default function DashboardLayout({
     },
     { name: 'Clientes', href: '/dashboard/customers', icon: '👥', shortcut: '⌘4' },
     { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈', shortcut: '⌘5' },
+    { name: 'Finanzas', href: '/dashboard/finance', icon: '💳', adminOnly: true },
     { 
       name: 'Configuración', 
       icon: '⚙️',
@@ -345,11 +356,22 @@ export default function DashboardLayout({
         { name: 'Impresoras', href: '/dashboard/printers', icon: '🖨️' },
         { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
         { name: 'Calculadora', href: '/dashboard/calculadora', icon: '🧮' },
-        { name: 'Usuarios', href: '/dashboard/settings/users', icon: '👤' },
-        { name: 'General', href: '/dashboard/settings', icon: '🔧' },
+        { name: 'Usuarios', href: '/dashboard/settings/users', icon: '👤', adminOnly: true },
+        { name: 'Organizacion', href: '/dashboard/settings/organization', icon: '🏢', adminOnly: true },
+        { name: 'General', href: '/dashboard/settings', icon: '🔧', adminOnly: true },
       ]
     },
-  ]
+    ]
+
+    if (userRole === 'admin') return items
+
+    return items
+      .filter((item) => !item.adminOnly)
+      .map((item) => ({
+        ...item,
+        subItems: item.subItems?.filter((subItem) => !subItem.adminOnly),
+      }))
+  }, [userRole])
 
   return (
     <div className="min-h-screen transition-colors duration-200 grid-mesh">

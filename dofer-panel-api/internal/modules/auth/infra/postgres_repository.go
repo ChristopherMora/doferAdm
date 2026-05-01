@@ -432,6 +432,91 @@ func (r *PostgresUserRepository) ListOrganizationMembers(organizationID string) 
 	return members, rows.Err()
 }
 
+func (r *PostgresUserRepository) InviteOrganizationMember(organizationID, email, fullName, role string) (*domain.OrganizationMember, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	email = strings.ToLower(strings.TrimSpace(email))
+	fullName = strings.TrimSpace(fullName)
+	role = strings.ToLower(strings.TrimSpace(role))
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if email == "" || !strings.Contains(email, "@") {
+		return nil, errors.New("valid email is required")
+	}
+	if fullName == "" {
+		fullName = email
+	}
+	if !isValidRole(role) {
+		return nil, errors.New("invalid role")
+	}
+
+	ctx := context.Background()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var userID string
+	err = tx.QueryRow(ctx, `
+		SELECT id::text
+		FROM users
+		WHERE lower(email) = lower($1)
+		LIMIT 1
+	`, email).Scan(&userID)
+	if err == nil {
+		_, err = tx.Exec(ctx, `
+			UPDATE users
+			SET full_name = COALESCE(NULLIF($2, ''), full_name),
+			    role = $3,
+			    updated_at = NOW()
+			WHERE id = $1
+		`, userID, fullName, role)
+		if err != nil {
+			return nil, err
+		}
+	} else if errors.Is(err, pgx.ErrNoRows) {
+		userID = uuid.NewString()
+		err = tx.QueryRow(ctx, `
+			INSERT INTO users (id, email, full_name, role, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, NOW(), NOW())
+			RETURNING id::text
+		`, userID, email, fullName, role).Scan(&userID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO organization_members (organization_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (organization_id, user_id) DO UPDATE
+		SET role = EXCLUDED.role,
+		    updated_at = NOW()
+	`, organizationID, userID, role)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	members, err := r.ListOrganizationMembers(organizationID)
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range members {
+		if member.UserID == userID {
+			return &member, nil
+		}
+	}
+
+	return nil, errors.New("organization member not found")
+}
+
 func (r *PostgresUserRepository) UpdateOrganizationMemberRole(organizationID, userID, role string) error {
 	organizationID = strings.TrimSpace(organizationID)
 	userID = strings.TrimSpace(userID)
@@ -500,6 +585,65 @@ func (r *PostgresUserRepository) UpdateOrganizationMemberRole(organizationID, us
 		    updated_at = NOW()
 		WHERE id = $1
 	`, userID, role)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresUserRepository) RemoveOrganizationMember(organizationID, userID string) error {
+	organizationID = strings.TrimSpace(organizationID)
+	userID = strings.TrimSpace(userID)
+	if organizationID == "" {
+		return errors.New("organization ID is required")
+	}
+	if userID == "" {
+		return errors.New("user ID is required")
+	}
+
+	ctx := context.Background()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var currentRole string
+	err = tx.QueryRow(ctx, `
+		SELECT role
+		FROM organization_members
+		WHERE organization_id = $1 AND user_id = $2
+		FOR UPDATE
+	`, organizationID, userID).Scan(&currentRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("organization member not found")
+		}
+		return err
+	}
+
+	if currentRole == "admin" {
+		var otherAdmins int
+		err = tx.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM organization_members
+			WHERE organization_id = $1
+			  AND user_id <> $2
+			  AND role = 'admin'
+		`, organizationID, userID).Scan(&otherAdmins)
+		if err != nil {
+			return err
+		}
+		if otherAdmins == 0 {
+			return errors.New("organization must keep at least one admin")
+		}
+	}
+
+	_, err = tx.Exec(ctx, `
+		DELETE FROM organization_members
+		WHERE organization_id = $1 AND user_id = $2
+	`, organizationID, userID)
 	if err != nil {
 		return err
 	}

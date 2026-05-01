@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dofer/panel-api/internal/modules/admin"
 	"github.com/dofer/panel-api/internal/modules/auth/app"
 	authInfra "github.com/dofer/panel-api/internal/modules/auth/infra"
 	authTransport "github.com/dofer/panel-api/internal/modules/auth/transport"
@@ -70,7 +71,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// Setup auth handlers
 	getUserHandler := app.NewGetUserByIDHandler(userRepo)
-	authHandler := authTransport.NewAuthHandler(getUserHandler, userRepo)
+	authHandler := authTransport.NewAuthHandler(getUserHandler, userRepo, cfg)
 
 	// Setup order handlers
 	createOrderHandler := ordersApp.NewCreateOrderHandler(orderRepo)
@@ -198,6 +199,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	productRepo := products.NewRepository(db)
 	productHandler := products.NewHandler(productRepo)
 
+	// Setup admin handler
+	adminRepo := admin.NewRepository(db)
+	adminHandler := admin.NewHandler(adminRepo)
+
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// Ping test (público, sin auth)
@@ -221,6 +226,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 			customers.RegisterRoutes(r, customerHandler)
 			printers.RegisterRoutes(r, printerHandler)
 			products.RegisterRoutes(r, productHandler)
+			admin.RegisterRoutes(r, adminHandler)
 		})
 	})
 

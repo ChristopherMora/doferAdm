@@ -6,7 +6,9 @@ type UserRepository interface {
 	Create(user *User) error
 	Update(user *User) error
 	ListOrganizationMembers(organizationID string) ([]OrganizationMember, error)
+	InviteOrganizationMember(organizationID, email, fullName, role string) (*OrganizationMember, error)
 	UpdateOrganizationMemberRole(organizationID, userID, role string) error
+	RemoveOrganizationMember(organizationID, userID string) error
 	// UpsertUser sincroniza usuarios de Supabase a la DB local y devuelve el ID local efectivo.
 	UpsertUser(id, email, fullName, role string) (string, error)
 	// ResolveOrganization obtiene la organizacion activa del usuario.
