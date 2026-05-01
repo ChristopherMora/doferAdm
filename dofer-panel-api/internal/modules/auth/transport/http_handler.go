@@ -154,6 +154,15 @@ func (h *AuthHandler) InviteOrganizationMember(w http.ResponseWriter, r *http.Re
 		inviteStatus = "sent"
 	}
 
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		_ = h.userRepo.LogOrganizationAudit(organizationID, actorUserID, "organization_member.invited", "organization_member", member.UserID, map[string]interface{}{
+			"email":         member.Email,
+			"full_name":     member.FullName,
+			"role":          string(member.OrganizationRole),
+			"invite_status": inviteStatus,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
@@ -204,6 +213,18 @@ func (h *AuthHandler) UpdateOrganizationMemberRole(w http.ResponseWriter, r *htt
 		return
 	}
 
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		targetEmail := ""
+		if target, err := h.userRepo.FindByID(userID); err == nil {
+			targetEmail = target.Email
+		}
+		_ = h.userRepo.LogOrganizationAudit(organizationID, actorUserID, "organization_member.role_updated", "organization_member", userID, map[string]interface{}{
+			"target_user_id": userID,
+			"target_email":   targetEmail,
+			"role":           role,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "role updated",
@@ -236,6 +257,17 @@ func (h *AuthHandler) RemoveOrganizationMember(w http.ResponseWriter, r *http.Re
 		}
 		http.Error(w, err.Error(), status)
 		return
+	}
+
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		targetEmail := ""
+		if target, err := h.userRepo.FindByID(userID); err == nil {
+			targetEmail = target.Email
+		}
+		_ = h.userRepo.LogOrganizationAudit(organizationID, actorUserID, "organization_member.removed", "organization_member", userID, map[string]interface{}{
+			"target_user_id": userID,
+			"target_email":   targetEmail,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

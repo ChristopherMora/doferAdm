@@ -20,6 +20,12 @@
 - Pantalla `Configuracion > Organizacion` con nombre, slug y metricas base.
 - Seccion `Finanzas` con resumen de cobrado, pendiente, vencido y pagos recientes.
 - Permisos visuales basicos para ocultar finanzas y administracion a roles no admin.
+- Selector de organizacion activo cuando un usuario admin tenga acceso a mas de una organizacion.
+- Auditoria administrativa para cambios de organizacion, miembros, roles y pagos.
+- Metricas por usuario: ordenes asignadas, entregadas, activas y tiempo registrado.
+- Vista de cobranza `Por cobrar` con saldos pendientes, parciales y vencidos.
+- Alertas de pagos vencidos en la seccion de finanzas.
+- Cortes de cobranza diarios, semanales y mensuales.
 
 ## Pendiente Por Implementar
 
@@ -28,20 +34,29 @@
 - Reenvio de invitaciones.
 - Estado de invitacion pendiente/aceptada.
 - Integracion visible con reset de contrasena de Supabase.
+- Busqueda y filtros por rol, email y estado.
+- Historial visible por usuario con cambios de rol y accesos.
 
 ### Organizacion
 
-- Soportar selector de organizacion si un usuario pertenece a mas de una.
-- Mostrar auditoria basica de cambios administrativos.
+- Crear nuevas organizaciones desde UI.
+- Archivar/desactivar organizaciones sin borrar historico.
+- Permitir cambiar usuarios entre organizaciones.
+- Reporte por organizacion si hay mas de una empresa o sucursal.
+- Auditoria con filtros por tipo de cambio, usuario y fecha.
 
 ### Finanzas Y Pagos
 
 - Filtros por rango de fechas, metodo, cliente, estado y plataforma.
 - Registrar pagos desde una vista financiera central.
 - Exportar pagos a CSV.
-- Cortes diarios/semanales/mensuales.
 - Estados claros de pago: pendiente, parcial, pagado, vencido.
-- Alertas de cobranza para ordenes/cotizaciones con saldo pendiente.
+- Recordatorios o seguimiento de cobranza por cliente.
+- Notas de cobranza por documento.
+- Conciliacion manual de pagos.
+- Desglose de cobranza por cliente, plataforma, metodo y usuario que registro el pago.
+- Descargar cortes diarios/semanales/mensuales en CSV o PDF.
+- Flujo de cancelacion o correccion de pagos con motivo obligatorio.
 
 ### Permisos
 
@@ -52,13 +67,17 @@
 - Aplicar permisos en backend por endpoint.
 - Ampliar permisos frontend a botones y formularios de cada modulo.
 - Agregar pruebas de acceso por rol.
+- Bloquear acciones sensibles por backend aunque el boton no aparezca en frontend.
+- Definir permisos especificos para cobranza: ver, registrar, cancelar y exportar pagos.
 
 ### Calidad Y Deploy
 
 - Mantener migraciones idempotentes.
 - Asegurar que `019_repair_multiuser_auth_mapping.sql` se despliegue en produccion.
+- Asegurar que `020_ensure_admin_finance_columns.sql` y `021_add_admin_audit_logs.sql` se desplieguen en produccion.
 - Agregar health checks de API con validacion de migraciones criticas.
 - Documentar pasos de recuperacion para `organization not available`.
+- Agregar pruebas automatizadas para auditoria, selector de organizacion y cobranza.
 
 ## Primer Corte De Trabajo
 
@@ -75,5 +94,16 @@
 - [x] Agregar endpoint y pantalla de organizacion.
 - [x] Agregar endpoint y pantalla de finanzas/pagos.
 - [x] Ocultar rutas administrativas del menu para roles no admin.
+
+## Tercer Corte De Trabajo
+
+- [x] Agregar selector de organizacion activo en layout y pantalla de organizacion.
+- [x] Agregar endpoint de organizaciones disponibles para el usuario admin.
+- [x] Agregar auditoria de cambios de roles, miembros, organizacion y pagos.
+- [x] Agregar pantalla de auditoria en `Configuracion > Organizacion`.
+- [x] Agregar metricas por usuario en `Configuracion > Organizacion`.
+- [x] Agregar endpoint y vista de saldos por cobrar.
+- [x] Agregar alertas de cobranza vencida.
+- [x] Agregar cortes diarios, semanales y mensuales.
 - [ ] Agregar filtros avanzados y exportacion CSV de finanzas.
-- [ ] Agregar auditoria de cambios de roles y organizacion.
+- [ ] Agregar captura de pagos desde la vista financiera central.

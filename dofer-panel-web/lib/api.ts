@@ -1,10 +1,35 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/api/v1'
+const ACTIVE_ORGANIZATION_STORAGE_KEY = 'dofer-active-organization-id'
 
 type QueryValue = string | number | boolean | null | undefined
 
 interface RequestConfig extends RequestInit {
   token?: string
   params?: Record<string, QueryValue>
+}
+
+export function getActiveOrganizationID(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+
+  const organizationID = localStorage.getItem(ACTIVE_ORGANIZATION_STORAGE_KEY)
+  return organizationID?.trim() || undefined
+}
+
+export function setActiveOrganizationID(organizationID: string) {
+  if (typeof window === 'undefined') return
+
+  const nextOrganizationID = organizationID.trim()
+  if (nextOrganizationID) {
+    localStorage.setItem(ACTIVE_ORGANIZATION_STORAGE_KEY, nextOrganizationID)
+    return
+  }
+
+  localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY)
+}
+
+export function clearActiveOrganizationID() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY)
 }
 
 function parseSupabaseToken(rawValue: string): string | undefined {
@@ -130,6 +155,11 @@ async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${resolvedToken}`
   }
 
+  const activeOrganizationID = getActiveOrganizationID()
+  if (activeOrganizationID) {
+    headers['X-Organization-ID'] = activeOrganizationID
+  }
+
   // Build query string from params
   let url = `${API_URL}${endpoint}`
   if (params) {
@@ -145,10 +175,24 @@ async function apiRequest<T>(
     }
   }
 
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...fetchConfig,
     headers,
   })
+
+  if (!response.ok && response.status === 403 && activeOrganizationID) {
+    const responseText = await response.text()
+    if (responseText.toLowerCase().includes('organization')) {
+      clearActiveOrganizationID()
+      delete headers['X-Organization-ID']
+      response = await fetch(url, {
+        ...fetchConfig,
+        headers,
+      })
+    } else {
+      throw new Error(responseText || `Error ${response.status}`)
+    }
+  }
 
   if (!response.ok) {
     let errorMessage = `Error ${response.status}`

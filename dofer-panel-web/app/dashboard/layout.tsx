@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { apiClient } from '@/lib/api'
+import { apiClient, clearActiveOrganizationID, getActiveOrganizationID, setActiveOrganizationID } from '@/lib/api'
 import ThemeToggle from '@/components/ThemeToggle'
 
 interface OrderStats {
@@ -17,7 +17,14 @@ interface OrderStats {
 interface CurrentUser {
   email: string
   role: 'admin' | 'operator' | 'viewer' | string
+  organization_id?: string
   organization_role?: 'admin' | 'operator' | 'viewer' | string
+}
+
+interface OrganizationOption {
+  id: string
+  name: string
+  slug: string
 }
 
 interface NavigationEntry {
@@ -189,7 +196,9 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<string>('admin')
+  const [userRole, setUserRole] = useState<string>('viewer')
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([])
+  const [activeOrganizationID, setActiveOrganizationIDState] = useState<string>('')
   const [searchTerm, setSearchTerm] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -285,7 +294,30 @@ export default function DashboardLayout({
       try {
         const currentUser = await apiClient.get<CurrentUser>('/auth/me')
         setUserEmail(currentUser.email || user?.email || null)
-        setUserRole(currentUser.organization_role || currentUser.role || 'admin')
+        const resolvedRole = currentUser.organization_role || currentUser.role || 'admin'
+        setUserRole(resolvedRole)
+
+        if (resolvedRole === 'admin') {
+          try {
+            const organizationData = await apiClient.get<{ organizations: OrganizationOption[] }>('/admin/organizations')
+            const nextOrganizations = organizationData.organizations || []
+            setOrganizations(nextOrganizations)
+
+            const storedOrganizationID = getActiveOrganizationID()
+            const selectedOrganizationID =
+              nextOrganizations.find((organization) => organization.id === storedOrganizationID)?.id ||
+              nextOrganizations.find((organization) => organization.id === currentUser.organization_id)?.id ||
+              nextOrganizations[0]?.id ||
+              ''
+
+            setActiveOrganizationIDState(selectedOrganizationID)
+            if (selectedOrganizationID && selectedOrganizationID !== storedOrganizationID) {
+              setActiveOrganizationID(selectedOrganizationID)
+            }
+          } catch (error) {
+            console.error('Error loading organizations:', error)
+          }
+        }
       } catch (error) {
         console.error('Error loading current user:', error)
       }
@@ -315,12 +347,19 @@ export default function DashboardLayout({
   const handleLogout = async () => {
     // Limpiar token de prueba
     localStorage.removeItem('test-token')
+    clearActiveOrganizationID()
     // Limpiar cookie de sesión
     document.cookie = 'sb-access-token=; path=/; max-age=0'
     document.cookie = 'sb-localhost-auth-token=; path=/; max-age=0'
     // Cerrar sesión de Supabase
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  const handleOrganizationChange = (organizationID: string) => {
+    setActiveOrganizationID(organizationID)
+    setActiveOrganizationIDState(organizationID)
+    window.location.reload()
   }
 
   const navigation = useMemo<NavigationEntry[]>(() => {
@@ -524,6 +563,22 @@ export default function DashboardLayout({
 
           {/* User info */}
           <div className="p-4 border-t border-border/70">
+            {organizations.length > 1 && (
+              <label className="mb-3 block space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Organizacion</span>
+                <select
+                  value={activeOrganizationID}
+                  onChange={(event) => handleOrganizationChange(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-border/70 bg-background/70 px-3 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring"
+                >
+                  {organizations.map((organization) => (
+                    <option key={organization.id} value={organization.id}>
+                      {organization.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="flex items-center justify-between mb-3">
               <ThemeToggle />
             </div>

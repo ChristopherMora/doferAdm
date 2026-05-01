@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -649,6 +650,41 @@ func (r *PostgresUserRepository) RemoveOrganizationMember(organizationID, userID
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (r *PostgresUserRepository) LogOrganizationAudit(organizationID, actorUserID, action, entityType, entityID string, metadata map[string]interface{}) error {
+	organizationID = strings.TrimSpace(organizationID)
+	actorUserID = strings.TrimSpace(actorUserID)
+	action = strings.TrimSpace(action)
+	entityType = strings.TrimSpace(entityType)
+	entityID = strings.TrimSpace(entityID)
+	if organizationID == "" || action == "" || entityType == "" {
+		return errors.New("audit log requires organization, action and entity type")
+	}
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	var actor interface{}
+	if isUUID(actorUserID) {
+		actor = actorUserID
+	}
+
+	_, err = r.db.Exec(context.Background(), `
+		INSERT INTO organization_audit_logs (
+			organization_id, actor_user_id, action, entity_type, entity_id, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6)
+	`, organizationID, actor, action, entityType, entityID, metadataJSON)
+	return err
+}
+
+func isUUID(value string) bool {
+	return regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`).MatchString(value)
 }
 
 func isValidRole(role string) bool {
