@@ -21,6 +21,16 @@ type User struct {
 	UpdatedAt time.Time
 }
 
+type OrganizationMember struct {
+	UserID              string    `json:"user_id"`
+	Email               string    `json:"email"`
+	FullName            string    `json:"full_name"`
+	UserRole            Role      `json:"user_role"`
+	OrganizationID      string    `json:"organization_id"`
+	OrganizationRole    Role      `json:"organization_role"`
+	MembershipCreatedAt time.Time `json:"membership_created_at"`
+}
+
 func (r Role) IsValid() bool {
 	return r == RoleAdmin || r == RoleOperator || r == RoleViewer
 }

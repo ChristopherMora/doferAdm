@@ -95,19 +95,154 @@ func (r *PostgresUserRepository) Create(user *domain.User) error {
 	return err
 }
 
-// UpsertUser inserta el usuario si no existe. Si ya existe, no hace nada.
-// El role por defecto es 'operator'; un admin puede cambiarlo después.
-func (r *PostgresUserRepository) UpsertUser(id, email, fullName string) error {
-	query := `
-		INSERT INTO users (id, email, full_name, role, created_at, updated_at)
-		VALUES ($1, $2, $3, 'operator', NOW(), NOW())
-		ON CONFLICT (id) DO NOTHING
-	`
+const defaultOrganizationID = "00000000-0000-0000-0000-000000000001"
+
+// UpsertUser sincroniza el usuario de Supabase con el usuario local.
+// Si ya existe un usuario local con el mismo email, conserva su ID local y
+// enlaza el subject de Supabase en auth_user_id.
+func (r *PostgresUserRepository) UpsertUser(id, email, fullName, role string) (string, error) {
+	ctx := context.Background()
+	id = strings.TrimSpace(id)
+	email = strings.TrimSpace(email)
+	role = normalizeRole(role)
+	if id == "" {
+		return "", errors.New("user ID is required")
+	}
+	if email == "" {
+		email = id + "@unknown.local"
+	}
 	if fullName == "" {
 		fullName = email
 	}
-	_, err := r.db.Exec(context.Background(), query, id, email, fullName)
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	localUserID, err := r.findOrCreateSyncedUser(ctx, tx, id, email, fullName, role)
+	if err != nil {
+		return "", err
+	}
+
+	if err := r.ensureDefaultOrganizationMembership(ctx, tx, localUserID); err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+
+	return localUserID, nil
+}
+
+func (r *PostgresUserRepository) findOrCreateSyncedUser(ctx context.Context, tx pgx.Tx, authUserID, email, fullName, role string) (string, error) {
+	var localUserID string
+	err := tx.QueryRow(ctx, `
+		SELECT id::text
+		FROM users
+		WHERE id = $1 OR auth_user_id = $1
+		LIMIT 1
+	`, authUserID).Scan(&localUserID)
+	if err == nil {
+		_, err = tx.Exec(ctx, `
+			UPDATE users
+			SET email = $2,
+			    full_name = COALESCE(NULLIF($3, ''), full_name),
+			    auth_user_id = COALESCE(auth_user_id, $1),
+			    updated_at = NOW()
+			WHERE id = $4
+		`, authUserID, email, fullName, localUserID)
+		return localUserID, err
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+
+	err = tx.QueryRow(ctx, `
+		SELECT id::text
+		FROM users
+		WHERE lower(email) = lower($1)
+		LIMIT 1
+	`, email).Scan(&localUserID)
+	if err == nil {
+		_, err = tx.Exec(ctx, `
+			UPDATE users
+			SET full_name = COALESCE(NULLIF($2, ''), full_name),
+			    auth_user_id = $3,
+			    updated_at = NOW()
+			WHERE id = $1
+		`, localUserID, fullName, authUserID)
+		return localUserID, err
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO users (id, auth_user_id, email, full_name, role, created_at, updated_at)
+		VALUES ($1, $1, $2, $3, $4, NOW(), NOW())
+		RETURNING id::text
+	`, authUserID, email, fullName, role).Scan(&localUserID)
+	if err != nil {
+		return "", err
+	}
+
+	return localUserID, nil
+}
+
+func (r *PostgresUserRepository) ensureDefaultOrganizationMembership(ctx context.Context, tx pgx.Tx, userID string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug, created_by)
+		VALUES ($1, 'DOFER', 'dofer', NULL)
+		ON CONFLICT (id) DO UPDATE
+		SET name = EXCLUDED.name,
+		    slug = EXCLUDED.slug,
+		    updated_at = NOW()
+	`, defaultOrganizationID)
+	if err != nil {
+		return err
+	}
+
+	var membershipCount int
+	err = tx.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM organization_members
+		WHERE organization_id = $1
+	`, defaultOrganizationID).Scan(&membershipCount)
+	if err != nil {
+		return err
+	}
+
+	role := "operator"
+	err = tx.QueryRow(ctx, `
+		SELECT CASE WHEN role IN ('admin', 'operator', 'viewer') THEN role ELSE 'operator' END
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(&role)
+	if err != nil {
+		return err
+	}
+	if membershipCount == 0 {
+		role = "admin"
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO organization_members (organization_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (organization_id, user_id) DO NOTHING
+	`, defaultOrganizationID, userID, role)
 	return err
+}
+
+func normalizeRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "admin", "operator", "viewer":
+		return strings.ToLower(strings.TrimSpace(role))
+	default:
+		return "operator"
+	}
 }
 
 func (r *PostgresUserRepository) ResolveOrganization(userID, requestedOrganizationID string) (string, string, error) {
@@ -241,4 +376,142 @@ func (r *PostgresUserRepository) Update(user *domain.User) error {
 	)
 
 	return err
+}
+
+func (r *PostgresUserRepository) ListOrganizationMembers(organizationID string) ([]domain.OrganizationMember, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+
+	rows, err := r.db.Query(context.Background(), `
+		SELECT
+			u.id::text,
+			u.email,
+			COALESCE(u.full_name, ''),
+			u.role,
+			om.organization_id::text,
+			om.role,
+			om.created_at
+		FROM organization_members om
+		INNER JOIN users u ON u.id = om.user_id
+		WHERE om.organization_id = $1
+		ORDER BY
+			CASE om.role
+				WHEN 'admin' THEN 1
+				WHEN 'operator' THEN 2
+				ELSE 3
+			END,
+			lower(u.email)
+	`, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := make([]domain.OrganizationMember, 0)
+	for rows.Next() {
+		var member domain.OrganizationMember
+		var userRole, organizationRole string
+		if err := rows.Scan(
+			&member.UserID,
+			&member.Email,
+			&member.FullName,
+			&userRole,
+			&member.OrganizationID,
+			&organizationRole,
+			&member.MembershipCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		member.UserRole = domain.Role(userRole)
+		member.OrganizationRole = domain.Role(organizationRole)
+		members = append(members, member)
+	}
+
+	return members, rows.Err()
+}
+
+func (r *PostgresUserRepository) UpdateOrganizationMemberRole(organizationID, userID, role string) error {
+	organizationID = strings.TrimSpace(organizationID)
+	userID = strings.TrimSpace(userID)
+	role = strings.ToLower(strings.TrimSpace(role))
+	if organizationID == "" {
+		return errors.New("organization ID is required")
+	}
+	if userID == "" {
+		return errors.New("user ID is required")
+	}
+	if !isValidRole(role) {
+		return errors.New("invalid role")
+	}
+
+	ctx := context.Background()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var currentRole string
+	err = tx.QueryRow(ctx, `
+		SELECT role
+		FROM organization_members
+		WHERE organization_id = $1 AND user_id = $2
+		FOR UPDATE
+	`, organizationID, userID).Scan(&currentRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("organization member not found")
+		}
+		return err
+	}
+
+	if currentRole == "admin" && role != "admin" {
+		var otherAdmins int
+		err = tx.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM organization_members
+			WHERE organization_id = $1
+			  AND user_id <> $2
+			  AND role = 'admin'
+		`, organizationID, userID).Scan(&otherAdmins)
+		if err != nil {
+			return err
+		}
+		if otherAdmins == 0 {
+			return errors.New("organization must keep at least one admin")
+		}
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE organization_members
+		SET role = $3,
+		    updated_at = NOW()
+		WHERE organization_id = $1 AND user_id = $2
+	`, organizationID, userID, role)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE users
+		SET role = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, userID, role)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func isValidRole(role string) bool {
+	switch role {
+	case "admin", "operator", "viewer":
+		return true
+	default:
+		return false
+	}
 }

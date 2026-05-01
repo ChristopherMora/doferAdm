@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS order_payments (
 );
 
 -- Índices
-CREATE INDEX idx_order_payments_order_id ON order_payments(order_id);
-CREATE INDEX idx_order_payments_date ON order_payments(payment_date DESC);
+CREATE INDEX IF NOT EXISTS idx_order_payments_order_id ON order_payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_payments_date ON order_payments(payment_date DESC);
 
 -- Comentarios
 COMMENT ON TABLE order_payments IS 'Registro de pagos realizados para cada orden';

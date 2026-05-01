@@ -44,7 +44,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Organization-ID"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -70,7 +70,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// Setup auth handlers
 	getUserHandler := app.NewGetUserByIDHandler(userRepo)
-	authHandler := authTransport.NewAuthHandler(getUserHandler)
+	authHandler := authTransport.NewAuthHandler(getUserHandler, userRepo)
 
 	// Setup order handlers
 	createOrderHandler := ordersApp.NewCreateOrderHandler(orderRepo)

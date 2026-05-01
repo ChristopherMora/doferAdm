@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -510,7 +511,7 @@ func OrganizationRoleFromContext(ctx context.Context) (string, bool) {
 // UserSyncer es la interfaz que el repositorio de usuarios debe implementar
 // para sincronizar usuarios de Supabase a la base de datos local.
 type UserSyncer interface {
-	UpsertUser(id, email, fullName string) error
+	UpsertUser(id, email, fullName, role string) (string, error)
 }
 
 type OrganizationResolver interface {
@@ -532,9 +533,16 @@ func SyncUser(syncer UserSyncer) func(http.Handler) http.Handler {
 				if name == "" {
 					name = email
 				}
-				// Ignoramos el error: si falla el upsert, dejamos pasar igualmente
-				// para no bloquear requests por problemas de sync de usuario
-				_ = syncer.UpsertUser(userID, email, name)
+				role, _ := UserRoleFromContext(r.Context())
+				localUserID, err := syncer.UpsertUser(userID, email, name, role)
+				if err != nil {
+					slog.Warn("user sync failed", slog.Any("error", err), slog.String("user_id", userID))
+				}
+				if err == nil && localUserID != "" && localUserID != userID {
+					ctx := context.WithValue(r.Context(), UserIDKey, localUserID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -553,6 +561,7 @@ func RequireOrganization(resolver OrganizationResolver) func(http.Handler) http.
 			requestedOrganizationID := strings.TrimSpace(r.Header.Get("X-Organization-ID"))
 			organizationID, role, err := resolver.ResolveOrganization(userID, requestedOrganizationID)
 			if err != nil {
+				slog.Warn("organization resolution failed", slog.Any("error", err), slog.String("user_id", userID))
 				http.Error(w, "organization not available", http.StatusForbidden)
 				return
 			}

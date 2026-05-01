@@ -11,6 +11,12 @@ func RegisterRoutes(r chi.Router, handler *AuthHandler) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth)
 			r.Get("/me", handler.GetMe)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole("admin"))
+				r.Get("/organization/members", handler.ListOrganizationMembers)
+				r.Patch("/organization/members/{userID}/role", handler.UpdateOrganizationMemberRole)
+			})
 		})
 	})
 }

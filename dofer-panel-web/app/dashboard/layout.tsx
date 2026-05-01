@@ -14,6 +14,18 @@ interface OrderStats {
   orders_by_status?: Record<string, number>
 }
 
+interface CurrentUser {
+  email: string
+  role: 'admin' | 'operator' | 'viewer' | string
+  organization_role?: 'admin' | 'operator' | 'viewer' | string
+}
+
+const roleLabels: Record<string, string> = {
+  admin: 'Administrador',
+  operator: 'Operador',
+  viewer: 'Lectura',
+}
+
 // Componente de breadcrumbs para navegación contextual
 const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
   const segments = pathname.split('/').filter(Boolean)
@@ -168,6 +180,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string>('admin')
   const [searchTerm, setSearchTerm] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -260,6 +273,13 @@ export default function DashboardLayout({
       if (user) {
         setUserEmail(user.email || null)
       }
+      try {
+        const currentUser = await apiClient.get<CurrentUser>('/auth/me')
+        setUserEmail(currentUser.email || user?.email || null)
+        setUserRole(currentUser.organization_role || currentUser.role || 'admin')
+      } catch (error) {
+        console.error('Error loading current user:', error)
+      }
     }
     getUser()
     
@@ -325,6 +345,7 @@ export default function DashboardLayout({
         { name: 'Impresoras', href: '/dashboard/printers', icon: '🖨️' },
         { name: 'Productos', href: '/dashboard/products', icon: '🎨' },
         { name: 'Calculadora', href: '/dashboard/calculadora', icon: '🧮' },
+        { name: 'Usuarios', href: '/dashboard/settings/users', icon: '👤' },
         { name: 'General', href: '/dashboard/settings', icon: '🔧' },
       ]
     },
@@ -489,7 +510,7 @@ export default function DashboardLayout({
                 <p className="text-sm font-medium text-foreground truncate">
                   {userEmail || 'Usuario'}
                 </p>
-                <p className="text-xs text-muted-foreground">Administrador</p>
+                <p className="text-xs text-muted-foreground">{roleLabels[userRole] || userRole}</p>
               </div>
               <button
                 onClick={handleLogout}

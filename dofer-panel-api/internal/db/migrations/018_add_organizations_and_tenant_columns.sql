@@ -36,7 +36,7 @@ VALUES (
     '00000000-0000-0000-0000-000000000001',
     'DOFER',
     'dofer',
-    '11111111-1111-1111-1111-111111111111'
+    NULL
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -163,20 +163,32 @@ ALTER TABLE IF EXISTS order_history ALTER COLUMN organization_id SET NOT NULL;
 ALTER TABLE IF EXISTS order_time_entries ALTER COLUMN organization_id SET NOT NULL;
 
 ALTER TABLE IF EXISTS orders
+    DROP CONSTRAINT IF EXISTS orders_organization_id_fkey;
+ALTER TABLE IF EXISTS orders
     ADD CONSTRAINT orders_organization_id_fkey
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
+ALTER TABLE IF EXISTS quotes
+    DROP CONSTRAINT IF EXISTS quotes_organization_id_fkey;
 ALTER TABLE IF EXISTS quotes
     ADD CONSTRAINT quotes_organization_id_fkey
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 ALTER TABLE IF EXISTS customers
+    DROP CONSTRAINT IF EXISTS customers_organization_id_fkey;
+ALTER TABLE IF EXISTS customers
     ADD CONSTRAINT customers_organization_id_fkey
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
+ALTER TABLE IF EXISTS products
+    DROP CONSTRAINT IF EXISTS products_organization_id_fkey;
 ALTER TABLE IF EXISTS products
     ADD CONSTRAINT products_organization_id_fkey
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 ALTER TABLE IF EXISTS printers
+    DROP CONSTRAINT IF EXISTS printers_organization_id_fkey;
+ALTER TABLE IF EXISTS printers
     ADD CONSTRAINT printers_organization_id_fkey
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
+ALTER TABLE IF EXISTS cost_settings
+    DROP CONSTRAINT IF EXISTS cost_settings_organization_id_fkey;
 ALTER TABLE IF EXISTS cost_settings
     ADD CONSTRAINT cost_settings_organization_id_fkey
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
