@@ -20,14 +20,16 @@ func NewRecalculateOrderTotalsHandler(repo domain.OrderRepository) *RecalculateO
 }
 
 func (h *RecalculateOrderTotalsHandler) Handle(ctx context.Context, cmd RecalculateOrderTotalsCommand) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Obtener la orden
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationID)
 	if err != nil {
 		return err
 	}
 
 	// Calcular el total desde los items
-	items, err := h.repo.GetOrderItems(cmd.OrderID)
+	items, err := h.repo.GetOrderItems(cmd.OrderID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -41,7 +43,7 @@ func (h *RecalculateOrderTotalsHandler) Handle(ctx context.Context, cmd Recalcul
 	}
 
 	// Calcular el total pagado desde los pagos
-	payments, err := h.repo.GetPayments(cmd.OrderID)
+	payments, err := h.repo.GetPayments(cmd.OrderID, organizationID)
 	if err != nil {
 		return err
 	}

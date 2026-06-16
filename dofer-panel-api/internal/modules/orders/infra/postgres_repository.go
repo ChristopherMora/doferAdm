@@ -21,14 +21,18 @@ func NewPostgresOrderRepository(db *pgxpool.Pool) *PostgresOrderRepository {
 }
 
 func (r *PostgresOrderRepository) Create(order *domain.Order) error {
+	if err := r.ensureMonthlyOrderLimit(order.OrganizationID); err != nil {
+		return err
+	}
+
 	query := `
 		INSERT INTO orders (
-			id, public_id, order_number, platform, status, priority,
+			id, organization_id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata, delivery_deadline,
 			affiliate_id, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	metadata, _ := json.Marshal(order.Metadata)
@@ -42,6 +46,7 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 		context.Background(),
 		query,
 		order.ID,
+		order.OrganizationID,
 		order.PublicID,
 		order.OrderNumber,
 		order.Platform,
@@ -67,9 +72,41 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 	return err
 }
 
-func (r *PostgresOrderRepository) FindByID(id string) (*domain.Order, error) {
+func (r *PostgresOrderRepository) ensureMonthlyOrderLimit(organizationID string) error {
+	if organizationID == "" {
+		return nil
+	}
+
+	var maxOrdersPerMonth, currentMonthOrders int
+	err := r.db.QueryRow(context.Background(), `
+		SELECT
+			COALESCE(max_orders_per_month, 0),
+			(
+				SELECT COUNT(*)
+				FROM orders
+				WHERE organization_id = $1
+				  AND created_at >= date_trunc('month', NOW())
+			)
+		FROM organizations
+		WHERE id = $1
+	`, organizationID).Scan(&maxOrdersPerMonth, &currentMonthOrders)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	if maxOrdersPerMonth > 0 && currentMonthOrders >= maxOrdersPerMonth {
+		return errors.New("organization monthly order limit reached")
+	}
+
+	return nil
+}
+
+func (r *PostgresOrderRepository) FindByID(id string, organizationID ...string) (*domain.Order, error) {
 	query := `
-		SELECT id, public_id, order_number, platform, status, priority,
+		SELECT id, organization_id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
@@ -79,12 +116,18 @@ func (r *PostgresOrderRepository) FindByID(id string) (*domain.Order, error) {
 		WHERE id = $1
 	`
 
-	return r.scanOrder(r.db.QueryRow(context.Background(), query, id))
+	args := []interface{}{id}
+	if len(organizationID) > 0 && organizationID[0] != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID[0])
+	}
+
+	return r.scanOrder(r.db.QueryRow(context.Background(), query, args...))
 }
 
 func (r *PostgresOrderRepository) FindByPublicID(publicID string) (*domain.Order, error) {
 	query := `
-		SELECT id, public_id, order_number, platform, status, priority,
+		SELECT id, organization_id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
@@ -99,7 +142,7 @@ func (r *PostgresOrderRepository) FindByPublicID(publicID string) (*domain.Order
 
 func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domain.Order, error) {
 	query := `
-		SELECT id, public_id, order_number, platform, status, priority,
+		SELECT id, organization_id, public_id, order_number, platform, status, priority,
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
@@ -111,6 +154,12 @@ func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domai
 
 	args := []interface{}{}
 	argPos := 1
+
+	if filters.OrganizationID != "" {
+		query += fmt.Sprintf(" AND organization_id = $%d", argPos)
+		args = append(args, filters.OrganizationID)
+		argPos++
+	}
 
 	if filters.Status != "" {
 		query += fmt.Sprintf(" AND status = $%d", argPos)
@@ -179,6 +228,10 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 		WHERE id = $1
 	`
 
+	if order.OrganizationID != "" {
+		query += " AND organization_id = $14"
+	}
+
 	// Handle NULL values for optional fields
 	var assignedTo interface{}
 	if order.AssignedTo == "" {
@@ -201,9 +254,7 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 		internalNotes = order.InternalNotes
 	}
 
-	_, err := r.db.Exec(
-		context.Background(),
-		query,
+	args := []interface{}{
 		order.ID,
 		order.Status,
 		order.Priority,
@@ -217,8 +268,12 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 		order.AmountPaid,
 		order.Balance,
 		order.DeliveryDeadline,
-	)
+	}
+	if order.OrganizationID != "" {
+		args = append(args, order.OrganizationID)
+	}
 
+	_, err := r.db.Exec(context.Background(), query, args...)
 	return err
 }
 
@@ -230,6 +285,7 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 
 	err := row.Scan(
 		&order.ID,
+		&order.OrganizationID,
 		&order.PublicID,
 		&order.OrderNumber,
 		&order.Platform,
@@ -320,6 +376,7 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 
 	err := rows.Scan(
 		&order.ID,
+		&order.OrganizationID,
 		&order.PublicID,
 		&order.OrderNumber,
 		&order.Platform,

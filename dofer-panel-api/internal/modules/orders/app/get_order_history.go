@@ -19,5 +19,5 @@ func NewGetOrderHistoryHandler(historyRepo domain.OrderHistoryRepository) *GetOr
 }
 
 func (h *GetOrderHistoryHandler) Handle(ctx context.Context, query GetOrderHistoryQuery) ([]*domain.OrderHistoryEntry, error) {
-	return h.historyRepo.FindByOrderID(query.OrderID)
+	return h.historyRepo.FindByOrderID(query.OrderID, organizationIDFromContext(ctx))
 }

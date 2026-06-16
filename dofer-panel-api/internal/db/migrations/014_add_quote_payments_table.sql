@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS quote_payments (
 );
 
 -- Índices
-CREATE INDEX idx_quote_payments_quote_id ON quote_payments(quote_id);
-CREATE INDEX idx_quote_payments_date ON quote_payments(payment_date DESC);
+CREATE INDEX IF NOT EXISTS idx_quote_payments_quote_id ON quote_payments(quote_id);
+CREATE INDEX IF NOT EXISTS idx_quote_payments_date ON quote_payments(payment_date DESC);
 
 -- Comentarios
 COMMENT ON TABLE quote_payments IS 'Registro de pagos realizados para cada cotización';

@@ -11,13 +11,14 @@ import (
 func (r *PostgresQuoteRepository) CreateTemplate(template *domain.QuoteTemplate) error {
 	query := `
 		INSERT INTO quote_templates (
-			id, name, description, material,
+			id, organization_id, name, description, material,
 			infill_percentage, layer_height, print_speed, base_cost, markup_percentage, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err := r.db.Exec(context.Background(), query,
 		template.ID,
+		template.OrganizationID,
 		template.Name,
 		template.Description,
 		template.Material,
@@ -32,20 +33,26 @@ func (r *PostgresQuoteRepository) CreateTemplate(template *domain.QuoteTemplate)
 	return err
 }
 
-func (r *PostgresQuoteRepository) FindTemplateByID(id string) (*domain.QuoteTemplate, error) {
+func (r *PostgresQuoteRepository) FindTemplateByID(id string, organizationID ...string) (*domain.QuoteTemplate, error) {
 	query := `
-		SELECT id, name, description, material,
+		SELECT id, organization_id, name, description, material,
 		       infill_percentage, layer_height, print_speed, base_cost, markup_percentage,
 		       created_by, created_at, updated_at
 		FROM quote_templates
 		WHERE id = $1
 	`
+	args := []interface{}{id}
+	if len(organizationID) > 0 && organizationID[0] != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID[0])
+	}
 
 	var template domain.QuoteTemplate
 	var description, createdBy sql.NullString
 
-	err := r.db.QueryRow(context.Background(), query, id).Scan(
+	err := r.db.QueryRow(context.Background(), query, args...).Scan(
 		&template.ID,
+		&template.OrganizationID,
 		&template.Name,
 		&description,
 		&template.Material,
@@ -77,14 +84,23 @@ func (r *PostgresQuoteRepository) FindTemplateByID(id string) (*domain.QuoteTemp
 
 func (r *PostgresQuoteRepository) FindAllTemplates(filters map[string]interface{}) ([]*domain.QuoteTemplate, error) {
 	query := `
-		SELECT id, name, description, material,
+		SELECT id, organization_id, name, description, material,
 		       infill_percentage, layer_height, print_speed, base_cost, markup_percentage,
 		       created_by, created_at, updated_at
 		FROM quote_templates
-		ORDER BY created_at DESC
+		WHERE 1=1
 	`
 
-	rows, err := r.db.Query(context.Background(), query)
+	args := []interface{}{}
+	if filters != nil {
+		if organizationID, ok := filters["organization_id"].(string); ok && organizationID != "" {
+			query += " AND organization_id = $1"
+			args = append(args, organizationID)
+		}
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := r.db.Query(context.Background(), query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +113,7 @@ func (r *PostgresQuoteRepository) FindAllTemplates(filters map[string]interface{
 
 		err := rows.Scan(
 			&template.ID,
+			&template.OrganizationID,
 			&template.Name,
 			&description,
 			&template.Material,
@@ -138,7 +155,7 @@ func (r *PostgresQuoteRepository) UpdateTemplate(template *domain.QuoteTemplate)
 		    base_cost = $7,
 		    markup_percentage = $8,
 		    updated_at = NOW()
-		WHERE id = $9
+		WHERE id = $9 AND organization_id = $10
 	`
 
 	result, err := r.db.Exec(context.Background(), query,
@@ -151,6 +168,7 @@ func (r *PostgresQuoteRepository) UpdateTemplate(template *domain.QuoteTemplate)
 		template.BaseCost,
 		template.MarkupPercentage,
 		template.ID,
+		template.OrganizationID,
 	)
 
 	if err != nil {
@@ -163,8 +181,15 @@ func (r *PostgresQuoteRepository) UpdateTemplate(template *domain.QuoteTemplate)
 	return nil
 }
 
-func (r *PostgresQuoteRepository) DeleteTemplate(id string) error {
-	result, err := r.db.Exec(context.Background(), "DELETE FROM quote_templates WHERE id = $1", id)
+func (r *PostgresQuoteRepository) DeleteTemplate(id string, organizationID ...string) error {
+	query := "DELETE FROM quote_templates WHERE id = $1"
+	args := []interface{}{id}
+	if len(organizationID) > 0 && organizationID[0] != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID[0])
+	}
+
+	result, err := r.db.Exec(context.Background(), query, args...)
 	if err != nil {
 		return err
 	}

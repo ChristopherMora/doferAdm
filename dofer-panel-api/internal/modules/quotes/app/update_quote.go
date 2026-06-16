@@ -24,7 +24,7 @@ func NewUpdateQuoteHandler(repo domain.QuoteRepository) *UpdateQuoteHandler {
 
 func (h *UpdateQuoteHandler) Handle(ctx context.Context, cmd UpdateQuoteCommand) (*domain.Quote, error) {
 	// Get existing quote
-	quote, err := h.repo.FindByID(cmd.QuoteID)
+	quote, err := h.repo.FindByID(cmd.QuoteID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

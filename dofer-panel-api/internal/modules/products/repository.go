@@ -12,7 +12,7 @@ import (
 )
 
 const productSelectColumns = `
-	id, sku, name, description, stl_file_path,
+	id, organization_id, sku, name, description, stl_file_path,
 	estimated_print_time_minutes, material, color, is_active, image_url,
 	suggested_price, created_at, updated_at
 `
@@ -44,6 +44,7 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 
 	err := row.Scan(
 		&product.ID,
+		&product.OrganizationID,
 		&product.SKU,
 		&product.Name,
 		&description,
@@ -87,10 +88,10 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 	return &product, nil
 }
 
-func (r *Repository) List(ctx context.Context, queryText string, active *bool, limit, offset int) ([]Product, error) {
-	query := "SELECT " + productSelectColumns + " FROM products WHERE 1=1"
-	args := []interface{}{}
-	argNum := 1
+func (r *Repository) List(ctx context.Context, organizationID string, queryText string, active *bool, limit, offset int) ([]Product, error) {
+	query := "SELECT " + productSelectColumns + " FROM products WHERE organization_id = $1"
+	args := []interface{}{organizationID}
+	argNum := 2
 
 	if strings.TrimSpace(queryText) != "" {
 		query += fmt.Sprintf(" AND (name ILIKE $%d OR sku ILIKE $%d OR COALESCE(description, '') ILIKE $%d)", argNum, argNum, argNum)
@@ -135,8 +136,8 @@ func (r *Repository) List(ctx context.Context, queryText string, active *bool, l
 	return products, rows.Err()
 }
 
-func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Product, error) {
-	row := r.db.QueryRow(ctx, "SELECT "+productSelectColumns+" FROM products WHERE id = $1", id)
+func (r *Repository) GetByID(ctx context.Context, organizationID string, id uuid.UUID) (*Product, error) {
+	row := r.db.QueryRow(ctx, "SELECT "+productSelectColumns+" FROM products WHERE id = $1 AND organization_id = $2", id, organizationID)
 	product, err := scanProductRow(row)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -147,7 +148,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Product, error
 	return product, nil
 }
 
-func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Product, error) {
+func (r *Repository) Create(ctx context.Context, organizationID string, req CreateProductRequest) (*Product, error) {
 	sku := strings.TrimSpace(req.SKU)
 	name := strings.TrimSpace(req.Name)
 	if sku == "" {
@@ -164,10 +165,11 @@ func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Pro
 
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
-			sku, name, description, stl_file_path, estimated_print_time_minutes,
+			organization_id, sku, name, description, stl_file_path, estimated_print_time_minutes,
 			material, color, is_active, image_url, suggested_price
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING `+productSelectColumns,
+		organizationID,
 		sku,
 		name,
 		sanitizeOptionalString(req.Description),
@@ -183,7 +185,7 @@ func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Pro
 	return scanProductRow(row)
 }
 
-func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdateProductRequest) (*Product, error) {
+func (r *Repository) Update(ctx context.Context, organizationID string, id uuid.UUID, req UpdateProductRequest) (*Product, error) {
 	query := "UPDATE products SET updated_at = CURRENT_TIMESTAMP"
 	args := []interface{}{}
 	argNum := 1
@@ -256,23 +258,28 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdateProduct
 		argNum++
 	}
 
-	query += fmt.Sprintf(" WHERE id = $%d RETURNING %s", argNum, productSelectColumns)
+	query += fmt.Sprintf(" WHERE id = $%d", argNum)
 	args = append(args, id)
+	argNum++
+
+	query += fmt.Sprintf(" AND organization_id = $%d RETURNING %s", argNum, productSelectColumns)
+	args = append(args, organizationID)
 
 	row := r.db.QueryRow(ctx, query, args...)
 	return scanProductRow(row)
 }
 
-func (r *Repository) UpdateActive(ctx context.Context, id uuid.UUID, isActive bool) (*Product, error) {
+func (r *Repository) UpdateActive(ctx context.Context, organizationID string, id uuid.UUID, isActive bool) (*Product, error) {
 	row := r.db.QueryRow(ctx,
-		"UPDATE products SET is_active = $1, updated_at = NOW() WHERE id = $2 RETURNING "+productSelectColumns,
+		"UPDATE products SET is_active = $1, updated_at = NOW() WHERE id = $2 AND organization_id = $3 RETURNING "+productSelectColumns,
 		isActive,
 		id,
+		organizationID,
 	)
 	return scanProductRow(row)
 }
 
-func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, "DELETE FROM products WHERE id = $1", id)
+func (r *Repository) Delete(ctx context.Context, organizationID string, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, "DELETE FROM products WHERE id = $1 AND organization_id = $2", id, organizationID)
 	return err
 }

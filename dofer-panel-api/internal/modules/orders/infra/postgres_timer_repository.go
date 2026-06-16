@@ -18,7 +18,7 @@ func NewPostgresTimerRepository(pool *pgxpool.Pool) *PostgresTimerRepository {
 }
 
 // StartTimer inicia el timer de una orden
-func (r *PostgresTimerRepository) StartTimer(orderID string, operatorID *string) error {
+func (r *PostgresTimerRepository) StartTimer(orderID, organizationID string, operatorID *string) error {
 	ctx := context.Background()
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -30,8 +30,8 @@ func (r *PostgresTimerRepository) StartTimer(orderID string, operatorID *string)
 
 	// Verificar que el timer no esté corriendo directamente desde la BD
 	var isRunning bool
-	checkQuery := `SELECT COALESCE(is_timer_running, false) FROM orders WHERE id = $1`
-	err = tx.QueryRow(ctx, checkQuery, orderID).Scan(&isRunning)
+	checkQuery := `SELECT COALESCE(is_timer_running, false) FROM orders WHERE id = $1 AND organization_id = $2`
+	err = tx.QueryRow(ctx, checkQuery, orderID, organizationID).Scan(&isRunning)
 	if err != nil {
 		return err
 	}
@@ -47,19 +47,21 @@ func (r *PostgresTimerRepository) StartTimer(orderID string, operatorID *string)
 		    is_timer_running = true,
 		    timer_paused_at = NULL,
 		    updated_at = $1
-		WHERE id = $2
+		WHERE id = $2 AND organization_id = $3
 	`
-	_, err = tx.Exec(ctx, query, now, orderID)
+	_, err = tx.Exec(ctx, query, now, orderID, organizationID)
 	if err != nil {
 		return err
 	}
 
 	// Crear entrada de tiempo
 	entryQuery := `
-		INSERT INTO order_time_entries (order_id, operator_id, started_at, status)
-		VALUES ($1, $2, $3, 'active')
+		INSERT INTO order_time_entries (organization_id, order_id, operator_id, started_at, status)
+		SELECT organization_id, $1, $2, $3, 'active'
+		FROM orders
+		WHERE id = $1 AND organization_id = $4
 	`
-	_, err = tx.Exec(ctx, entryQuery, orderID, operatorID, now)
+	_, err = tx.Exec(ctx, entryQuery, orderID, operatorID, now, organizationID)
 	if err != nil {
 		return err
 	}
@@ -68,7 +70,7 @@ func (r *PostgresTimerRepository) StartTimer(orderID string, operatorID *string)
 }
 
 // PauseTimer pausa el timer actual
-func (r *PostgresTimerRepository) PauseTimer(orderID string) error {
+func (r *PostgresTimerRepository) PauseTimer(orderID, organizationID string) error {
 	ctx := context.Background()
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -84,9 +86,9 @@ func (r *PostgresTimerRepository) PauseTimer(orderID string) error {
 	query := `
 		SELECT timer_started_at, COALESCE(timer_total_paused_minutes, 0)
 		FROM orders 
-		WHERE id = $1
+		WHERE id = $1 AND organization_id = $2
 	`
-	err = tx.QueryRow(ctx, query, orderID).Scan(&startedAt, &totalPaused)
+	err = tx.QueryRow(ctx, query, orderID, organizationID).Scan(&startedAt, &totalPaused)
 	if err != nil {
 		return err
 	}
@@ -101,9 +103,9 @@ func (r *PostgresTimerRepository) PauseTimer(orderID string) error {
 		    is_timer_running = false,
 		    actual_time_minutes = actual_time_minutes + $2,
 		    updated_at = $1
-		WHERE id = $3
+		WHERE id = $3 AND organization_id = $4
 	`
-	_, err = tx.Exec(ctx, updateQuery, now, sessionMins, orderID)
+	_, err = tx.Exec(ctx, updateQuery, now, sessionMins, orderID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -114,9 +116,9 @@ func (r *PostgresTimerRepository) PauseTimer(orderID string) error {
 		SET ended_at = $1,
 		    duration_minutes = $2,
 		    status = 'paused'
-		WHERE order_id = $3 AND status = 'active'
+		WHERE order_id = $3 AND organization_id = $4 AND status = 'active'
 	`
-	_, err = tx.Exec(ctx, entryQuery, now, sessionMins, orderID)
+	_, err = tx.Exec(ctx, entryQuery, now, sessionMins, orderID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -125,7 +127,7 @@ func (r *PostgresTimerRepository) PauseTimer(orderID string) error {
 }
 
 // StopTimer detiene y completa el timer
-func (r *PostgresTimerRepository) StopTimer(orderID string) error {
+func (r *PostgresTimerRepository) StopTimer(orderID, organizationID string) error {
 	ctx := context.Background()
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -141,9 +143,9 @@ func (r *PostgresTimerRepository) StopTimer(orderID string) error {
 	query := `
 		SELECT timer_started_at, is_timer_running
 		FROM orders 
-		WHERE id = $1
+		WHERE id = $1 AND organization_id = $2
 	`
-	err = tx.QueryRow(ctx, query, orderID).Scan(&startedAt, &isRunning)
+	err = tx.QueryRow(ctx, query, orderID, organizationID).Scan(&startedAt, &isRunning)
 	if err != nil {
 		return err
 	}
@@ -160,9 +162,9 @@ func (r *PostgresTimerRepository) StopTimer(orderID string) error {
 			    timer_started_at = NULL,
 			    timer_paused_at = NULL,
 			    updated_at = $2
-			WHERE id = $3
+			WHERE id = $3 AND organization_id = $4
 		`
-		_, err = tx.Exec(ctx, updateQuery, sessionMins, now, orderID)
+		_, err = tx.Exec(ctx, updateQuery, sessionMins, now, orderID, organizationID)
 		if err != nil {
 			return err
 		}
@@ -173,9 +175,9 @@ func (r *PostgresTimerRepository) StopTimer(orderID string) error {
 			SET ended_at = $1,
 			    duration_minutes = $2,
 			    status = 'completed'
-			WHERE order_id = $3 AND status = 'active'
+			WHERE order_id = $3 AND organization_id = $4 AND status = 'active'
 		`
-		_, err = tx.Exec(ctx, entryQuery, now, sessionMins, orderID)
+		_, err = tx.Exec(ctx, entryQuery, now, sessionMins, orderID, organizationID)
 		if err != nil {
 			return err
 		}
@@ -187,9 +189,9 @@ func (r *PostgresTimerRepository) StopTimer(orderID string) error {
 			    timer_started_at = NULL,
 			    timer_paused_at = NULL,
 			    updated_at = $1
-			WHERE id = $2
+			WHERE id = $2 AND organization_id = $3
 		`
-		_, err = tx.Exec(ctx, updateQuery, now, orderID)
+		_, err = tx.Exec(ctx, updateQuery, now, orderID, organizationID)
 		if err != nil {
 			return err
 		}
@@ -199,9 +201,9 @@ func (r *PostgresTimerRepository) StopTimer(orderID string) error {
 	completeQuery := `
 		UPDATE order_time_entries
 		SET status = 'completed'
-		WHERE order_id = $1 AND status = 'paused'
+		WHERE order_id = $1 AND organization_id = $2 AND status = 'paused'
 	`
-	_, err = tx.Exec(ctx, completeQuery, orderID)
+	_, err = tx.Exec(ctx, completeQuery, orderID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -210,7 +212,7 @@ func (r *PostgresTimerRepository) StopTimer(orderID string) error {
 }
 
 // GetTimerState obtiene el estado actual del timer
-func (r *PostgresTimerRepository) GetTimerState(orderID string) (*domain.TimerState, error) {
+func (r *PostgresTimerRepository) GetTimerState(orderID, organizationID string) (*domain.TimerState, error) {
 	ctx := context.Background()
 
 	query := `
@@ -223,7 +225,7 @@ func (r *PostgresTimerRepository) GetTimerState(orderID string) (*domain.TimerSt
 			COALESCE(is_timer_running, false),
 			COALESCE(timer_total_paused_minutes, 0)
 		FROM orders 
-		WHERE id = $1
+		WHERE id = $1 AND organization_id = $2
 	`
 
 	var id string
@@ -231,7 +233,7 @@ func (r *PostgresTimerRepository) GetTimerState(orderID string) (*domain.TimerSt
 	var startedAt, pausedAt sql.NullTime
 	var isRunning bool
 
-	err := r.pool.QueryRow(ctx, query, orderID).Scan(
+	err := r.pool.QueryRow(ctx, query, orderID, organizationID).Scan(
 		&id,
 		&estimatedMins,
 		&actualMins,
@@ -268,8 +270,10 @@ func (r *PostgresTimerRepository) CreateTimeEntry(entry *domain.TimeEntry) error
 
 	query := `
 		INSERT INTO order_time_entries 
-		(order_id, operator_id, started_at, ended_at, duration_minutes, status, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		(organization_id, order_id, operator_id, started_at, ended_at, duration_minutes, status, notes)
+		SELECT organization_id, $1, $2, $3, $4, $5, $6, $7
+		FROM orders
+		WHERE id = $1 AND organization_id = $8
 	`
 
 	_, err := r.pool.Exec(ctx, query,
@@ -280,24 +284,25 @@ func (r *PostgresTimerRepository) CreateTimeEntry(entry *domain.TimeEntry) error
 		entry.DurationMins,
 		entry.Status,
 		entry.Notes,
+		entry.OrganizationID,
 	)
 
 	return err
 }
 
 // GetTimeEntries obtiene todas las entradas de una orden
-func (r *PostgresTimerRepository) GetTimeEntries(orderID string) ([]*domain.TimeEntry, error) {
+func (r *PostgresTimerRepository) GetTimeEntries(orderID, organizationID string) ([]*domain.TimeEntry, error) {
 	ctx := context.Background()
 
 	query := `
-		SELECT id, order_id, operator_id, started_at, ended_at, 
+		SELECT id, organization_id, order_id, operator_id, started_at, ended_at,
 		       duration_minutes, status, notes, created_at
 		FROM order_time_entries
-		WHERE order_id = $1
+		WHERE order_id = $1 AND organization_id = $2
 		ORDER BY started_at DESC
 	`
 
-	rows, err := r.pool.Query(ctx, query, orderID)
+	rows, err := r.pool.Query(ctx, query, orderID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +317,7 @@ func (r *PostgresTimerRepository) GetTimeEntries(orderID string) ([]*domain.Time
 
 		err := rows.Scan(
 			&entry.ID,
+			&entry.OrganizationID,
 			&entry.OrderID,
 			&operatorID,
 			&entry.StartedAt,
@@ -346,7 +352,7 @@ func (r *PostgresTimerRepository) GetTimeEntries(orderID string) ([]*domain.Time
 }
 
 // GetOperatorStats obtiene estadísticas de un operador
-func (r *PostgresTimerRepository) GetOperatorStats(operatorID string) (*domain.OperatorStats, error) {
+func (r *PostgresTimerRepository) GetOperatorStats(operatorID, organizationID string) (*domain.OperatorStats, error) {
 	ctx := context.Background()
 
 	query := `
@@ -363,13 +369,14 @@ func (r *PostgresTimerRepository) GetOperatorStats(operatorID string) (*domain.O
 				ELSE 0
 			END as estimated_vs_actual
 		FROM users u
-		LEFT JOIN orders o ON o.assigned_to = u.id
+		INNER JOIN organization_members om ON om.user_id = u.id AND om.organization_id = $2
+		LEFT JOIN orders o ON o.assigned_to = u.id AND o.organization_id = om.organization_id
 		WHERE u.id = $1
 		GROUP BY u.id, u.full_name
 	`
 
 	var stats domain.OperatorStats
-	err := r.pool.QueryRow(ctx, query, operatorID).Scan(
+	err := r.pool.QueryRow(ctx, query, operatorID, organizationID).Scan(
 		&stats.OperatorID,
 		&stats.OperatorName,
 		&stats.TotalOrders,
@@ -395,7 +402,7 @@ func (r *PostgresTimerRepository) GetOperatorStats(operatorID string) (*domain.O
 }
 
 // GetAllOperatorsStats obtiene estadísticas de todos los operadores
-func (r *PostgresTimerRepository) GetAllOperatorsStats() ([]*domain.OperatorStats, error) {
+func (r *PostgresTimerRepository) GetAllOperatorsStats(organizationID string) ([]*domain.OperatorStats, error) {
 	ctx := context.Background()
 
 	query := `
@@ -412,14 +419,16 @@ func (r *PostgresTimerRepository) GetAllOperatorsStats() ([]*domain.OperatorStat
 				ELSE 0
 			END as estimated_vs_actual
 		FROM users u
-		LEFT JOIN orders o ON o.assigned_to = u.id
-		WHERE u.role IN ('admin', 'operator')
+		INNER JOIN organization_members om ON om.user_id = u.id
+		LEFT JOIN orders o ON o.assigned_to = u.id AND o.organization_id = om.organization_id
+		WHERE om.organization_id = $1
+		  AND om.role IN ('admin', 'operator')
 		GROUP BY u.id, u.full_name
 		HAVING COUNT(DISTINCT o.id) > 0
 		ORDER BY total_orders DESC
 	`
 
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.pool.Query(ctx, query, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -457,16 +466,16 @@ func (r *PostgresTimerRepository) GetAllOperatorsStats() ([]*domain.OperatorStat
 }
 
 // UpdateEstimatedTime actualiza el tiempo estimado de una orden
-func (r *PostgresTimerRepository) UpdateEstimatedTime(orderID string, minutes int) error {
+func (r *PostgresTimerRepository) UpdateEstimatedTime(orderID, organizationID string, minutes int) error {
 	ctx := context.Background()
 
 	query := `
 		UPDATE orders 
 		SET estimated_time_minutes = $1,
 		    updated_at = $2
-		WHERE id = $3
+		WHERE id = $3 AND organization_id = $4
 	`
 
-	_, err := r.pool.Exec(ctx, query, minutes, time.Now(), orderID)
+	_, err := r.pool.Exec(ctx, query, minutes, time.Now(), orderID, organizationID)
 	return err
 }

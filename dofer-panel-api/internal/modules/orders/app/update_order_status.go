@@ -31,7 +31,7 @@ func NewUpdateOrderStatusHandler(repo domain.OrderRepository, historyRepo domain
 }
 
 func (h *UpdateOrderStatusHandler) Handle(ctx context.Context, cmd UpdateOrderStatusCommand) (*domain.Order, error) {
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, ErrOrderNotFound
 	}

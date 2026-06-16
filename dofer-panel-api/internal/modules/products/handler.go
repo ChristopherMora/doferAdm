@@ -35,6 +35,11 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 	})
 }
 
+func organizationIDFromRequest(r *http.Request) string {
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
+	return organizationID
+}
+
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	queryText := r.URL.Query().Get("q")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -53,7 +58,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		activeFilter = &activeValue
 	}
 
-	products, err := h.repo.List(r.Context(), queryText, activeFilter, limit, offset)
+	products, err := h.repo.List(r.Context(), organizationIDFromRequest(r), queryText, activeFilter, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -70,7 +75,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.repo.GetByID(r.Context(), id)
+	product, err := h.repo.GetByID(r.Context(), organizationIDFromRequest(r), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -91,7 +96,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.repo.Create(r.Context(), req)
+	product, err := h.repo.Create(r.Context(), organizationIDFromRequest(r), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -115,7 +120,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.repo.Update(r.Context(), id, req)
+	product, err := h.repo.Update(r.Context(), organizationIDFromRequest(r), id, req)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			http.Error(w, "product not found", http.StatusNotFound)
@@ -142,7 +147,7 @@ func (h *Handler) UpdateActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.repo.UpdateActive(r.Context(), id, req.IsActive)
+	product, err := h.repo.UpdateActive(r.Context(), organizationIDFromRequest(r), id, req.IsActive)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			http.Error(w, "product not found", http.StatusNotFound)
@@ -163,7 +168,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.Delete(r.Context(), id); err != nil {
+	if err := h.repo.Delete(r.Context(), organizationIDFromRequest(r), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

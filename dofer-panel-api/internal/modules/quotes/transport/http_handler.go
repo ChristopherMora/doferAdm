@@ -104,7 +104,9 @@ type UpdateQuoteRequest struct {
 }
 
 type AddPaymentRequest struct {
-	Amount float64 `json:"amount"`
+	Amount        float64 `json:"amount"`
+	PaymentMethod string  `json:"payment_method"`
+	Notes         string  `json:"notes"`
 }
 
 type CreateQuoteTemplateRequest struct {
@@ -394,9 +396,12 @@ func (h *QuoteHandler) AddPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := app.AddPaymentCommand{
-		QuoteID: quoteID,
-		Amount:  req.Amount,
+		QuoteID:       quoteID,
+		Amount:        req.Amount,
+		PaymentMethod: req.PaymentMethod,
+		Notes:         req.Notes,
 	}
+	cmd.CreatedBy, _ = middleware.UserIDFromContext(r.Context())
 
 	quote, err := h.addPaymentHandler.Handle(r.Context(), cmd)
 	if err != nil {

@@ -54,6 +54,7 @@ func (h *CreateOrderHandler) Handle(ctx context.Context, cmd CreateOrderCommand)
 
 	order.CustomerEmail = cmd.CustomerEmail
 	order.CustomerPhone = cmd.CustomerPhone
+	order.OrganizationID = organizationIDFromContext(ctx)
 	order.ProductImage = cmd.ProductImage
 	order.PrintFile = cmd.PrintFile
 	order.PrintFileName = cmd.PrintFileName

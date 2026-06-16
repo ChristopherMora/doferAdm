@@ -7,6 +7,7 @@ import (
 )
 
 type UpdateOrderItemStatusCommand struct {
+	OrderID     string
 	ItemID      string
 	IsCompleted bool
 }
@@ -20,5 +21,5 @@ func NewUpdateOrderItemStatusHandler(repo domain.OrderRepository) *UpdateOrderIt
 }
 
 func (h *UpdateOrderItemStatusHandler) Handle(ctx context.Context, cmd UpdateOrderItemStatusCommand) error {
-	return h.repo.UpdateOrderItemStatus(cmd.ItemID, cmd.IsCompleted)
+	return h.repo.UpdateOrderItemStatus(cmd.OrderID, cmd.ItemID, organizationIDFromContext(ctx), cmd.IsCompleted)
 }

@@ -41,6 +41,11 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 	})
 }
 
+func organizationIDFromRequest(r *http.Request) string {
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
+	return organizationID
+}
+
 // GetProfile360 returns a consolidated customer profile with orders, quotes, payments, notes and last contact.
 func (h *Handler) GetProfile360(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -49,7 +54,7 @@ func (h *Handler) GetProfile360(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.repo.GetProfile360(r.Context(), id)
+	profile, err := h.repo.GetProfile360(r.Context(), organizationIDFromRequest(r), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -76,7 +81,7 @@ func (h *Handler) GetAll(w http.ResponseWriter, r *http.Request) {
 	}
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	customers, err := h.repo.GetAll(r.Context(), status, tier, segment, limit, offset)
+	customers, err := h.repo.GetAll(r.Context(), organizationIDFromRequest(r), status, tier, segment, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -94,7 +99,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	customer, err := h.repo.GetByID(r.Context(), id)
+	customer, err := h.repo.GetByID(r.Context(), organizationIDFromRequest(r), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -129,7 +134,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	customer, err := h.repo.Create(r.Context(), req, userID)
+	customer, err := h.repo.Create(r.Context(), organizationIDFromRequest(r), req, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -154,7 +159,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	customer, err := h.repo.Update(r.Context(), id, req)
+	customer, err := h.repo.Update(r.Context(), organizationIDFromRequest(r), id, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -172,7 +177,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.repo.Delete(r.Context(), id)
+	err = h.repo.Delete(r.Context(), organizationIDFromRequest(r), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -189,7 +194,7 @@ func (h *Handler) GetAnalytics(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	analytics, err := h.repo.GetAnalytics(r.Context(), limit)
+	analytics, err := h.repo.GetAnalytics(r.Context(), organizationIDFromRequest(r), limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -201,7 +206,7 @@ func (h *Handler) GetAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetStats retrieves overall customer statistics
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.repo.GetStats(r.Context())
+	stats, err := h.repo.GetStats(r.Context(), organizationIDFromRequest(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -219,7 +224,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	customers, err := h.repo.Search(r.Context(), term)
+	customers, err := h.repo.Search(r.Context(), organizationIDFromRequest(r), term)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -237,7 +242,7 @@ func (h *Handler) GetInteractions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	interactions, err := h.repo.GetInteractions(r.Context(), id)
+	interactions, err := h.repo.GetInteractions(r.Context(), organizationIDFromRequest(r), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -273,7 +278,7 @@ func (h *Handler) CreateInteraction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	interaction, err := h.repo.CreateInteraction(r.Context(), id, req, userID)
+	interaction, err := h.repo.CreateInteraction(r.Context(), organizationIDFromRequest(r), id, req, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

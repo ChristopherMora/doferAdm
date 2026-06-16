@@ -29,7 +29,9 @@ type SearchQuotesParams struct {
 
 func (h *SearchQuotesHandler) Handle(ctx context.Context, params SearchQuotesParams) ([]domain.Quote, error) {
 	// Get all quotes (empty filters to get everything)
-	quotePtrs, err := h.repo.FindAll(nil)
+	quotePtrs, err := h.repo.FindAll(map[string]interface{}{
+		"organization_id": organizationIDFromContext(ctx),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error getting quotes: %w", err)
 	}

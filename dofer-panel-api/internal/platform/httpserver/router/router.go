@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dofer/panel-api/internal/modules/admin"
 	affiliatesApp "github.com/dofer/panel-api/internal/modules/affiliates/app"
 	affiliatesInfra "github.com/dofer/panel-api/internal/modules/affiliates/infra"
 	affiliatesTransport "github.com/dofer/panel-api/internal/modules/affiliates/transport"
@@ -47,7 +48,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Organization-ID"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -73,7 +74,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// Setup auth handlers
 	getUserHandler := app.NewGetUserByIDHandler(userRepo)
-	authHandler := authTransport.NewAuthHandler(getUserHandler)
+	authHandler := authTransport.NewAuthHandler(getUserHandler, userRepo, cfg)
 
 	// Setup order handlers
 	createOrderHandler := ordersApp.NewCreateOrderHandler(orderRepo)
@@ -235,6 +236,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		listActiveProductsForAffiliateHandler,
 	)
 
+	// Setup admin handler
+	adminRepo := admin.NewRepository(db)
+	adminHandler := admin.NewHandler(adminRepo)
+
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// Ping test (público, sin auth)
@@ -247,17 +252,24 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth)
 			r.Use(middleware.SyncUser(userRepo))
+			r.Use(middleware.RequireOrganization(userRepo))
 
 			// Register module routes
 			authTransport.RegisterRoutes(r, authHandler)
-			ordersTransport.RegisterRoutes(r, orderHandler)
-			costsTransport.RegisterRoutes(r, costHandler)
-			quotesTransport.RegisterRoutes(r, quoteHandler)
-			tracking.RegisterRoutes(r, trackingHandler)
-			customers.RegisterRoutes(r, customerHandler)
-			printers.RegisterRoutes(r, printerHandler)
-			products.RegisterRoutes(r, productHandler)
-			affiliatesTransport.RegisterRoutes(r, affiliateHandler)
+			admin.RegisterRoutes(r, adminHandler)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireActiveOrganization(userRepo))
+
+				ordersTransport.RegisterRoutes(r, orderHandler)
+				costsTransport.RegisterRoutes(r, costHandler)
+				quotesTransport.RegisterRoutes(r, quoteHandler)
+				tracking.RegisterRoutes(r, trackingHandler)
+				customers.RegisterRoutes(r, customerHandler)
+				printers.RegisterRoutes(r, printerHandler)
+				products.RegisterRoutes(r, productHandler)
+				affiliatesTransport.RegisterRoutes(r, affiliateHandler)
+			})
 		})
 	})
 

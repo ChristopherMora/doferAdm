@@ -15,12 +15,14 @@ func NewGetQuoteHandler(repo domain.QuoteRepository) *GetQuoteHandler {
 }
 
 func (h *GetQuoteHandler) Handle(ctx context.Context, id string) (*domain.Quote, []*domain.QuoteItem, error) {
-	quote, err := h.repo.FindByID(id)
+	organizationID := organizationIDFromContext(ctx)
+
+	quote, err := h.repo.FindByID(id, organizationID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	items, err := h.repo.GetItems(id)
+	items, err := h.repo.GetItems(id, organizationID)
 	if err != nil {
 		return nil, nil, err
 	}

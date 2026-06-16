@@ -11,8 +11,11 @@ import (
 func (r *PostgresQuoteRepository) AddPayment(payment *domain.QuotePayment) error {
 	query := `
 		INSERT INTO quote_payments (
-			id, quote_id, amount, payment_method, payment_date, notes, created_by, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			id, organization_id, quote_id, amount, payment_method, payment_date, notes, created_by, created_at
+		)
+		SELECT $1, organization_id, $2, $3, $4, $5, $6, $7, $8
+		FROM quotes
+		WHERE id = $2 AND organization_id = $9
 	`
 
 	_, err := r.db.Exec(
@@ -26,21 +29,22 @@ func (r *PostgresQuoteRepository) AddPayment(payment *domain.QuotePayment) error
 		payment.Notes,
 		payment.CreatedBy,
 		payment.CreatedAt,
+		payment.OrganizationID,
 	)
 
 	return err
 }
 
 // GetPayments obtiene todos los pagos de una cotización
-func (r *PostgresQuoteRepository) GetPayments(quoteID string) ([]*domain.QuotePayment, error) {
+func (r *PostgresQuoteRepository) GetPayments(quoteID, organizationID string) ([]*domain.QuotePayment, error) {
 	query := `
-		SELECT id, quote_id, amount, payment_method, payment_date, notes, created_by, created_at
+		SELECT id, organization_id, quote_id, amount, payment_method, payment_date, notes, created_by, created_at
 		FROM quote_payments
-		WHERE quote_id = $1
+		WHERE quote_id = $1 AND organization_id = $2
 		ORDER BY payment_date DESC
 	`
 
-	rows, err := r.db.Query(context.Background(), query, quoteID)
+	rows, err := r.db.Query(context.Background(), query, quoteID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +57,7 @@ func (r *PostgresQuoteRepository) GetPayments(quoteID string) ([]*domain.QuotePa
 
 		err := rows.Scan(
 			&payment.ID,
+			&payment.OrganizationID,
 			&payment.QuoteID,
 			&payment.Amount,
 			&paymentMethod,

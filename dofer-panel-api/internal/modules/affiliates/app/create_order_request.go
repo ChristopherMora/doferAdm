@@ -37,7 +37,7 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 	// nombre y precio sugerido al momento de la solicitud (auditoría).
 	if cmd.ProductID != "" {
 		if productUUID, parseErr := uuid.Parse(cmd.ProductID); parseErr == nil {
-			product, err := h.productRepo.GetByID(ctx, productUUID)
+			product, err := h.productRepo.GetByID(ctx, organizationIDFromContext(ctx), productUUID)
 			if err == nil && product != nil {
 				productName = product.Name
 				if product.SuggestedPrice != nil {

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	ordersDomain "github.com/dofer/panel-api/internal/modules/orders/domain"
 	"github.com/dofer/panel-api/internal/modules/quotes/domain"
+	"github.com/google/uuid"
 )
 
 var (
@@ -34,7 +34,8 @@ func NewConvertToOrderHandler(quoteRepo domain.QuoteRepository, orderRepo orders
 
 func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCommand) (*ordersDomain.Order, error) {
 	// Obtener la cotización
-	quote, err := h.quoteRepo.FindByID(cmd.QuoteID)
+	organizationID := organizationIDFromContext(ctx)
+	quote, err := h.quoteRepo.FindByID(cmd.QuoteID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +46,7 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 	}
 
 	// Obtener los items de la cotización
-	items, err := h.quoteRepo.GetItems(cmd.QuoteID)
+	items, err := h.quoteRepo.GetItems(cmd.QuoteID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,15 +88,16 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 	// Copiar información del cliente
 	order.CustomerEmail = quote.CustomerEmail
 	order.CustomerPhone = quote.CustomerPhone
-	
+	order.OrganizationID = organizationID
+
 	// Agregar notas simplificadas
 	notesDetail := fmt.Sprintf("🔄 Generado desde cotización %s\n", quote.QuoteNumber)
 	notesDetail += fmt.Sprintf("💰 Total: $%.2f | Items: %d\n", quote.Total, len(items))
-	
+
 	if quote.Notes != "" {
 		notesDetail += fmt.Sprintf("\n📝 %s", quote.Notes)
 	}
-	
+
 	order.Notes = notesDetail
 
 	// Guardar la orden
@@ -107,16 +109,17 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 	totalAmount := 0.0
 	for _, quoteItem := range items {
 		orderItem := &ordersDomain.OrderItem{
-			ID:          uuid.New().String(),
-			OrderID:     order.ID,
-			ProductName: quoteItem.ProductName,
-			Description: quoteItem.Description,
-			Quantity:    quoteItem.Quantity,
-			UnitPrice:   quoteItem.UnitPrice,
-			Total:       quoteItem.Total,
-			IsCompleted: false,
+			ID:             uuid.New().String(),
+			OrganizationID: organizationID,
+			OrderID:        order.ID,
+			ProductName:    quoteItem.ProductName,
+			Description:    quoteItem.Description,
+			Quantity:       quoteItem.Quantity,
+			UnitPrice:      quoteItem.UnitPrice,
+			Total:          quoteItem.Total,
+			IsCompleted:    false,
 		}
-		
+
 		if err := h.orderRepo.CreateOrderItem(orderItem); err != nil {
 			// Log error but continue
 			fmt.Printf("Warning: could not create order item: %v\n", err)
@@ -130,27 +133,28 @@ func (h *ConvertToOrderHandler) Handle(ctx context.Context, cmd ConvertToOrderCo
 	order.Balance = totalAmount // Balance inicial es igual al total
 
 	// Copiar pagos de cotización a orden (sincronización automática)
-	quotePayments, err := h.quoteRepo.GetPayments(cmd.QuoteID)
+	quotePayments, err := h.quoteRepo.GetPayments(cmd.QuoteID, organizationID)
 	if err != nil {
 		fmt.Printf("Warning: could not fetch quote payments: %v\n", err)
 	} else if len(quotePayments) > 0 {
 		for _, quotePayment := range quotePayments {
 			orderPayment := &ordersDomain.OrderPayment{
-				ID:            uuid.New().String(),
-				OrderID:       order.ID,
-				Amount:        quotePayment.Amount,
-				PaymentMethod: quotePayment.PaymentMethod,
-				PaymentDate:   quotePayment.PaymentDate,
-				Notes:         fmt.Sprintf("🔄 Copiado desde cotización %s: %s", quote.QuoteNumber, quotePayment.Notes),
-				CreatedBy:     quotePayment.CreatedBy,
-				CreatedAt:     time.Now(),
+				ID:             uuid.New().String(),
+				OrganizationID: organizationID,
+				OrderID:        order.ID,
+				Amount:         quotePayment.Amount,
+				PaymentMethod:  quotePayment.PaymentMethod,
+				PaymentDate:    quotePayment.PaymentDate,
+				Notes:          fmt.Sprintf("🔄 Copiado desde cotización %s: %s", quote.QuoteNumber, quotePayment.Notes),
+				CreatedBy:      quotePayment.CreatedBy,
+				CreatedAt:      time.Now(),
 			}
-			
+
 			if err := h.orderRepo.AddPayment(orderPayment); err != nil {
 				fmt.Printf("Warning: could not copy payment to order: %v\n", err)
 			}
 		}
-		
+
 		// Actualizar los montos de la orden
 		order.AmountPaid = quote.AmountPaid
 		order.Balance = quote.Balance

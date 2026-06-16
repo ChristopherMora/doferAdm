@@ -24,7 +24,7 @@ func (h *GetOrderHandler) Handle(ctx context.Context, query GetOrderQuery) (*dom
 		return nil, fmt.Errorf("order ID is required")
 	}
 
-	order, err := h.repo.FindByID(query.OrderID)
+	order, err := h.repo.FindByID(query.OrderID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to find order: %w", err)
 	}

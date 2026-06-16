@@ -19,6 +19,5 @@ func NewDeleteQuoteTemplateHandler(repo domain.QuoteRepository) *DeleteQuoteTemp
 }
 
 func (h *DeleteQuoteTemplateHandler) Handle(ctx context.Context, cmd DeleteQuoteTemplateCommand) error {
-	_ = ctx
-	return h.repo.DeleteTemplate(cmd.TemplateID)
+	return h.repo.DeleteTemplate(cmd.TemplateID, organizationIDFromContext(ctx))
 }

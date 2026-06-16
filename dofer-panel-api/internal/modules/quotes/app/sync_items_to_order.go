@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	ordersDomain "github.com/dofer/panel-api/internal/modules/orders/domain"
 	"github.com/dofer/panel-api/internal/modules/quotes/domain"
+	"github.com/google/uuid"
 )
 
 type SyncItemsToOrderCommand struct {
@@ -26,8 +26,10 @@ func NewSyncItemsToOrderHandler(quoteRepo domain.QuoteRepository, orderRepo orde
 }
 
 func (h *SyncItemsToOrderHandler) Handle(ctx context.Context, cmd SyncItemsToOrderCommand) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Obtener la cotización
-	quote, err := h.quoteRepo.FindByID(cmd.QuoteID)
+	quote, err := h.quoteRepo.FindByID(cmd.QuoteID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -38,7 +40,7 @@ func (h *SyncItemsToOrderHandler) Handle(ctx context.Context, cmd SyncItemsToOrd
 	}
 
 	// Obtener los items de la cotización
-	items, err := h.quoteRepo.GetItems(cmd.QuoteID)
+	items, err := h.quoteRepo.GetItems(cmd.QuoteID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -48,7 +50,7 @@ func (h *SyncItemsToOrderHandler) Handle(ctx context.Context, cmd SyncItemsToOrd
 	}
 
 	// Verificar si el pedido ya tiene items
-	existingItems, err := h.orderRepo.GetOrderItems(quote.ConvertedToOrderID)
+	existingItems, err := h.orderRepo.GetOrderItems(quote.ConvertedToOrderID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -61,16 +63,17 @@ func (h *SyncItemsToOrderHandler) Handle(ctx context.Context, cmd SyncItemsToOrd
 	// Crear los items individuales de la orden
 	for _, quoteItem := range items {
 		orderItem := &ordersDomain.OrderItem{
-			ID:          uuid.New().String(),
-			OrderID:     quote.ConvertedToOrderID,
-			ProductName: quoteItem.ProductName,
-			Description: quoteItem.Description,
-			Quantity:    quoteItem.Quantity,
-			UnitPrice:   quoteItem.UnitPrice,
-			Total:       quoteItem.Total,
-			IsCompleted: false,
+			ID:             uuid.New().String(),
+			OrganizationID: organizationID,
+			OrderID:        quote.ConvertedToOrderID,
+			ProductName:    quoteItem.ProductName,
+			Description:    quoteItem.Description,
+			Quantity:       quoteItem.Quantity,
+			UnitPrice:      quoteItem.UnitPrice,
+			Total:          quoteItem.Total,
+			IsCompleted:    false,
 		}
-		
+
 		if err := h.orderRepo.CreateOrderItem(orderItem); err != nil {
 			return fmt.Errorf("could not create order item: %v", err)
 		}

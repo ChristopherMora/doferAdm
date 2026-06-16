@@ -7,6 +7,7 @@ import (
 
 type Quote struct {
 	ID                 string       `json:"id"`
+	OrganizationID     string       `json:"organization_id,omitempty"`
 	QuoteNumber        string       `json:"quote_number"`
 	CustomerName       string       `json:"customer_name"`
 	CustomerEmail      string       `json:"customer_email"`
@@ -29,6 +30,7 @@ type Quote struct {
 
 type QuoteItem struct {
 	ID              string    `json:"id"`
+	OrganizationID  string    `json:"organization_id,omitempty"`
 	QuoteID         string    `json:"quote_id"`
 	ProductName     string    `json:"product_name"`
 	Description     string    `json:"description"`
@@ -46,18 +48,20 @@ type QuoteItem struct {
 }
 
 type QuotePayment struct {
-	ID            string    `json:"id"`
-	QuoteID       string    `json:"quote_id"`
-	Amount        float64   `json:"amount"`
-	PaymentMethod string    `json:"payment_method"`
-	PaymentDate   time.Time `json:"payment_date"`
-	Notes         string    `json:"notes"`
-	CreatedBy     string    `json:"created_by"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id,omitempty"`
+	QuoteID        string    `json:"quote_id"`
+	Amount         float64   `json:"amount"`
+	PaymentMethod  string    `json:"payment_method"`
+	PaymentDate    time.Time `json:"payment_date"`
+	Notes          string    `json:"notes"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type QuoteTemplate struct {
 	ID               string    `json:"id"`
+	OrganizationID   string    `json:"organization_id,omitempty"`
 	Name             string    `json:"name"`
 	Description      string    `json:"description"`
 	Material         string    `json:"material"`
@@ -73,26 +77,26 @@ type QuoteTemplate struct {
 
 type QuoteRepository interface {
 	Create(quote *Quote) error
-	FindByID(id string) (*Quote, error)
+	FindByID(id string, organizationID ...string) (*Quote, error)
 	FindAll(filters map[string]interface{}) ([]*Quote, error)
 	Update(quote *Quote) error
-	Delete(id string) error
+	Delete(id string, organizationID ...string) error
 
 	// Items
 	AddItem(item *QuoteItem) error
-	GetItems(quoteID string) ([]*QuoteItem, error)
+	GetItems(quoteID, organizationID string) ([]*QuoteItem, error)
 	UpdateItem(item *QuoteItem) error
 	DeleteItem(itemID string) error
-	DeleteQuoteItem(ctx context.Context, quoteID, itemID string) error
+	DeleteQuoteItem(ctx context.Context, quoteID, itemID, organizationID string) error
 
 	// Payments
 	AddPayment(payment *QuotePayment) error
-	GetPayments(quoteID string) ([]*QuotePayment, error)
+	GetPayments(quoteID, organizationID string) ([]*QuotePayment, error)
 
 	// Templates
 	CreateTemplate(template *QuoteTemplate) error
-	FindTemplateByID(id string) (*QuoteTemplate, error)
+	FindTemplateByID(id string, organizationID ...string) (*QuoteTemplate, error)
 	FindAllTemplates(filters map[string]interface{}) ([]*QuoteTemplate, error)
 	UpdateTemplate(template *QuoteTemplate) error
-	DeleteTemplate(id string) error
+	DeleteTemplate(id string, organizationID ...string) error
 }

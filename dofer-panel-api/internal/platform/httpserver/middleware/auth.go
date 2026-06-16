@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -26,6 +27,8 @@ const UserIDKey contextKey = "user_id"
 const UserRoleKey contextKey = "user_role"
 const UserEmailKey contextKey = "user_email"
 const UserNameKey contextKey = "user_name"
+const OrganizationIDKey contextKey = "organization_id"
+const OrganizationRoleKey contextKey = "organization_role"
 
 const (
 	testAuthUserID         = "11111111-1111-1111-1111-111111111111"
@@ -447,10 +450,10 @@ func resolveUserRole(claims *userClaims) string {
 		return ""
 	}
 
-	if role := strings.TrimSpace(claims.Role); role != "" {
+	if role := strings.TrimSpace(claims.AppMetadata.Role); role != "" {
 		return role
 	}
-	if role := strings.TrimSpace(claims.AppMetadata.Role); role != "" {
+	if role := strings.TrimSpace(claims.Role); role != "" {
 		return role
 	}
 
@@ -489,10 +492,34 @@ func UserNameFromContext(ctx context.Context) (string, bool) {
 	return name, true
 }
 
+func OrganizationIDFromContext(ctx context.Context) (string, bool) {
+	organizationID, ok := ctx.Value(OrganizationIDKey).(string)
+	if !ok || strings.TrimSpace(organizationID) == "" {
+		return "", false
+	}
+	return organizationID, true
+}
+
+func OrganizationRoleFromContext(ctx context.Context) (string, bool) {
+	role, ok := ctx.Value(OrganizationRoleKey).(string)
+	if !ok || strings.TrimSpace(role) == "" {
+		return "", false
+	}
+	return role, true
+}
+
 // UserSyncer es la interfaz que el repositorio de usuarios debe implementar
 // para sincronizar usuarios de Supabase a la base de datos local.
 type UserSyncer interface {
-	UpsertUser(id, email, fullName string) error
+	UpsertUser(id, email, fullName, role string) (string, error)
+}
+
+type OrganizationResolver interface {
+	ResolveOrganization(userID, requestedOrganizationID string) (organizationID string, role string, err error)
+}
+
+type OrganizationAccessResolver interface {
+	ResolveOrganizationAccess(organizationID string) (status string, subscriptionEndsAt *time.Time, graceEndsAt *time.Time, accessSuspendedAt *time.Time, suspensionReason string, err error)
 }
 
 // SyncUser middleware que asegura que el usuario autenticado exista en la DB local.
@@ -510,12 +537,112 @@ func SyncUser(syncer UserSyncer) func(http.Handler) http.Handler {
 				if name == "" {
 					name = email
 				}
-				// Ignoramos el error: si falla el upsert, dejamos pasar igualmente
-				// para no bloquear requests por problemas de sync de usuario
-				_ = syncer.UpsertUser(userID, email, name)
+				role, _ := UserRoleFromContext(r.Context())
+				localUserID, err := syncer.UpsertUser(userID, email, name, role)
+				if err != nil {
+					slog.Warn("user sync failed", slog.Any("error", err), slog.String("user_id", userID))
+				}
+				if err == nil && localUserID != "" && localUserID != userID {
+					ctx := context.WithValue(r.Context(), UserIDKey, localUserID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+func RequireOrganization(resolver OrganizationResolver) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := UserIDFromContext(r.Context())
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			requestedOrganizationID := strings.TrimSpace(r.Header.Get("X-Organization-ID"))
+			organizationID, role, err := resolver.ResolveOrganization(userID, requestedOrganizationID)
+			if err != nil {
+				slog.Warn("organization resolution failed", slog.Any("error", err), slog.String("user_id", userID))
+				http.Error(w, "organization not available", http.StatusForbidden)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), OrganizationIDKey, organizationID)
+			ctx = context.WithValue(ctx, OrganizationRoleKey, role)
+			// En beta, el rol operativo efectivo sale de la membresia de organizacion.
+			ctx = context.WithValue(ctx, UserRoleKey, role)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func RequireActiveOrganization(resolver OrganizationAccessResolver) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			organizationID, ok := OrganizationIDFromContext(r.Context())
+			if !ok {
+				http.Error(w, "organization not available", http.StatusForbidden)
+				return
+			}
+
+			status, subscriptionEndsAt, graceEndsAt, accessSuspendedAt, suspensionReason, err := resolver.ResolveOrganizationAccess(organizationID)
+			if err != nil {
+				slog.Warn("organization access resolution failed", slog.Any("error", err), slog.String("organization_id", organizationID))
+				http.Error(w, "organization access not available", http.StatusForbidden)
+				return
+			}
+
+			if !isOrganizationAccessAllowed(status, subscriptionEndsAt, graceEndsAt, accessSuspendedAt) {
+				message := organizationAccessMessage(status, subscriptionEndsAt, graceEndsAt, suspensionReason)
+				w.Header().Set("X-Organization-Access-Status", status)
+				http.Error(w, message, http.StatusPaymentRequired)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func isOrganizationAccessAllowed(status string, subscriptionEndsAt, graceEndsAt, accessSuspendedAt *time.Time) bool {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = "active"
+	}
+	if status == "suspended" || status == "cancelled" || accessSuspendedAt != nil {
+		return false
+	}
+
+	now := time.Now()
+	if subscriptionEndsAt != nil && now.After(*subscriptionEndsAt) {
+		return graceEndsAt != nil && now.Before(*graceEndsAt)
+	}
+
+	return true
+}
+
+func organizationAccessMessage(status string, subscriptionEndsAt, graceEndsAt *time.Time, suspensionReason string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if strings.TrimSpace(suspensionReason) != "" {
+		return suspensionReason
+	}
+	switch status {
+	case "cancelled":
+		return "organization subscription is cancelled"
+	case "suspended":
+		return "organization access is suspended"
+	default:
+		if subscriptionEndsAt != nil && time.Now().After(*subscriptionEndsAt) {
+			if graceEndsAt != nil {
+				return "organization grace period has expired"
+			}
+			return "organization subscription has expired"
+		}
+		return "organization access is not active"
 	}
 }
 
@@ -536,8 +663,12 @@ func RequireAuth(next http.Handler) http.Handler {
 
 		cfg := loadRuntimeAuthConfig()
 		if cfg.allowTestAuthToken && isTestToken(token) {
+			role := testAuthUserRole
+			if organizationRole, ok := OrganizationRoleFromContext(r.Context()); ok {
+				role = organizationRole
+			}
 			ctx := context.WithValue(r.Context(), UserIDKey, testAuthUserID)
-			ctx = context.WithValue(ctx, UserRoleKey, testAuthUserRole)
+			ctx = context.WithValue(ctx, UserRoleKey, role)
 			ctx = context.WithValue(ctx, UserEmailKey, "test@dofer.local")
 			ctx = context.WithValue(ctx, UserNameKey, "Test Admin")
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -556,8 +687,13 @@ func RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		role := resolveUserRole(claims)
+		if organizationRole, ok := OrganizationRoleFromContext(r.Context()); ok {
+			role = organizationRole
+		}
+
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
-		ctx = context.WithValue(ctx, UserRoleKey, resolveUserRole(claims))
+		ctx = context.WithValue(ctx, UserRoleKey, role)
 		ctx = context.WithValue(ctx, UserEmailKey, strings.TrimSpace(claims.Email))
 		userName := strings.TrimSpace(claims.UserMetadata.FullName)
 		if userName == "" {
@@ -595,4 +731,30 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func RequirePlatformAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		configuredEmails := strings.TrimSpace(os.Getenv("PLATFORM_ADMIN_EMAILS"))
+		if configuredEmails == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		userEmail, ok := UserEmailFromContext(r.Context())
+		if !ok {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		userEmail = strings.ToLower(strings.TrimSpace(userEmail))
+		for _, allowedEmail := range strings.Split(configuredEmails, ",") {
+			if userEmail == strings.ToLower(strings.TrimSpace(allowedEmail)) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		http.Error(w, "forbidden", http.StatusForbidden)
+	})
 }

@@ -35,8 +35,9 @@ func (h *GetOrderStatsHandler) Handle(ctx context.Context) (*OrderStats, error) 
 	// Get all orders (we'll aggregate in memory for simplicity)
 	// For production with many orders, this should be done with SQL aggregations
 	filters := domain.OrderFilters{
-		Limit:  1000, // Reasonable limit
-		Offset: 0,
+		OrganizationID: organizationIDFromContext(ctx),
+		Limit:          1000, // Reasonable limit
+		Offset:         0,
 	}
 
 	orders, err := h.repo.FindAll(filters)

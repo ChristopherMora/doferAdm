@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 
 	"github.com/dofer/panel-api/internal/modules/orders/domain"
@@ -24,9 +25,11 @@ type StartTimerRequest struct {
 	OperatorID *string `json:"operator_id"`
 }
 
-func (h *StartTimerHandler) Handle(req StartTimerRequest) error {
+func (h *StartTimerHandler) Handle(ctx context.Context, req StartTimerRequest) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Verificar que la orden existe
-	order, err := h.orderRepo.FindByID(req.OrderID)
+	order, err := h.orderRepo.FindByID(req.OrderID, organizationID)
 	if err != nil {
 		return errors.New("order not found")
 	}
@@ -37,7 +40,7 @@ func (h *StartTimerHandler) Handle(req StartTimerRequest) error {
 	}
 
 	// Iniciar el timer
-	return h.timerRepo.StartTimer(req.OrderID, req.OperatorID)
+	return h.timerRepo.StartTimer(req.OrderID, organizationID, req.OperatorID)
 }
 
 // PauseTimerHandler maneja la pausa del timer
@@ -53,9 +56,11 @@ func NewPauseTimerHandler(orderRepo domain.OrderRepository, timerRepo domain.Tim
 	}
 }
 
-func (h *PauseTimerHandler) Handle(orderID string) error {
+func (h *PauseTimerHandler) Handle(ctx context.Context, orderID string) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Verificar que la orden existe
-	order, err := h.orderRepo.FindByID(orderID)
+	order, err := h.orderRepo.FindByID(orderID, organizationID)
 	if err != nil {
 		return errors.New("order not found")
 	}
@@ -66,7 +71,7 @@ func (h *PauseTimerHandler) Handle(orderID string) error {
 	}
 
 	// Pausar el timer
-	return h.timerRepo.PauseTimer(orderID)
+	return h.timerRepo.PauseTimer(orderID, organizationID)
 }
 
 // StopTimerHandler maneja la finalización del timer
@@ -82,16 +87,18 @@ func NewStopTimerHandler(orderRepo domain.OrderRepository, timerRepo domain.Time
 	}
 }
 
-func (h *StopTimerHandler) Handle(orderID string) error {
+func (h *StopTimerHandler) Handle(ctx context.Context, orderID string) error {
+	organizationID := organizationIDFromContext(ctx)
+
 	// Verificar que la orden existe
-	_, err := h.orderRepo.FindByID(orderID)
+	_, err := h.orderRepo.FindByID(orderID, organizationID)
 	if err != nil {
 		return errors.New("order not found")
 	}
 
 	// No importa si está corriendo o pausado, se puede detener
 	// Detener el timer
-	return h.timerRepo.StopTimer(orderID)
+	return h.timerRepo.StopTimer(orderID, organizationID)
 }
 
 // GetTimerHandler obtiene el estado actual del timer
@@ -105,8 +112,8 @@ func NewGetTimerHandler(timerRepo domain.TimerRepository) *GetTimerHandler {
 	}
 }
 
-func (h *GetTimerHandler) Handle(orderID string) (*domain.TimerState, error) {
-	state, err := h.timerRepo.GetTimerState(orderID)
+func (h *GetTimerHandler) Handle(ctx context.Context, orderID string) (*domain.TimerState, error) {
+	state, err := h.timerRepo.GetTimerState(orderID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -133,12 +140,12 @@ type UpdateEstimatedTimeRequest struct {
 	Minutes int    `json:"minutes"`
 }
 
-func (h *UpdateEstimatedTimeHandler) Handle(req UpdateEstimatedTimeRequest) error {
+func (h *UpdateEstimatedTimeHandler) Handle(ctx context.Context, req UpdateEstimatedTimeRequest) error {
 	if req.Minutes < 0 {
 		return errors.New("minutes must be positive")
 	}
 
-	return h.timerRepo.UpdateEstimatedTime(req.OrderID, req.Minutes)
+	return h.timerRepo.UpdateEstimatedTime(req.OrderID, organizationIDFromContext(ctx), req.Minutes)
 }
 
 // GetOperatorStatsHandler obtiene estadísticas de rendimiento de operadores
@@ -152,10 +159,10 @@ func NewGetOperatorStatsHandler(timerRepo domain.TimerRepository) *GetOperatorSt
 	}
 }
 
-func (h *GetOperatorStatsHandler) HandleSingle(operatorID string) (*domain.OperatorStats, error) {
-	return h.timerRepo.GetOperatorStats(operatorID)
+func (h *GetOperatorStatsHandler) HandleSingle(ctx context.Context, operatorID string) (*domain.OperatorStats, error) {
+	return h.timerRepo.GetOperatorStats(operatorID, organizationIDFromContext(ctx))
 }
 
-func (h *GetOperatorStatsHandler) HandleAll() ([]*domain.OperatorStats, error) {
-	return h.timerRepo.GetAllOperatorsStats()
+func (h *GetOperatorStatsHandler) HandleAll(ctx context.Context) ([]*domain.OperatorStats, error) {
+	return h.timerRepo.GetAllOperatorsStats(organizationIDFromContext(ctx))
 }

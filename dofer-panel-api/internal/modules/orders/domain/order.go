@@ -37,6 +37,7 @@ const (
 
 type Order struct {
 	ID               string
+	OrganizationID   string
 	PublicID         string
 	OrderNumber      string
 	Platform         OrderPlatform
@@ -62,9 +63,9 @@ type Order struct {
 	CompletedAt      *time.Time
 	DeliveryDeadline *time.Time
 	// Payment fields
-	Amount      float64 `json:"amount"`
-	AmountPaid  float64 `json:"amount_paid"`
-	Balance     float64 `json:"balance"`
+	Amount     float64 `json:"amount"`
+	AmountPaid float64 `json:"amount_paid"`
+	Balance    float64 `json:"balance"`
 	// Timer fields
 	EstimatedTimeMins    int        `json:"estimated_time_minutes"`
 	ActualTimeMins       int        `json:"actual_time_minutes"`
@@ -75,16 +76,17 @@ type Order struct {
 }
 
 type OrderItem struct {
-	ID          string    `json:"id"`
-	OrderID     string    `json:"order_id"`
-	ProductName string    `json:"product_name"`
-	Description string    `json:"description"`
-	Quantity    int       `json:"quantity"`
-	UnitPrice   float64   `json:"unit_price"`
-	Total       float64   `json:"total"`
-	IsCompleted bool      `json:"is_completed"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             string     `json:"id"`
+	OrganizationID string     `json:"organization_id,omitempty"`
+	OrderID        string     `json:"order_id"`
+	ProductName    string     `json:"product_name"`
+	Description    string     `json:"description"`
+	Quantity       int        `json:"quantity"`
+	UnitPrice      float64    `json:"unit_price"`
+	Total          float64    `json:"total"`
+	IsCompleted    bool       `json:"is_completed"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 func NewOrder(

@@ -8,13 +8,14 @@ import (
 )
 
 type Printer struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	Name      string    `json:"name" db:"name"`
-	Model     *string   `json:"model,omitempty" db:"model"`
-	Material  *string   `json:"material,omitempty" db:"material"`
-	Status    string    `json:"status" db:"status"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	OrganizationID uuid.UUID `json:"organization_id" db:"organization_id"`
+	Name           string    `json:"name" db:"name"`
+	Model          *string   `json:"model,omitempty" db:"model"`
+	Material       *string   `json:"material,omitempty" db:"material"`
+	Status         string    `json:"status" db:"status"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type PrinterCurrentJob struct {
@@ -24,18 +25,20 @@ type PrinterCurrentJob struct {
 }
 
 type PrinterWithQueue struct {
-	ID         uuid.UUID          `json:"id"`
-	Name       string             `json:"name"`
-	Model      *string            `json:"model,omitempty"`
-	Material   *string            `json:"material,omitempty"`
-	Status     string             `json:"status"`
-	QueueJobs  int                `json:"queue_jobs"`
-	CurrentJob *PrinterCurrentJob `json:"current_job,omitempty"`
-	CreatedAt  time.Time          `json:"created_at"`
-	UpdatedAt  time.Time          `json:"updated_at"`
+	ID             uuid.UUID          `json:"id"`
+	OrganizationID uuid.UUID          `json:"organization_id"`
+	Name           string             `json:"name"`
+	Model          *string            `json:"model,omitempty"`
+	Material       *string            `json:"material,omitempty"`
+	Status         string             `json:"status"`
+	QueueJobs      int                `json:"queue_jobs"`
+	CurrentJob     *PrinterCurrentJob `json:"current_job,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 type AutoAssignRequest struct {
+	OrganizationID     string  `json:"-"`
 	OrderID            string  `json:"order_id"`
 	Material           string  `json:"material,omitempty"`
 	EstimatedTimeHours float64 `json:"estimated_time_hours,omitempty"`
@@ -53,7 +56,8 @@ type AutoAssignResult struct {
 }
 
 type CompleteAssignmentRequest struct {
-	OrderID string `json:"order_id"`
+	OrganizationID string `json:"-"`
+	OrderID        string `json:"order_id"`
 }
 
 var (

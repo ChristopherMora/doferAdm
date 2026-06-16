@@ -62,6 +62,7 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 
 	order.CustomerEmail = req.CustomerEmail
 	order.CustomerPhone = req.CustomerPhone
+	order.OrganizationID = organizationIDFromContext(ctx)
 	order.AffiliateID = affiliate.ID
 	order.Amount = req.FinalPrice
 	order.Balance = req.FinalPrice

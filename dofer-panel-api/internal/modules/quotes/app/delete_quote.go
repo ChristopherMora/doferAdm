@@ -19,5 +19,5 @@ func NewDeleteQuoteHandler(repo domain.QuoteRepository) *DeleteQuoteHandler {
 }
 
 func (h *DeleteQuoteHandler) Handle(ctx context.Context, cmd DeleteQuoteCommand) error {
-	return h.repo.Delete(cmd.QuoteID)
+	return h.repo.Delete(cmd.QuoteID, organizationIDFromContext(ctx))
 }

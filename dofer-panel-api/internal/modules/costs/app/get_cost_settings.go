@@ -15,9 +15,9 @@ func NewGetCostSettingsHandler(repo domain.CostSettingsRepository) *GetCostSetti
 }
 
 func (h *GetCostSettingsHandler) Handle(ctx context.Context) (*domain.CostSettings, error) {
-	return h.repo.Get()
+	return h.repo.Get(organizationIDFromContext(ctx))
 }
 
 func (h *GetCostSettingsHandler) HandleGetAll(ctx context.Context) ([]domain.CostSettings, error) {
-	return h.repo.GetAll()
+	return h.repo.GetAll(organizationIDFromContext(ctx))
 }

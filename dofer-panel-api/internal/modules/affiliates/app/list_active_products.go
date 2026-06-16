@@ -19,5 +19,5 @@ func NewListActiveProductsForAffiliateHandler(productRepo *products.Repository) 
 
 func (h *ListActiveProductsForAffiliateHandler) Handle(ctx context.Context) ([]products.Product, error) {
 	active := true
-	return h.productRepo.List(ctx, "", &active, 200, 0)
+	return h.productRepo.List(ctx, organizationIDFromContext(ctx), "", &active, 200, 0)
 }

@@ -27,7 +27,7 @@ func NewUpdateOrderPriorityHandler(repo domain.OrderRepository, historyRepo doma
 }
 
 func (h *UpdateOrderPriorityHandler) Handle(ctx context.Context, cmd UpdateOrderPriorityCommand) (*domain.Order, error) {
-	order, err := h.repo.FindByID(cmd.OrderID)
+	order, err := h.repo.FindByID(cmd.OrderID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, ErrOrderNotFound
 	}

@@ -15,6 +15,5 @@ func NewGetQuoteTemplateHandler(repo domain.QuoteRepository) *GetQuoteTemplateHa
 }
 
 func (h *GetQuoteTemplateHandler) Handle(ctx context.Context, templateID string) (*domain.QuoteTemplate, error) {
-	_ = ctx
-	return h.repo.FindTemplateByID(templateID)
+	return h.repo.FindTemplateByID(templateID, organizationIDFromContext(ctx))
 }
