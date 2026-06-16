@@ -16,35 +16,49 @@ const (
 )
 
 type AffiliateOrderRequest struct {
-	ID                      string        `json:"id"`
-	OrganizationID          string        `json:"organization_id"`
-	AffiliateID             string        `json:"affiliate_id"`
-	ProductID               string        `json:"product_id,omitempty"`
-	ProductName             string        `json:"product_name"`
-	Quantity                int           `json:"quantity"`
-	SuggestedPriceSnapshot  float64       `json:"suggested_price_snapshot,omitempty"`
-	MinPriceSnapshot        float64       `json:"min_price_snapshot,omitempty"`
-	FinalPrice              float64       `json:"final_price"`
-	Priority                string        `json:"priority"`
-	ReferenceImages         []string      `json:"reference_images,omitempty"`
-	CustomerName            string        `json:"customer_name"`
-	CustomerEmail           string        `json:"customer_email,omitempty"`
-	CustomerPhone           string        `json:"customer_phone,omitempty"`
-	CustomerNotes           string        `json:"customer_notes,omitempty"`
-	Status                  RequestStatus `json:"status"`
-	RequestedChanges        string        `json:"requested_changes,omitempty"`
-	RejectionReason         string        `json:"rejection_reason,omitempty"`
-	ReviewedBy              string        `json:"reviewed_by,omitempty"`
-	ReviewedAt              *time.Time    `json:"reviewed_at,omitempty"`
-	CancelledReason         string        `json:"cancelled_reason,omitempty"`
-	CancelledBy             string        `json:"cancelled_by,omitempty"`
-	CancelledAt             *time.Time    `json:"cancelled_at,omitempty"`
-	OrderID                 string        `json:"order_id,omitempty"`
-	OrderStatus             string        `json:"order_status,omitempty"` // solo se llena al listar, via JOIN; no persiste en esta tabla
-	CommissionTypeSnapshot  string        `json:"commission_type_snapshot,omitempty"`
-	CommissionValueSnapshot float64       `json:"commission_value_snapshot"`
-	CreatedAt               time.Time     `json:"created_at"`
-	UpdatedAt               time.Time     `json:"updated_at"`
+	ID                       string          `json:"id"`
+	OrganizationID           string          `json:"organization_id"`
+	AffiliateID              string          `json:"affiliate_id"`
+	ProductID                string          `json:"product_id,omitempty"`
+	ProductName              string          `json:"product_name"`
+	Quantity                 int             `json:"quantity"`
+	SuggestedPriceSnapshot   float64         `json:"suggested_price_snapshot,omitempty"`
+	MinPriceSnapshot         float64         `json:"min_price_snapshot,omitempty"`
+	FinalPrice               float64         `json:"final_price"`
+	CustomerAmountPaid       float64         `json:"customer_amount_paid"`
+	CustomerPaymentStatus    string          `json:"customer_payment_status"`
+	CustomerPaymentMethod    string          `json:"customer_payment_method,omitempty"`
+	CustomerPaymentReference string          `json:"customer_payment_reference,omitempty"`
+	CustomerPaymentNotes     string          `json:"customer_payment_notes,omitempty"`
+	Priority                 string          `json:"priority"`
+	ReferenceImages          []string        `json:"reference_images,omitempty"`
+	CustomerName             string          `json:"customer_name"`
+	CustomerEmail            string          `json:"customer_email,omitempty"`
+	CustomerPhone            string          `json:"customer_phone,omitempty"`
+	CustomerNotes            string          `json:"customer_notes,omitempty"`
+	Status                   RequestStatus   `json:"status"`
+	RequestedChanges         string          `json:"requested_changes,omitempty"`
+	RejectionReason          string          `json:"rejection_reason,omitempty"`
+	ReviewedBy               string          `json:"reviewed_by,omitempty"`
+	ReviewedAt               *time.Time      `json:"reviewed_at,omitempty"`
+	CancelledReason          string          `json:"cancelled_reason,omitempty"`
+	CancelledBy              string          `json:"cancelled_by,omitempty"`
+	CancelledAt              *time.Time      `json:"cancelled_at,omitempty"`
+	PromisedDeliveryDate     *time.Time      `json:"promised_delivery_date,omitempty"`
+	DeliveryMethod           string          `json:"delivery_method"`
+	DeliveryStatus           string          `json:"delivery_status"`
+	DeliveryAddress          string          `json:"delivery_address,omitempty"`
+	DeliveryTrackingNumber   string          `json:"delivery_tracking_number,omitempty"`
+	DeliveryNotes            string          `json:"delivery_notes,omitempty"`
+	ProductionChecklist      map[string]bool `json:"production_checklist,omitempty"`
+	InternalOwnerID          string          `json:"internal_owner_id,omitempty"`
+	DuplicatedFromRequestID  string          `json:"duplicated_from_request_id,omitempty"`
+	OrderID                  string          `json:"order_id,omitempty"`
+	OrderStatus              string          `json:"order_status,omitempty"` // solo se llena al listar, via JOIN; no persiste en esta tabla
+	CommissionTypeSnapshot   string          `json:"commission_type_snapshot,omitempty"`
+	CommissionValueSnapshot  float64         `json:"commission_value_snapshot"`
+	CreatedAt                time.Time       `json:"created_at"`
+	UpdatedAt                time.Time       `json:"updated_at"`
 }
 
 var (
@@ -72,15 +86,19 @@ func NewAffiliateOrderRequest(affiliateID, productName, customerName string, qua
 
 	now := time.Now()
 	return &AffiliateOrderRequest{
-		AffiliateID:  affiliateID,
-		ProductName:  productName,
-		Quantity:     quantity,
-		FinalPrice:   finalPrice,
-		Priority:     "normal",
-		CustomerName: customerName,
-		Status:       RequestPending,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		AffiliateID:           affiliateID,
+		ProductName:           productName,
+		Quantity:              quantity,
+		FinalPrice:            finalPrice,
+		CustomerPaymentStatus: "unpaid",
+		Priority:              "normal",
+		CustomerName:          customerName,
+		Status:                RequestPending,
+		DeliveryMethod:        "pickup",
+		DeliveryStatus:        "pending",
+		ProductionChecklist:   map[string]bool{},
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}, nil
 }
 

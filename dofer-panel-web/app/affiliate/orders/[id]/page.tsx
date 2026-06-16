@@ -18,12 +18,20 @@ interface RequestForm {
   product_name: string
   quantity: number
   final_price: string
+  customer_amount_paid: string
+  customer_payment_method: string
+  customer_payment_reference: string
+  customer_payment_notes: string
   priority: 'urgent' | 'normal' | 'low'
   reference_images: string[]
   customer_name: string
   customer_email: string
   customer_phone: string
   customer_notes: string
+  promised_delivery_date: string
+  delivery_method: 'pickup' | 'local_delivery' | 'shipping'
+  delivery_address: string
+  delivery_notes: string
 }
 
 const initialForm: RequestForm = {
@@ -31,12 +39,20 @@ const initialForm: RequestForm = {
   product_name: '',
   quantity: 1,
   final_price: '',
+  customer_amount_paid: '',
+  customer_payment_method: '',
+  customer_payment_reference: '',
+  customer_payment_notes: '',
   priority: 'normal',
   reference_images: [],
   customer_name: '',
   customer_email: '',
   customer_phone: '',
   customer_notes: '',
+  promised_delivery_date: '',
+  delivery_method: 'pickup',
+  delivery_address: '',
+  delivery_notes: '',
 }
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -131,12 +147,20 @@ export default function AffiliateOrderDetailPage() {
         product_name: form.product_name,
         quantity: form.quantity,
         final_price: Number(form.final_price),
+        customer_amount_paid: Number(form.customer_amount_paid || 0),
+        customer_payment_method: form.customer_payment_method || undefined,
+        customer_payment_reference: form.customer_payment_reference || undefined,
+        customer_payment_notes: form.customer_payment_notes || undefined,
         priority: form.priority,
         reference_images: form.reference_images,
         customer_name: form.customer_name,
         customer_email: form.customer_email || undefined,
         customer_phone: form.customer_phone || undefined,
         customer_notes: form.customer_notes || undefined,
+        promised_delivery_date: form.promised_delivery_date || undefined,
+        delivery_method: form.delivery_method,
+        delivery_address: form.delivery_address || undefined,
+        delivery_notes: form.delivery_notes || undefined,
       })
       await load()
     } catch (error: unknown) {
@@ -278,6 +302,79 @@ export default function AffiliateOrderDetailPage() {
                     />
                   </label>
                   <label className="block">
+                    <span className="mb-1 block text-sm font-medium">Anticipo recibido</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={Number(form.final_price || 0)}
+                      step="0.01"
+                      value={form.customer_amount_paid}
+                      onChange={(event) => setForm((prev) => ({ ...prev, customer_amount_paid: event.target.value }))}
+                      className="w-full rounded-xl border bg-background px-3 py-2"
+                    />
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Saldo: ${Math.max(0, Number(form.final_price || 0) - Number(form.customer_amount_paid || 0)).toFixed(2)}
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <input
+                    type="text"
+                    value={form.customer_payment_method}
+                    onChange={(event) => setForm((prev) => ({ ...prev, customer_payment_method: event.target.value }))}
+                    placeholder="Método de pago"
+                    className="rounded-xl border bg-background px-3 py-2"
+                  />
+                  <input
+                    type="text"
+                    value={form.customer_payment_reference}
+                    onChange={(event) => setForm((prev) => ({ ...prev, customer_payment_reference: event.target.value }))}
+                    placeholder="Referencia de pago"
+                    className="rounded-xl border bg-background px-3 py-2"
+                  />
+                  <input
+                    type="text"
+                    value={form.customer_payment_notes}
+                    onChange={(event) => setForm((prev) => ({ ...prev, customer_payment_notes: event.target.value }))}
+                    placeholder="Notas de pago"
+                    className="rounded-xl border bg-background px-3 py-2"
+                  />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium">Fecha prometida</span>
+                    <input
+                      type="date"
+                      value={form.promised_delivery_date}
+                      onChange={(event) => setForm((prev) => ({ ...prev, promised_delivery_date: event.target.value }))}
+                      className="w-full rounded-xl border bg-background px-3 py-2"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium">Entrega</span>
+                    <select
+                      value={form.delivery_method}
+                      onChange={(event) => setForm((prev) => ({ ...prev, delivery_method: event.target.value as RequestForm['delivery_method'] }))}
+                      className="w-full rounded-xl border bg-background px-3 py-2"
+                    >
+                      <option value="pickup">Recoge en DOFER</option>
+                      <option value="local_delivery">Entrega local</option>
+                      <option value="shipping">Envío</option>
+                    </select>
+                  </label>
+                  <input
+                    type="text"
+                    value={form.delivery_address}
+                    onChange={(event) => setForm((prev) => ({ ...prev, delivery_address: event.target.value }))}
+                    placeholder="Dirección de entrega/envío"
+                    className="self-end rounded-xl border bg-background px-3 py-2"
+                  />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block">
                     <span className="mb-1 block text-sm font-medium">Prioridad</span>
                     <select
                       value={form.priority}
@@ -324,6 +421,14 @@ export default function AffiliateOrderDetailPage() {
                   rows={3}
                 />
 
+                <textarea
+                  value={form.delivery_notes}
+                  onChange={(event) => setForm((prev) => ({ ...prev, delivery_notes: event.target.value }))}
+                  placeholder="Notas de entrega"
+                  className="w-full rounded-xl border bg-background px-3 py-2"
+                  rows={2}
+                />
+
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium">Imágenes de referencia</span>
                   <input
@@ -348,7 +453,7 @@ export default function AffiliateOrderDetailPage() {
                   <button
                     type="submit"
                     disabled={saving || processingImages}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-cyan-700 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-cyan-800 disabled:opacity-60"
                   >
                     <Save className="h-4 w-4" />
                     {processingImages ? 'Optimizando...' : saving ? 'Guardando...' : 'Guardar cambios'}
@@ -448,12 +553,20 @@ function fromRequest(request: AffiliateOrderRequest): RequestForm {
     product_name: request.product_name,
     quantity: request.quantity,
     final_price: String(request.final_price),
+    customer_amount_paid: String(request.customer_amount_paid || ''),
+    customer_payment_method: request.customer_payment_method || '',
+    customer_payment_reference: request.customer_payment_reference || '',
+    customer_payment_notes: request.customer_payment_notes || '',
     priority: request.priority,
     reference_images: request.reference_images || [],
     customer_name: request.customer_name,
     customer_email: request.customer_email || '',
     customer_phone: request.customer_phone || '',
     customer_notes: request.customer_notes || '',
+    promised_delivery_date: toDateInputValue(request.promised_delivery_date),
+    delivery_method: request.delivery_method || 'pickup',
+    delivery_address: request.delivery_address || '',
+    delivery_notes: request.delivery_notes || '',
   }
 }
 
@@ -462,9 +575,14 @@ function ReadOnlyRequest({ request }: { request: AffiliateOrderRequest }) {
     <div className="grid gap-3 md:grid-cols-2">
       <Detail label="Producto" value={`${request.product_name} × ${request.quantity}`} />
       <Detail label="Precio final" value={formatMoney(request.final_price)} />
+      <Detail label="Anticipo" value={formatMoney(request.customer_amount_paid || 0)} />
+      <Detail label="Saldo" value={formatMoney(Math.max(0, request.final_price - (request.customer_amount_paid || 0)))} />
       <Detail label="Cliente" value={request.customer_name} />
       <Detail label="Contacto" value={[request.customer_phone, request.customer_email].filter(Boolean).join(' · ') || 'Sin contacto'} />
       <Detail label="Prioridad" value={PRIORITY_LABELS[request.priority] || request.priority} />
+      <Detail label="Pago" value={paymentLabel(request)} />
+      <Detail label="Entrega" value={deliveryLabel(request.delivery_method)} />
+      <Detail label="Fecha prometida" value={promisedDateLabel(request.promised_delivery_date)} />
       <Detail label="Comisión registrada" value={commissionLabel(request)} />
       <div className="md:col-span-2">
         <Detail label="Notas" value={request.customer_notes || 'Sin notas'} />
@@ -560,6 +678,34 @@ function eventLabel(eventType: string) {
 
 function formatMoney(value: number) {
   return `$${value.toFixed(2)}`
+}
+
+function paymentLabel(request: AffiliateOrderRequest) {
+  const labels: Record<string, string> = {
+    unpaid: 'Sin pago',
+    deposit: `Anticipo ${formatMoney(request.customer_amount_paid || 0)}`,
+    paid: 'Pagado',
+  }
+  return labels[request.customer_payment_status] || request.customer_payment_status || 'Sin pago'
+}
+
+function deliveryLabel(value?: string) {
+  const labels: Record<string, string> = {
+    pickup: 'Recoge en DOFER',
+    local_delivery: 'Entrega local',
+    shipping: 'Envío',
+  }
+  return labels[value || ''] || 'Sin definir'
+}
+
+function promisedDateLabel(value?: string) {
+  if (!value) return 'Sin fecha'
+  return new Date(value).toLocaleDateString()
+}
+
+function toDateInputValue(value?: string) {
+  if (!value) return ''
+  return value.slice(0, 10)
 }
 
 function formatDateTime(value: string) {

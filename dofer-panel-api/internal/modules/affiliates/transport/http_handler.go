@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dofer/panel-api/internal/modules/affiliates/app"
 	"github.com/dofer/panel-api/internal/modules/affiliates/domain"
@@ -93,6 +94,18 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	http.Error(w, message, status)
+}
+
+func parseDateInput(value string) (*time.Time, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 // ---- Admin: gestión de afiliados ----
@@ -391,6 +404,57 @@ func (h *AffiliateHandler) CreateOrderRequestComment(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusCreated, comment)
 }
 
+type UpdateOrderRequestOperationsRequest struct {
+	CustomerAmountPaid       float64         `json:"customer_amount_paid"`
+	CustomerPaymentMethod    string          `json:"customer_payment_method"`
+	CustomerPaymentReference string          `json:"customer_payment_reference"`
+	CustomerPaymentNotes     string          `json:"customer_payment_notes"`
+	PromisedDeliveryDate     string          `json:"promised_delivery_date"`
+	DeliveryMethod           string          `json:"delivery_method"`
+	DeliveryStatus           string          `json:"delivery_status"`
+	DeliveryAddress          string          `json:"delivery_address"`
+	DeliveryTrackingNumber   string          `json:"delivery_tracking_number"`
+	DeliveryNotes            string          `json:"delivery_notes"`
+	ProductionChecklist      map[string]bool `json:"production_checklist"`
+	InternalOwnerID          string          `json:"internal_owner_id"`
+}
+
+func (h *AffiliateHandler) UpdateOrderRequestOperations(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req UpdateOrderRequestOperationsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	promisedDate, err := parseDateInput(req.PromisedDeliveryDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid promised_delivery_date")
+		return
+	}
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	updated, err := h.orderRequestControlHandler.UpdateOperations(r.Context(), app.UpdateOrderRequestOperationsCommand{
+		RequestID:                id,
+		ActorUserID:              userID,
+		CustomerAmountPaid:       req.CustomerAmountPaid,
+		CustomerPaymentMethod:    req.CustomerPaymentMethod,
+		CustomerPaymentReference: req.CustomerPaymentReference,
+		CustomerPaymentNotes:     req.CustomerPaymentNotes,
+		PromisedDeliveryDate:     promisedDate,
+		DeliveryMethod:           req.DeliveryMethod,
+		DeliveryStatus:           req.DeliveryStatus,
+		DeliveryAddress:          req.DeliveryAddress,
+		DeliveryTrackingNumber:   req.DeliveryTrackingNumber,
+		DeliveryNotes:            req.DeliveryNotes,
+		ProductionChecklist:      req.ProductionChecklist,
+		InternalOwnerID:          req.InternalOwnerID,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"request": updated, "message": "Control operativo actualizado"})
+}
+
 func (h *AffiliateHandler) ListAllCommissions(w http.ResponseWriter, r *http.Request) {
 	filters := domain.CommissionFilters{
 		AffiliateID: r.URL.Query().Get("affiliate_id"),
@@ -503,16 +567,25 @@ func (h *AffiliateHandler) ListMyAvailableProducts(w http.ResponseWriter, r *htt
 }
 
 type CreateMyOrderRequestRequest struct {
-	ProductID       string   `json:"product_id"`
-	ProductName     string   `json:"product_name"`
-	Quantity        int      `json:"quantity"`
-	FinalPrice      float64  `json:"final_price"`
-	Priority        string   `json:"priority"`
-	ReferenceImages []string `json:"reference_images"`
-	CustomerName    string   `json:"customer_name"`
-	CustomerEmail   string   `json:"customer_email"`
-	CustomerPhone   string   `json:"customer_phone"`
-	CustomerNotes   string   `json:"customer_notes"`
+	ProductID                string   `json:"product_id"`
+	ProductName              string   `json:"product_name"`
+	Quantity                 int      `json:"quantity"`
+	FinalPrice               float64  `json:"final_price"`
+	CustomerAmountPaid       float64  `json:"customer_amount_paid"`
+	CustomerPaymentMethod    string   `json:"customer_payment_method"`
+	CustomerPaymentReference string   `json:"customer_payment_reference"`
+	CustomerPaymentNotes     string   `json:"customer_payment_notes"`
+	Priority                 string   `json:"priority"`
+	ReferenceImages          []string `json:"reference_images"`
+	CustomerName             string   `json:"customer_name"`
+	CustomerEmail            string   `json:"customer_email"`
+	CustomerPhone            string   `json:"customer_phone"`
+	CustomerNotes            string   `json:"customer_notes"`
+	PromisedDeliveryDate     string   `json:"promised_delivery_date"`
+	DeliveryMethod           string   `json:"delivery_method"`
+	DeliveryAddress          string   `json:"delivery_address"`
+	DeliveryNotes            string   `json:"delivery_notes"`
+	DuplicatedFromRequestID  string   `json:"duplicated_from_request_id"`
 }
 
 func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.Request) {
@@ -527,20 +600,34 @@ func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	promisedDate, err := parseDateInput(req.PromisedDeliveryDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid promised_delivery_date")
+		return
+	}
 
 	created, err := h.createOrderRequestHandler.Handle(r.Context(), app.CreateOrderRequestCommand{
-		OrganizationID:  affiliate.OrganizationID,
-		AffiliateID:     affiliate.ID,
-		ProductID:       req.ProductID,
-		ProductName:     req.ProductName,
-		Quantity:        req.Quantity,
-		FinalPrice:      req.FinalPrice,
-		Priority:        req.Priority,
-		ReferenceImages: req.ReferenceImages,
-		CustomerName:    req.CustomerName,
-		CustomerEmail:   req.CustomerEmail,
-		CustomerPhone:   req.CustomerPhone,
-		CustomerNotes:   req.CustomerNotes,
+		OrganizationID:           affiliate.OrganizationID,
+		AffiliateID:              affiliate.ID,
+		ProductID:                req.ProductID,
+		ProductName:              req.ProductName,
+		Quantity:                 req.Quantity,
+		FinalPrice:               req.FinalPrice,
+		CustomerAmountPaid:       req.CustomerAmountPaid,
+		CustomerPaymentMethod:    req.CustomerPaymentMethod,
+		CustomerPaymentReference: req.CustomerPaymentReference,
+		CustomerPaymentNotes:     req.CustomerPaymentNotes,
+		Priority:                 req.Priority,
+		ReferenceImages:          req.ReferenceImages,
+		CustomerName:             req.CustomerName,
+		CustomerEmail:            req.CustomerEmail,
+		CustomerPhone:            req.CustomerPhone,
+		CustomerNotes:            req.CustomerNotes,
+		PromisedDeliveryDate:     promisedDate,
+		DeliveryMethod:           req.DeliveryMethod,
+		DeliveryAddress:          req.DeliveryAddress,
+		DeliveryNotes:            req.DeliveryNotes,
+		DuplicatedFromRequestID:  req.DuplicatedFromRequestID,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -581,21 +668,34 @@ func (h *AffiliateHandler) UpdateMyOrderRequest(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	promisedDate, err := parseDateInput(req.PromisedDeliveryDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid promised_delivery_date")
+		return
+	}
 	userID, _ := middleware.UserIDFromContext(r.Context())
 	updated, err := h.orderRequestControlHandler.UpdateOwn(r.Context(), app.UpdateOwnOrderRequestCommand{
-		RequestID:       id,
-		AffiliateID:     affiliate.ID,
-		ProductID:       req.ProductID,
-		ProductName:     req.ProductName,
-		Quantity:        req.Quantity,
-		FinalPrice:      req.FinalPrice,
-		Priority:        req.Priority,
-		ReferenceImages: req.ReferenceImages,
-		CustomerName:    req.CustomerName,
-		CustomerEmail:   req.CustomerEmail,
-		CustomerPhone:   req.CustomerPhone,
-		CustomerNotes:   req.CustomerNotes,
-		ActorUserID:     userID,
+		RequestID:                id,
+		AffiliateID:              affiliate.ID,
+		ProductID:                req.ProductID,
+		ProductName:              req.ProductName,
+		Quantity:                 req.Quantity,
+		FinalPrice:               req.FinalPrice,
+		CustomerAmountPaid:       req.CustomerAmountPaid,
+		CustomerPaymentMethod:    req.CustomerPaymentMethod,
+		CustomerPaymentReference: req.CustomerPaymentReference,
+		CustomerPaymentNotes:     req.CustomerPaymentNotes,
+		Priority:                 req.Priority,
+		ReferenceImages:          req.ReferenceImages,
+		CustomerName:             req.CustomerName,
+		CustomerEmail:            req.CustomerEmail,
+		CustomerPhone:            req.CustomerPhone,
+		CustomerNotes:            req.CustomerNotes,
+		PromisedDeliveryDate:     promisedDate,
+		DeliveryMethod:           req.DeliveryMethod,
+		DeliveryAddress:          req.DeliveryAddress,
+		DeliveryNotes:            req.DeliveryNotes,
+		ActorUserID:              userID,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

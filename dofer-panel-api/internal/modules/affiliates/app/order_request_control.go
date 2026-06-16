@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/dofer/panel-api/internal/modules/affiliates/domain"
 	"github.com/dofer/panel-api/internal/modules/products"
@@ -43,19 +44,27 @@ func (h *OrderRequestControlHandler) Detail(ctx context.Context, requestID strin
 }
 
 type UpdateOwnOrderRequestCommand struct {
-	RequestID       string
-	AffiliateID     string
-	ProductID       string
-	ProductName     string
-	Quantity        int
-	FinalPrice      float64
-	Priority        string
-	ReferenceImages []string
-	CustomerName    string
-	CustomerEmail   string
-	CustomerPhone   string
-	CustomerNotes   string
-	ActorUserID     string
+	RequestID                string
+	AffiliateID              string
+	ProductID                string
+	ProductName              string
+	Quantity                 int
+	FinalPrice               float64
+	CustomerAmountPaid       float64
+	CustomerPaymentMethod    string
+	CustomerPaymentReference string
+	CustomerPaymentNotes     string
+	Priority                 string
+	ReferenceImages          []string
+	CustomerName             string
+	CustomerEmail            string
+	CustomerPhone            string
+	CustomerNotes            string
+	PromisedDeliveryDate     *time.Time
+	DeliveryMethod           string
+	DeliveryAddress          string
+	DeliveryNotes            string
+	ActorUserID              string
 }
 
 func (h *OrderRequestControlHandler) UpdateOwn(ctx context.Context, cmd UpdateOwnOrderRequestCommand) (*domain.AffiliateOrderRequest, error) {
@@ -112,6 +121,12 @@ func (h *OrderRequestControlHandler) UpdateOwn(ctx context.Context, cmd UpdateOw
 	if minPriceSnapshot > 0 && cmd.FinalPrice < minPriceSnapshot {
 		return nil, errors.New("final price is below the affiliate minimum price")
 	}
+	if cmd.CustomerAmountPaid < 0 {
+		return nil, errors.New("customer amount paid cannot be negative")
+	}
+	if cmd.CustomerAmountPaid > cmd.FinalPrice {
+		return nil, errors.New("customer amount paid cannot exceed final price")
+	}
 
 	req.ProductID = cmd.ProductID
 	req.ProductName = productName
@@ -119,6 +134,11 @@ func (h *OrderRequestControlHandler) UpdateOwn(ctx context.Context, cmd UpdateOw
 	req.SuggestedPriceSnapshot = suggestedPriceSnapshot
 	req.MinPriceSnapshot = minPriceSnapshot
 	req.FinalPrice = cmd.FinalPrice
+	req.CustomerAmountPaid = cmd.CustomerAmountPaid
+	req.CustomerPaymentStatus = calculateCustomerPaymentStatus(cmd.CustomerAmountPaid, cmd.FinalPrice)
+	req.CustomerPaymentMethod = strings.TrimSpace(cmd.CustomerPaymentMethod)
+	req.CustomerPaymentReference = strings.TrimSpace(cmd.CustomerPaymentReference)
+	req.CustomerPaymentNotes = strings.TrimSpace(cmd.CustomerPaymentNotes)
 	req.Priority = priority
 	req.ReferenceImages = sanitizeReferenceImages(cmd.ReferenceImages)
 	req.CustomerName = strings.TrimSpace(cmd.CustomerName)
@@ -127,6 +147,11 @@ func (h *OrderRequestControlHandler) UpdateOwn(ctx context.Context, cmd UpdateOw
 	req.CustomerNotes = strings.TrimSpace(cmd.CustomerNotes)
 	req.Status = domain.RequestPending
 	req.RequestedChanges = ""
+	req.PromisedDeliveryDate = cmd.PromisedDeliveryDate
+	req.DeliveryMethod = normalizeDeliveryMethod(cmd.DeliveryMethod)
+	req.DeliveryAddress = strings.TrimSpace(cmd.DeliveryAddress)
+	req.DeliveryNotes = strings.TrimSpace(cmd.DeliveryNotes)
+	req.ProductionChecklist = normalizeProductionChecklist(req.ProductionChecklist)
 	req.CommissionTypeSnapshot = commissionTypeSnapshot
 	req.CommissionValueSnapshot = commissionValueSnapshot
 
@@ -143,6 +168,68 @@ func (h *OrderRequestControlHandler) UpdateOwn(ctx context.Context, cmd UpdateOw
 		ActorRole:               "affiliate",
 		EventType:               "request.updated",
 		Message:                 "Solicitud actualizada por el afiliado",
+	})
+	return req, nil
+}
+
+type UpdateOrderRequestOperationsCommand struct {
+	RequestID                string
+	ActorUserID              string
+	CustomerAmountPaid       float64
+	CustomerPaymentMethod    string
+	CustomerPaymentReference string
+	CustomerPaymentNotes     string
+	PromisedDeliveryDate     *time.Time
+	DeliveryMethod           string
+	DeliveryStatus           string
+	DeliveryAddress          string
+	DeliveryTrackingNumber   string
+	DeliveryNotes            string
+	ProductionChecklist      map[string]bool
+	InternalOwnerID          string
+}
+
+func (h *OrderRequestControlHandler) UpdateOperations(ctx context.Context, cmd UpdateOrderRequestOperationsCommand) (*domain.AffiliateOrderRequest, error) {
+	organizationID := organizationIDFromContext(ctx)
+	req, err := h.repo.FindOrderRequestByID(cmd.RequestID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	if cmd.CustomerAmountPaid < 0 {
+		return nil, errors.New("customer amount paid cannot be negative")
+	}
+	if cmd.CustomerAmountPaid > req.FinalPrice {
+		return nil, errors.New("customer amount paid cannot exceed final price")
+	}
+
+	req.CustomerAmountPaid = cmd.CustomerAmountPaid
+	req.CustomerPaymentStatus = calculateCustomerPaymentStatus(cmd.CustomerAmountPaid, req.FinalPrice)
+	req.CustomerPaymentMethod = strings.TrimSpace(cmd.CustomerPaymentMethod)
+	req.CustomerPaymentReference = strings.TrimSpace(cmd.CustomerPaymentReference)
+	req.CustomerPaymentNotes = strings.TrimSpace(cmd.CustomerPaymentNotes)
+	req.PromisedDeliveryDate = cmd.PromisedDeliveryDate
+	req.DeliveryMethod = normalizeDeliveryMethod(cmd.DeliveryMethod)
+	req.DeliveryStatus = normalizeDeliveryStatus(cmd.DeliveryStatus)
+	req.DeliveryAddress = strings.TrimSpace(cmd.DeliveryAddress)
+	req.DeliveryTrackingNumber = strings.TrimSpace(cmd.DeliveryTrackingNumber)
+	req.DeliveryNotes = strings.TrimSpace(cmd.DeliveryNotes)
+	req.ProductionChecklist = normalizeProductionChecklist(cmd.ProductionChecklist)
+	req.InternalOwnerID = strings.TrimSpace(cmd.InternalOwnerID)
+
+	if err := h.repo.UpdateOrderRequestDetails(req); err != nil {
+		return nil, err
+	}
+	_ = h.repo.CreateOrderRequestEvent(&domain.AffiliateOrderRequestEvent{
+		OrganizationID:          organizationID,
+		AffiliateOrderRequestID: req.ID,
+		ActorUserID:             cmd.ActorUserID,
+		ActorRole:               "operator",
+		EventType:               "request.operations_updated",
+		Message:                 "Control operativo actualizado",
+		Metadata: map[string]interface{}{
+			"payment_status":  req.CustomerPaymentStatus,
+			"delivery_status": req.DeliveryStatus,
+		},
 	})
 	return req, nil
 }

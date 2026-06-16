@@ -9,19 +9,28 @@ import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import { imageFileToOptimizedDataURL } from '@/lib/images'
-import type { Affiliate, Product } from '@/types'
+import type { Affiliate, AffiliateOrderRequestDetail, Product } from '@/types'
 
 interface NewRequestForm {
   product_id: string
   product_name: string
   quantity: number
   final_price: string
+  customer_amount_paid: string
+  customer_payment_method: string
+  customer_payment_reference: string
+  customer_payment_notes: string
   priority: 'urgent' | 'normal' | 'low'
   reference_images: string[]
   customer_name: string
   customer_email: string
   customer_phone: string
   customer_notes: string
+  promised_delivery_date: string
+  delivery_method: 'pickup' | 'local_delivery' | 'shipping'
+  delivery_address: string
+  delivery_notes: string
+  duplicated_from_request_id: string
 }
 
 const initialForm: NewRequestForm = {
@@ -29,16 +38,26 @@ const initialForm: NewRequestForm = {
   product_name: '',
   quantity: 1,
   final_price: '',
+  customer_amount_paid: '',
+  customer_payment_method: '',
+  customer_payment_reference: '',
+  customer_payment_notes: '',
   priority: 'normal',
   reference_images: [],
   customer_name: '',
   customer_email: '',
   customer_phone: '',
   customer_notes: '',
+  promised_delivery_date: '',
+  delivery_method: 'pickup',
+  delivery_address: '',
+  delivery_notes: '',
+  duplicated_from_request_id: '',
 }
 
 export default function NewAffiliateOrderPage() {
   const router = useRouter()
+  const duplicateID = typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('duplicate') || ''
   const [products, setProducts] = useState<Product[]>([])
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null)
   const [loadingProducts, setLoadingProducts] = useState(true)
@@ -56,12 +75,38 @@ export default function NewAffiliateOrderPage() {
       ])
       setProducts(productsResponse.products || [])
       setAffiliate(affiliateResponse)
+      if (duplicateID) {
+        const duplicate = await apiClient.get<AffiliateOrderRequestDetail>(`/affiliates/me/requests/${duplicateID}`).catch(() => null)
+        if (duplicate?.request) {
+          setForm({
+            product_id: duplicate.request.product_id || '',
+            product_name: duplicate.request.product_name,
+            quantity: duplicate.request.quantity,
+            final_price: String(duplicate.request.final_price),
+            customer_amount_paid: '',
+            customer_payment_method: '',
+            customer_payment_reference: '',
+            customer_payment_notes: '',
+            priority: duplicate.request.priority,
+            reference_images: duplicate.request.reference_images || [],
+            customer_name: '',
+            customer_email: '',
+            customer_phone: '',
+            customer_notes: duplicate.request.customer_notes || '',
+            promised_delivery_date: '',
+            delivery_method: duplicate.request.delivery_method || 'pickup',
+            delivery_address: duplicate.request.delivery_address || '',
+            delivery_notes: duplicate.request.delivery_notes || '',
+            duplicated_from_request_id: duplicate.request.id,
+          })
+        }
+      }
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'Error cargando catálogo'))
     } finally {
       setLoadingProducts(false)
     }
-  }, [])
+  }, [duplicateID])
 
   useEffect(() => {
     void loadProducts()
@@ -109,12 +154,21 @@ export default function NewAffiliateOrderPage() {
         product_name: form.product_name,
         quantity: form.quantity,
         final_price: Number(form.final_price),
+        customer_amount_paid: Number(form.customer_amount_paid || 0),
+        customer_payment_method: form.customer_payment_method || undefined,
+        customer_payment_reference: form.customer_payment_reference || undefined,
+        customer_payment_notes: form.customer_payment_notes || undefined,
         priority: form.priority,
         reference_images: form.reference_images,
         customer_name: form.customer_name,
         customer_email: form.customer_email || undefined,
         customer_phone: form.customer_phone || undefined,
         customer_notes: form.customer_notes || undefined,
+        promised_delivery_date: form.promised_delivery_date || undefined,
+        delivery_method: form.delivery_method,
+        delivery_address: form.delivery_address || undefined,
+        delivery_notes: form.delivery_notes || undefined,
+        duplicated_from_request_id: form.duplicated_from_request_id || undefined,
       })
       router.push('/affiliate/orders')
     } catch (error: unknown) {
@@ -142,6 +196,12 @@ export default function NewAffiliateOrderPage() {
 
       <PanelCard>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {form.duplicated_from_request_id && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+              Pedido duplicado como base. Captura los datos del nuevo cliente antes de registrarlo.
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-sm font-medium">Producto del catálogo (opcional)</label>
             <select
@@ -190,16 +250,45 @@ export default function NewAffiliateOrderPage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium">Precio final que le cobrarás a tu cliente</label>
-            <input
-              type="number"
-              min={selectedProduct?.affiliate_min_price || 0}
-              step="0.01"
-              value={form.final_price}
-              onChange={(e) => setForm((prev) => ({ ...prev, final_price: e.target.value }))}
-              placeholder="$0.00"
-              className="px-3 py-2 border rounded-xl bg-background w-full md:w-60"
-              required
-            />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <input
+                type="number"
+                min={selectedProduct?.affiliate_min_price || 0}
+                step="0.01"
+                value={form.final_price}
+                onChange={(e) => setForm((prev) => ({ ...prev, final_price: e.target.value }))}
+                placeholder="$0.00"
+                className="px-3 py-2 border rounded-xl bg-background"
+                required
+              />
+              <input
+                type="number"
+                min={0}
+                max={Number(form.final_price || 0)}
+                step="0.01"
+                value={form.customer_amount_paid}
+                onChange={(e) => setForm((prev) => ({ ...prev, customer_amount_paid: e.target.value }))}
+                placeholder="Anticipo recibido"
+                className="px-3 py-2 border rounded-xl bg-background"
+              />
+              <input
+                type="text"
+                value={form.customer_payment_method}
+                onChange={(e) => setForm((prev) => ({ ...prev, customer_payment_method: e.target.value }))}
+                placeholder="Método de pago"
+                className="px-3 py-2 border rounded-xl bg-background"
+              />
+              <input
+                type="text"
+                value={form.customer_payment_reference}
+                onChange={(e) => setForm((prev) => ({ ...prev, customer_payment_reference: e.target.value }))}
+                placeholder="Referencia de pago"
+                className="px-3 py-2 border rounded-xl bg-background"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Saldo estimado: ${Math.max(0, Number(form.final_price || 0) - Number(form.customer_amount_paid || 0)).toFixed(2)}
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -280,6 +369,37 @@ export default function NewAffiliateOrderPage() {
             />
           </div>
 
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Fecha prometida</span>
+              <input
+                type="date"
+                value={form.promised_delivery_date}
+                onChange={(e) => setForm((prev) => ({ ...prev, promised_delivery_date: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-xl bg-background"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Entrega</span>
+              <select
+                value={form.delivery_method}
+                onChange={(e) => setForm((prev) => ({ ...prev, delivery_method: e.target.value as NewRequestForm['delivery_method'] }))}
+                className="w-full px-3 py-2 border rounded-xl bg-background"
+              >
+                <option value="pickup">Recoge en DOFER</option>
+                <option value="local_delivery">Entrega local</option>
+                <option value="shipping">Envío</option>
+              </select>
+            </label>
+            <input
+              type="text"
+              value={form.delivery_address}
+              onChange={(e) => setForm((prev) => ({ ...prev, delivery_address: e.target.value }))}
+              placeholder="Dirección de entrega/envío"
+              className="self-end px-3 py-2 border rounded-xl bg-background"
+            />
+          </div>
+
           <textarea
             value={form.customer_notes}
             onChange={(e) => setForm((prev) => ({ ...prev, customer_notes: e.target.value }))}
@@ -288,10 +408,18 @@ export default function NewAffiliateOrderPage() {
             rows={3}
           />
 
+          <textarea
+            value={form.delivery_notes}
+            onChange={(e) => setForm((prev) => ({ ...prev, delivery_notes: e.target.value }))}
+            placeholder="Notas de entrega o pago"
+            className="w-full px-3 py-2 border rounded-xl bg-background"
+            rows={2}
+          />
+
           <button
             type="submit"
             disabled={submitting || processingImages}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center rounded-xl bg-cyan-700 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-cyan-800 disabled:opacity-60"
           >
             {processingImages ? 'Optimizando imágenes...' : submitting ? 'Enviando...' : 'Registrar pedido'}
           </button>

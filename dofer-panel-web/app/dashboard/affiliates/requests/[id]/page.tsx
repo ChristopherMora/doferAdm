@@ -18,6 +18,30 @@ const PRIORITY_LABELS: Record<string, string> = {
   low: 'Baja',
 }
 
+const CHECKLIST_LABELS: Record<string, string> = {
+  reviewed: 'Revisado',
+  prepared: 'Preparado',
+  printing: 'Impresión',
+  postprocess: 'Postproceso',
+  packed: 'Empaque',
+  delivered: 'Entregado',
+}
+
+const initialOperationsForm = {
+  customer_amount_paid: '',
+  customer_payment_method: '',
+  customer_payment_reference: '',
+  customer_payment_notes: '',
+  promised_delivery_date: '',
+  delivery_method: 'pickup' as AffiliateOrderRequest['delivery_method'],
+  delivery_status: 'pending' as AffiliateOrderRequest['delivery_status'],
+  delivery_address: '',
+  delivery_tracking_number: '',
+  delivery_notes: '',
+  production_checklist: {} as Record<string, boolean>,
+  internal_owner_id: '',
+}
+
 export default function AdminAffiliateRequestDetailPage() {
   const params = useParams<{ id: string }>()
   const requestID = params.id
@@ -30,6 +54,7 @@ export default function AdminAffiliateRequestDetailPage() {
   const [changeReason, setChangeReason] = useState('')
   const [commentMessage, setCommentMessage] = useState('')
   const [internalOnly, setInternalOnly] = useState(false)
+  const [operationsForm, setOperationsForm] = useState(initialOperationsForm)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -37,6 +62,7 @@ export default function AdminAffiliateRequestDetailPage() {
     try {
       const response = await apiClient.get<AffiliateOrderRequestDetail>(`/affiliate-requests/${requestID}/detail`)
       setDetail(response)
+      setOperationsForm(fromRequestOperations(response.request))
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'Error cargando solicitud'))
       setDetail(null)
@@ -112,6 +138,33 @@ export default function AdminAffiliateRequestDetailPage() {
     }
   }
 
+  const handleOperationsSave = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setProcessing('operations')
+    setApiError(null)
+    try {
+      await apiClient.patch(`/affiliate-requests/${requestID}/operations`, {
+        customer_amount_paid: Number(operationsForm.customer_amount_paid || 0),
+        customer_payment_method: operationsForm.customer_payment_method || undefined,
+        customer_payment_reference: operationsForm.customer_payment_reference || undefined,
+        customer_payment_notes: operationsForm.customer_payment_notes || undefined,
+        promised_delivery_date: operationsForm.promised_delivery_date || undefined,
+        delivery_method: operationsForm.delivery_method,
+        delivery_status: operationsForm.delivery_status,
+        delivery_address: operationsForm.delivery_address || undefined,
+        delivery_tracking_number: operationsForm.delivery_tracking_number || undefined,
+        delivery_notes: operationsForm.delivery_notes || undefined,
+        production_checklist: operationsForm.production_checklist,
+        internal_owner_id: operationsForm.internal_owner_id || undefined,
+      })
+      await load()
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'Error guardando control operativo'))
+    } finally {
+      setProcessing(null)
+    }
+  }
+
   if (loading) {
     return <LoadingState label="Cargando solicitud..." />
   }
@@ -161,9 +214,15 @@ export default function AdminAffiliateRequestDetailPage() {
               <Detail label="Cliente" value={request.customer_name} />
               <Detail label="Contacto" value={[request.customer_phone, request.customer_email].filter(Boolean).join(' · ') || 'Sin contacto'} />
               <Detail label="Precio final" value={formatMoney(request.final_price)} />
+              <Detail label="Anticipo" value={formatMoney(request.customer_amount_paid || 0)} />
+              <Detail label="Saldo" value={formatMoney(Math.max(0, request.final_price - (request.customer_amount_paid || 0)))} />
               <Detail label="Sugerido" value={request.suggested_price_snapshot ? formatMoney(request.suggested_price_snapshot) : 'Sin sugerido'} />
               <Detail label="Mínimo afiliado" value={request.min_price_snapshot ? formatMoney(request.min_price_snapshot) : 'Sin mínimo'} />
               <Detail label="Prioridad" value={PRIORITY_LABELS[request.priority] || request.priority} />
+              <Detail label="Pago" value={paymentLabel(request)} />
+              <Detail label="Entrega" value={deliveryMethodLabel(request.delivery_method)} />
+              <Detail label="Estado entrega" value={deliveryStatusLabel(request.delivery_status)} />
+              <Detail label="Fecha prometida" value={promisedDateLabel(request.promised_delivery_date)} />
               <Detail label="Comisión snapshot" value={commissionLabel(request)} />
               <Detail label="Creado" value={formatDateTime(request.created_at)} />
               <div className="md:col-span-2 xl:col-span-3">
@@ -187,6 +246,126 @@ export default function AdminAffiliateRequestDetailPage() {
                 Ver pedido generado
               </Link>
             )}
+          </PanelCard>
+
+          <PanelCard className="space-y-4">
+            <h2 className="text-xl font-bold">Control operativo</h2>
+            <form onSubmit={handleOperationsSave} className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <input
+                  type="number"
+                  min={0}
+                  max={request.final_price}
+                  step="0.01"
+                  value={operationsForm.customer_amount_paid}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, customer_amount_paid: event.target.value }))}
+                  placeholder="Anticipo recibido"
+                  className="rounded-xl border bg-background px-3 py-2"
+                />
+                <input
+                  type="text"
+                  value={operationsForm.customer_payment_method}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, customer_payment_method: event.target.value }))}
+                  placeholder="Método de pago"
+                  className="rounded-xl border bg-background px-3 py-2"
+                />
+                <input
+                  type="text"
+                  value={operationsForm.customer_payment_reference}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, customer_payment_reference: event.target.value }))}
+                  placeholder="Referencia"
+                  className="rounded-xl border bg-background px-3 py-2"
+                />
+                <input
+                  type="date"
+                  value={operationsForm.promised_delivery_date}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, promised_delivery_date: event.target.value }))}
+                  className="rounded-xl border bg-background px-3 py-2"
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <select
+                  value={operationsForm.delivery_method}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, delivery_method: event.target.value as AffiliateOrderRequest['delivery_method'] }))}
+                  className="rounded-xl border bg-background px-3 py-2"
+                >
+                  <option value="pickup">Recoge en DOFER</option>
+                  <option value="local_delivery">Entrega local</option>
+                  <option value="shipping">Envío</option>
+                </select>
+                <select
+                  value={operationsForm.delivery_status}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, delivery_status: event.target.value as AffiliateOrderRequest['delivery_status'] }))}
+                  className="rounded-xl border bg-background px-3 py-2"
+                >
+                  <option value="pending">Pendiente</option>
+                  <option value="ready">Listo</option>
+                  <option value="delivered">Entregado</option>
+                  <option value="shipped">Enviado</option>
+                  <option value="cancelled">Cancelado</option>
+                </select>
+                <input
+                  type="text"
+                  value={operationsForm.delivery_tracking_number}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, delivery_tracking_number: event.target.value }))}
+                  placeholder="Guía / rastreo"
+                  className="rounded-xl border bg-background px-3 py-2"
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <textarea
+                  value={operationsForm.delivery_address}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, delivery_address: event.target.value }))}
+                  placeholder="Dirección de entrega/envío"
+                  className="rounded-xl border bg-background px-3 py-2"
+                  rows={2}
+                />
+                <textarea
+                  value={operationsForm.delivery_notes}
+                  onChange={(event) => setOperationsForm((prev) => ({ ...prev, delivery_notes: event.target.value }))}
+                  placeholder="Notas de entrega"
+                  className="rounded-xl border bg-background px-3 py-2"
+                  rows={2}
+                />
+              </div>
+
+              <textarea
+                value={operationsForm.customer_payment_notes}
+                onChange={(event) => setOperationsForm((prev) => ({ ...prev, customer_payment_notes: event.target.value }))}
+                placeholder="Notas de pago"
+                className="w-full rounded-xl border bg-background px-3 py-2"
+                rows={2}
+              />
+
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {Object.entries(CHECKLIST_LABELS).map(([key, label]) => (
+                  <label key={key} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(operationsForm.production_checklist[key])}
+                      onChange={(event) => setOperationsForm((prev) => ({
+                        ...prev,
+                        production_checklist: {
+                          ...prev.production_checklist,
+                          [key]: event.target.checked,
+                        },
+                      }))}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              <button
+                type="submit"
+                disabled={processing === 'operations'}
+                className="rounded-xl bg-cyan-700 px-5 py-2.5 font-semibold text-white shadow-sm hover:bg-cyan-800 disabled:opacity-60"
+              >
+                {processing === 'operations' ? 'Guardando...' : 'Guardar control operativo'}
+              </button>
+            </form>
           </PanelCard>
 
           {canReview && (
@@ -382,6 +561,7 @@ function eventLabel(eventType: string) {
     'request.rejected': 'Solicitud rechazada',
     'request.changes_requested': 'Cambios solicitados',
     'request.cancelled': 'Solicitud cancelada',
+    'request.operations_updated': 'Control operativo actualizado',
     'comment.created': 'Comentario agregado',
   }
   return labels[eventType] || eventType
@@ -389,6 +569,62 @@ function eventLabel(eventType: string) {
 
 function formatMoney(value: number) {
   return `$${value.toFixed(2)}`
+}
+
+function fromRequestOperations(request: AffiliateOrderRequest) {
+  return {
+    customer_amount_paid: String(request.customer_amount_paid || ''),
+    customer_payment_method: request.customer_payment_method || '',
+    customer_payment_reference: request.customer_payment_reference || '',
+    customer_payment_notes: request.customer_payment_notes || '',
+    promised_delivery_date: toDateInputValue(request.promised_delivery_date),
+    delivery_method: request.delivery_method || 'pickup',
+    delivery_status: request.delivery_status || 'pending',
+    delivery_address: request.delivery_address || '',
+    delivery_tracking_number: request.delivery_tracking_number || '',
+    delivery_notes: request.delivery_notes || '',
+    production_checklist: request.production_checklist || {},
+    internal_owner_id: request.internal_owner_id || '',
+  }
+}
+
+function paymentLabel(request: AffiliateOrderRequest) {
+  const labels: Record<string, string> = {
+    unpaid: 'Sin pago',
+    deposit: `Anticipo ${formatMoney(request.customer_amount_paid || 0)}`,
+    paid: 'Pagado',
+  }
+  return labels[request.customer_payment_status] || request.customer_payment_status || 'Sin pago'
+}
+
+function deliveryMethodLabel(value?: string) {
+  const labels: Record<string, string> = {
+    pickup: 'Recoge en DOFER',
+    local_delivery: 'Entrega local',
+    shipping: 'Envío',
+  }
+  return labels[value || ''] || 'Sin definir'
+}
+
+function deliveryStatusLabel(value?: string) {
+  const labels: Record<string, string> = {
+    pending: 'Pendiente',
+    ready: 'Listo',
+    delivered: 'Entregado',
+    shipped: 'Enviado',
+    cancelled: 'Cancelado',
+  }
+  return labels[value || ''] || 'Pendiente'
+}
+
+function promisedDateLabel(value?: string) {
+  if (!value) return 'Sin fecha'
+  return new Date(value).toLocaleDateString()
+}
+
+function toDateInputValue(value?: string) {
+  if (!value) return ''
+  return value.slice(0, 10)
 }
 
 function formatDateTime(value: string) {

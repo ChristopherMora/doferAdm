@@ -109,7 +109,7 @@ export default function MyAffiliateOrdersPage() {
         actions={
           <Link
             href="/affiliate/orders/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-white hover:bg-white/25"
+            className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-white shadow-sm hover:bg-cyan-400"
           >
             <Plus className="h-4 w-4" />
             Nuevo pedido
@@ -205,6 +205,10 @@ export default function MyAffiliateOrdersPage() {
                         label="Referencias"
                         value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
                       />
+                      <QuickFact label="Pago" value={paymentLabel(req)} strong={req.customer_payment_status === 'paid'} />
+                      <QuickFact label="Saldo" value={`$${Math.max(0, req.final_price - (req.customer_amount_paid || 0)).toFixed(2)}`} />
+                      <QuickFact label="Entrega" value={deliveryLabel(req.delivery_method)} />
+                      <QuickFact label="Prometido" value={promisedDateLabel(req.promised_delivery_date)} />
                     </div>
                   </div>
 
@@ -229,6 +233,12 @@ export default function MyAffiliateOrdersPage() {
                   >
                     Abrir control
                   </Link>
+                  <Link
+                    href={`/affiliate/orders/new?duplicate=${req.id}`}
+                    className="rounded-xl bg-cyan-700 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-800"
+                  >
+                    Duplicar
+                  </Link>
                 </div>
               </div>
 
@@ -238,6 +248,10 @@ export default function MyAffiliateOrdersPage() {
                   <Detail label="Teléfono" value={req.customer_phone || 'Sin teléfono'} />
                   <Detail label="Sugerido" value={req.suggested_price_snapshot ? `$${req.suggested_price_snapshot.toFixed(2)}` : 'Sin sugerido'} />
                   <Detail label="Mínimo" value={req.min_price_snapshot ? `$${req.min_price_snapshot.toFixed(2)}` : 'Sin mínimo'} />
+                  <Detail label="Anticipo" value={`$${(req.customer_amount_paid || 0).toFixed(2)}`} />
+                  <Detail label="Pago" value={paymentLabel(req)} />
+                  <Detail label="Entrega" value={deliveryLabel(req.delivery_method)} />
+                  <Detail label="Fecha prometida" value={promisedDateLabel(req.promised_delivery_date)} />
                   <div className="md:col-span-2 xl:col-span-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Notas</p>
                     <p className="mt-1 text-sm">{req.customer_notes || 'Sin notas adicionales.'}</p>
@@ -272,7 +286,7 @@ export default function MyAffiliateOrdersPage() {
                 : 'Ajusta la búsqueda o cambia los filtros para revisar otros pedidos.'
             }
             action={
-              <Link href="/affiliate/orders/new" className="rounded-xl bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90">
+              <Link href="/affiliate/orders/new" className="rounded-xl bg-cyan-700 px-4 py-2 font-semibold text-white shadow-sm hover:bg-cyan-800">
                 Registrar pedido
               </Link>
             }
@@ -361,6 +375,29 @@ function OrderMediaPreview({ request }: { request: AffiliateOrderRequest }) {
       )}
     </div>
   )
+}
+
+function paymentLabel(request: AffiliateOrderRequest) {
+  const labels: Record<string, string> = {
+    unpaid: 'Sin pago',
+    deposit: `Anticipo $${(request.customer_amount_paid || 0).toFixed(2)}`,
+    paid: 'Pagado',
+  }
+  return labels[request.customer_payment_status] || request.customer_payment_status || 'Sin pago'
+}
+
+function deliveryLabel(value?: string) {
+  const labels: Record<string, string> = {
+    pickup: 'Recoge en DOFER',
+    local_delivery: 'Entrega local',
+    shipping: 'Envío',
+  }
+  return labels[value || ''] || 'Sin definir'
+}
+
+function promisedDateLabel(value?: string) {
+  if (!value) return 'Sin fecha'
+  return new Date(value).toLocaleDateString()
 }
 
 function ReviewBadge({ status, rejectionReason }: { status: string; rejectionReason?: string }) {

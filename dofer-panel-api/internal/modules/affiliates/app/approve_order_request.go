@@ -39,7 +39,7 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 		return nil, err
 	}
 
-	if req.Status != domain.RequestPending {
+	if req.Status != domain.RequestPending && req.Status != domain.RequestNeedsChanges {
 		return nil, domain.ErrRequestNotPending
 	}
 
@@ -67,18 +67,28 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 	order.AffiliateID = affiliate.ID
 	order.Priority = ordersDomain.OrderPriority(req.Priority)
 	order.Amount = req.FinalPrice
-	order.Balance = req.FinalPrice
+	order.AmountPaid = req.CustomerAmountPaid
+	order.Balance = req.FinalPrice - req.CustomerAmountPaid
+	order.DeliveryDeadline = req.PromisedDeliveryDate
 	order.Notes = fmt.Sprintf("🤝 Pedido registrado por el afiliado %s", affiliate.DisplayName)
 	if req.CustomerNotes != "" {
 		order.Notes += fmt.Sprintf("\n📝 %s", req.CustomerNotes)
 	}
+	order.Metadata = map[string]interface{}{
+		"affiliate_order_request_id": req.ID,
+		"affiliate_reference_images": req.ReferenceImages,
+		"affiliate_referral_code":    affiliate.ReferralCode,
+		"customer_payment_status":    req.CustomerPaymentStatus,
+		"customer_payment_method":    req.CustomerPaymentMethod,
+		"customer_payment_reference": req.CustomerPaymentReference,
+		"delivery_method":            req.DeliveryMethod,
+		"delivery_status":            req.DeliveryStatus,
+		"delivery_address":           req.DeliveryAddress,
+		"delivery_tracking_number":   req.DeliveryTrackingNumber,
+		"production_checklist":       req.ProductionChecklist,
+	}
 	if len(req.ReferenceImages) > 0 {
 		order.ProductImage = req.ReferenceImages[0]
-		order.Metadata = map[string]interface{}{
-			"affiliate_order_request_id": req.ID,
-			"affiliate_reference_images": req.ReferenceImages,
-			"affiliate_referral_code":    affiliate.ReferralCode,
-		}
 	}
 
 	if err := h.orderRepo.Create(order); err != nil {

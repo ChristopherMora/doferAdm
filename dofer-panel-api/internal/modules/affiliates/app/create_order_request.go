@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/dofer/panel-api/internal/modules/affiliates/domain"
 	"github.com/dofer/panel-api/internal/modules/products"
@@ -11,18 +12,27 @@ import (
 )
 
 type CreateOrderRequestCommand struct {
-	OrganizationID  string
-	AffiliateID     string // resuelto SIEMPRE desde el user_id autenticado, nunca del body
-	ProductID       string
-	ProductName     string
-	Quantity        int
-	FinalPrice      float64
-	Priority        string
-	ReferenceImages []string
-	CustomerName    string
-	CustomerEmail   string
-	CustomerPhone   string
-	CustomerNotes   string
+	OrganizationID           string
+	AffiliateID              string // resuelto SIEMPRE desde el user_id autenticado, nunca del body
+	ProductID                string
+	ProductName              string
+	Quantity                 int
+	FinalPrice               float64
+	CustomerAmountPaid       float64
+	CustomerPaymentMethod    string
+	CustomerPaymentReference string
+	CustomerPaymentNotes     string
+	Priority                 string
+	ReferenceImages          []string
+	CustomerName             string
+	CustomerEmail            string
+	CustomerPhone            string
+	CustomerNotes            string
+	PromisedDeliveryDate     *time.Time
+	DeliveryMethod           string
+	DeliveryAddress          string
+	DeliveryNotes            string
+	DuplicatedFromRequestID  string
 }
 
 type CreateOrderRequestHandler struct {
@@ -91,6 +101,12 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 	if minPriceSnapshot > 0 && cmd.FinalPrice < minPriceSnapshot {
 		return nil, errors.New("final price is below the affiliate minimum price")
 	}
+	if cmd.CustomerAmountPaid < 0 {
+		return nil, errors.New("customer amount paid cannot be negative")
+	}
+	if cmd.CustomerAmountPaid > cmd.FinalPrice {
+		return nil, errors.New("customer amount paid cannot exceed final price")
+	}
 
 	req, err := domain.NewAffiliateOrderRequest(cmd.AffiliateID, productName, cmd.CustomerName, cmd.Quantity, cmd.FinalPrice)
 	if err != nil {
@@ -101,6 +117,11 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 	req.ProductID = cmd.ProductID
 	req.SuggestedPriceSnapshot = suggestedPriceSnapshot
 	req.MinPriceSnapshot = minPriceSnapshot
+	req.CustomerAmountPaid = cmd.CustomerAmountPaid
+	req.CustomerPaymentStatus = calculateCustomerPaymentStatus(cmd.CustomerAmountPaid, cmd.FinalPrice)
+	req.CustomerPaymentMethod = strings.TrimSpace(cmd.CustomerPaymentMethod)
+	req.CustomerPaymentReference = strings.TrimSpace(cmd.CustomerPaymentReference)
+	req.CustomerPaymentNotes = strings.TrimSpace(cmd.CustomerPaymentNotes)
 	req.Priority = priority
 	req.ReferenceImages = sanitizeReferenceImages(cmd.ReferenceImages)
 	req.CommissionTypeSnapshot = commissionTypeSnapshot
@@ -108,6 +129,13 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 	req.CustomerEmail = cmd.CustomerEmail
 	req.CustomerPhone = cmd.CustomerPhone
 	req.CustomerNotes = cmd.CustomerNotes
+	req.PromisedDeliveryDate = cmd.PromisedDeliveryDate
+	req.DeliveryMethod = normalizeDeliveryMethod(cmd.DeliveryMethod)
+	req.DeliveryStatus = "pending"
+	req.DeliveryAddress = strings.TrimSpace(cmd.DeliveryAddress)
+	req.DeliveryNotes = strings.TrimSpace(cmd.DeliveryNotes)
+	req.ProductionChecklist = defaultProductionChecklist()
+	req.DuplicatedFromRequestID = strings.TrimSpace(cmd.DuplicatedFromRequestID)
 
 	if err := h.repo.CreateOrderRequest(req); err != nil {
 		return nil, err
@@ -150,4 +178,54 @@ func sanitizeReferenceImages(images []string) []string {
 		}
 	}
 	return result
+}
+
+func calculateCustomerPaymentStatus(amountPaid, finalPrice float64) string {
+	if amountPaid <= 0 {
+		return "unpaid"
+	}
+	if finalPrice > 0 && amountPaid >= finalPrice {
+		return "paid"
+	}
+	return "deposit"
+}
+
+func normalizeDeliveryMethod(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "local_delivery", "shipping":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "pickup"
+	}
+}
+
+func normalizeDeliveryStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "ready", "delivered", "shipped", "cancelled":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "pending"
+	}
+}
+
+func defaultProductionChecklist() map[string]bool {
+	return map[string]bool{
+		"reviewed":    false,
+		"prepared":    false,
+		"printing":    false,
+		"postprocess": false,
+		"packed":      false,
+		"delivered":   false,
+	}
+}
+
+func normalizeProductionChecklist(values map[string]bool) map[string]bool {
+	checklist := defaultProductionChecklist()
+	for key, value := range values {
+		switch key {
+		case "reviewed", "prepared", "printing", "postprocess", "packed", "delivered":
+			checklist[key] = value
+		}
+	}
+	return checklist
 }

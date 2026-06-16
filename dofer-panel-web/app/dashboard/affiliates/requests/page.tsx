@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ImageIcon } from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
@@ -14,6 +14,8 @@ import type { AffiliateOrderRequest } from '@/types'
 
 type StatusFilter = 'pending' | 'needs_changes' | 'approved' | 'rejected' | 'cancelled' | ''
 type PriorityFilter = 'urgent' | 'normal' | 'low' | ''
+type PaymentFilter = 'unpaid' | 'deposit' | 'paid' | ''
+type DeliveryFilter = 'pickup' | 'local_delivery' | 'shipping' | ''
 
 const PRIORITY_LABELS: Record<string, string> = {
   urgent: 'Urgente',
@@ -31,6 +33,9 @@ export default function AffiliateRequestsPage() {
   const [requests, setRequests] = useState<AffiliateOrderRequest[]>([])
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('')
+  const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>('')
+  const [lateOnly, setLateOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
@@ -56,6 +61,22 @@ export default function AffiliateRequestsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const visibleRequests = useMemo(() => {
+    return requests.filter((request) => {
+      const matchesPayment = paymentFilter === '' || request.customer_payment_status === paymentFilter
+      const matchesDelivery = deliveryFilter === '' || request.delivery_method === deliveryFilter
+      const matchesLate = !lateOnly || isLate(request)
+      return matchesPayment && matchesDelivery && matchesLate
+    })
+  }, [deliveryFilter, lateOnly, paymentFilter, requests])
+
+  const summary = useMemo(() => ({
+    total: visibleRequests.length,
+    unpaid: visibleRequests.filter((request) => request.customer_payment_status !== 'paid').length,
+    late: visibleRequests.filter(isLate).length,
+    urgent: visibleRequests.filter((request) => request.priority === 'urgent').length,
+  }), [visibleRequests])
 
   const handleApprove = async (id: string) => {
     setProcessingId(id)
@@ -124,6 +145,33 @@ export default function AffiliateRequestsPage() {
               <option value="normal">Normales</option>
               <option value="low">Bajas</option>
             </select>
+            <select
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
+              className="px-3 py-2 rounded-xl bg-white/15 text-white border border-white/20"
+            >
+              <option value="">Todo pago</option>
+              <option value="unpaid">Sin pago</option>
+              <option value="deposit">Anticipo</option>
+              <option value="paid">Pagado</option>
+            </select>
+            <select
+              value={deliveryFilter}
+              onChange={(e) => setDeliveryFilter(e.target.value as DeliveryFilter)}
+              className="px-3 py-2 rounded-xl bg-white/15 text-white border border-white/20"
+            >
+              <option value="">Toda entrega</option>
+              <option value="pickup">Recoge</option>
+              <option value="local_delivery">Local</option>
+              <option value="shipping">Envío</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setLateOnly((prev) => !prev)}
+              className={`rounded-xl border border-white/20 px-3 py-2 text-sm text-white ${lateOnly ? 'bg-red-500/80' : 'bg-white/15 hover:bg-white/25'}`}
+            >
+              Atrasados
+            </button>
           </div>
         }
       />
@@ -132,9 +180,16 @@ export default function AffiliateRequestsPage() {
         <div className="p-3 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm">{apiError}</div>
       )}
 
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Metric label="Resultado" value={summary.total} />
+        <Metric label="Con saldo" value={summary.unpaid} tone="yellow" />
+        <Metric label="Atrasados" value={summary.late} tone="red" />
+        <Metric label="Urgentes" value={summary.urgent} tone="blue" />
+      </section>
+
       <PanelCard>
         <div className="space-y-3">
-          {requests.map((req) => (
+          {visibleRequests.map((req) => (
             <div key={req.id} className="rounded-xl border border-border/70 bg-background/70 p-4 space-y-3">
               <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_auto]">
                 <RequestMediaPreview request={req} />
@@ -165,6 +220,10 @@ export default function AffiliateRequestsPage() {
                       label="Referencias"
                       value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
                     />
+                    <QuickFact label="Pago" value={paymentLabel(req)} strong={req.customer_payment_status === 'paid'} />
+                    <QuickFact label="Saldo" value={`$${Math.max(0, req.final_price - (req.customer_amount_paid || 0)).toFixed(2)}`} />
+                    <QuickFact label="Entrega" value={deliveryLabel(req.delivery_method)} />
+                    <QuickFact label="Prometido" value={promisedDateLabel(req.promised_delivery_date)} strong={isLate(req)} />
                   </div>
                 </div>
 
@@ -228,7 +287,7 @@ export default function AffiliateRequestsPage() {
             </div>
           ))}
 
-          {requests.length === 0 && (
+          {visibleRequests.length === 0 && (
             <EmptyState title="No hay solicitudes" description="Cuando un afiliado registre un pedido, aparecerá aquí para tu revisión." />
           )}
         </div>
@@ -260,6 +319,21 @@ function StatusBadge({ request }: { request: AffiliateOrderRequest }) {
   )
 }
 
+function Metric({ label, value, tone }: { label: string; value: number; tone?: 'yellow' | 'red' | 'blue' }) {
+  const toneClass = {
+    yellow: 'text-yellow-600',
+    red: 'text-red-600',
+    blue: 'text-blue-600',
+  }[tone || 'blue']
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-background/85 p-4">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-2xl font-bold ${tone ? toneClass : 'text-foreground'}`}>{value}</div>
+    </div>
+  )
+}
+
 function QuickFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="min-w-0">
@@ -267,6 +341,36 @@ function QuickFact({ label, value, strong }: { label: string; value: string; str
       <p className={`mt-0.5 truncate ${strong ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>{value}</p>
     </div>
   )
+}
+
+function paymentLabel(request: AffiliateOrderRequest) {
+  const labels: Record<string, string> = {
+    unpaid: 'Sin pago',
+    deposit: `Anticipo $${(request.customer_amount_paid || 0).toFixed(2)}`,
+    paid: 'Pagado',
+  }
+  return labels[request.customer_payment_status] || request.customer_payment_status || 'Sin pago'
+}
+
+function deliveryLabel(value?: string) {
+  const labels: Record<string, string> = {
+    pickup: 'Recoge en DOFER',
+    local_delivery: 'Entrega local',
+    shipping: 'Envío',
+  }
+  return labels[value || ''] || 'Sin definir'
+}
+
+function promisedDateLabel(value?: string) {
+  if (!value) return 'Sin fecha'
+  return new Date(value).toLocaleDateString()
+}
+
+function isLate(request: AffiliateOrderRequest) {
+  if (!request.promised_delivery_date || ['approved', 'rejected', 'cancelled'].includes(request.status)) return false
+  const promised = new Date(request.promised_delivery_date)
+  promised.setHours(23, 59, 59, 999)
+  return promised.getTime() < Date.now()
 }
 
 function RequestMediaPreview({ request }: { request: AffiliateOrderRequest }) {

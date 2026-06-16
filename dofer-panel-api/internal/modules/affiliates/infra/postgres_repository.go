@@ -202,24 +202,33 @@ func (r *PostgresAffiliateRepository) CreateAffiliateUser(id, email, fullName, o
 
 const orderRequestColumns = `
 	id, organization_id, affiliate_id, product_id, product_name, quantity, suggested_price_snapshot,
-	min_price_snapshot, final_price, priority, reference_images, customer_name, customer_email, customer_phone, customer_notes,
+	min_price_snapshot, final_price, customer_amount_paid, customer_payment_status, customer_payment_method,
+	customer_payment_reference, customer_payment_notes, priority, reference_images, customer_name, customer_email, customer_phone, customer_notes,
 	status, requested_changes, rejection_reason, reviewed_by, reviewed_at,
-	cancelled_reason, cancelled_by, cancelled_at, order_id,
+	cancelled_reason, cancelled_by, cancelled_at, promised_delivery_date, delivery_method, delivery_status,
+	delivery_address, delivery_tracking_number, delivery_notes, production_checklist, internal_owner_id,
+	duplicated_from_request_id, order_id,
 	commission_type_snapshot, commission_value_snapshot, created_at, updated_at
 `
 
 func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 	var req domain.AffiliateOrderRequest
-	var productID, customerEmail, customerPhone, customerNotes, requestedChanges, rejectionReason, reviewedBy, cancelledReason, cancelledBy, orderID, commissionTypeSnapshot sql.NullString
+	var productID, customerPaymentMethod, customerPaymentReference, customerPaymentNotes sql.NullString
+	var customerEmail, customerPhone, customerNotes, requestedChanges, rejectionReason, reviewedBy sql.NullString
+	var cancelledReason, cancelledBy, deliveryAddress, deliveryTrackingNumber, deliveryNotes sql.NullString
+	var internalOwnerID, duplicatedFromRequestID, orderID, commissionTypeSnapshot sql.NullString
 	var suggestedPriceSnapshot, minPriceSnapshot, commissionValueSnapshot sql.NullFloat64
-	var reviewedAt, cancelledAt sql.NullTime
-	var referenceImagesJSON []byte
+	var reviewedAt, cancelledAt, promisedDeliveryDate sql.NullTime
+	var referenceImagesJSON, productionChecklistJSON []byte
 
 	err := row.Scan(
 		&req.ID, &req.OrganizationID, &req.AffiliateID, &productID, &req.ProductName, &req.Quantity, &suggestedPriceSnapshot,
-		&minPriceSnapshot, &req.FinalPrice, &req.Priority, &referenceImagesJSON, &req.CustomerName, &customerEmail, &customerPhone, &customerNotes,
+		&minPriceSnapshot, &req.FinalPrice, &req.CustomerAmountPaid, &req.CustomerPaymentStatus, &customerPaymentMethod,
+		&customerPaymentReference, &customerPaymentNotes, &req.Priority, &referenceImagesJSON, &req.CustomerName, &customerEmail, &customerPhone, &customerNotes,
 		&req.Status, &requestedChanges, &rejectionReason, &reviewedBy, &reviewedAt,
-		&cancelledReason, &cancelledBy, &cancelledAt, &orderID,
+		&cancelledReason, &cancelledBy, &cancelledAt, &promisedDeliveryDate, &req.DeliveryMethod, &req.DeliveryStatus,
+		&deliveryAddress, &deliveryTrackingNumber, &deliveryNotes, &productionChecklistJSON, &internalOwnerID,
+		&duplicatedFromRequestID, &orderID,
 		&commissionTypeSnapshot, &commissionValueSnapshot, &req.CreatedAt, &req.UpdatedAt,
 	)
 	if err != nil {
@@ -234,6 +243,18 @@ func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 	}
 	if minPriceSnapshot.Valid {
 		req.MinPriceSnapshot = minPriceSnapshot.Float64
+	}
+	if req.CustomerPaymentStatus == "" {
+		req.CustomerPaymentStatus = "unpaid"
+	}
+	if customerPaymentMethod.Valid {
+		req.CustomerPaymentMethod = customerPaymentMethod.String
+	}
+	if customerPaymentReference.Valid {
+		req.CustomerPaymentReference = customerPaymentReference.String
+	}
+	if customerPaymentNotes.Valid {
+		req.CustomerPaymentNotes = customerPaymentNotes.String
 	}
 	if len(referenceImagesJSON) > 0 {
 		_ = json.Unmarshal(referenceImagesJSON, &req.ReferenceImages)
@@ -270,6 +291,37 @@ func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 		t := cancelledAt.Time
 		req.CancelledAt = &t
 	}
+	if promisedDeliveryDate.Valid {
+		t := promisedDeliveryDate.Time
+		req.PromisedDeliveryDate = &t
+	}
+	if req.DeliveryMethod == "" {
+		req.DeliveryMethod = "pickup"
+	}
+	if req.DeliveryStatus == "" {
+		req.DeliveryStatus = "pending"
+	}
+	if deliveryAddress.Valid {
+		req.DeliveryAddress = deliveryAddress.String
+	}
+	if deliveryTrackingNumber.Valid {
+		req.DeliveryTrackingNumber = deliveryTrackingNumber.String
+	}
+	if deliveryNotes.Valid {
+		req.DeliveryNotes = deliveryNotes.String
+	}
+	if len(productionChecklistJSON) > 0 {
+		_ = json.Unmarshal(productionChecklistJSON, &req.ProductionChecklist)
+	}
+	if req.ProductionChecklist == nil {
+		req.ProductionChecklist = map[string]bool{}
+	}
+	if internalOwnerID.Valid {
+		req.InternalOwnerID = internalOwnerID.String
+	}
+	if duplicatedFromRequestID.Valid {
+		req.DuplicatedFromRequestID = duplicatedFromRequestID.String
+	}
 	if orderID.Valid {
 		req.OrderID = orderID.String
 	}
@@ -287,9 +339,16 @@ func (r *PostgresAffiliateRepository) CreateOrderRequest(req *domain.AffiliateOr
 	query := `
 		INSERT INTO affiliate_order_requests (
 			id, organization_id, affiliate_id, product_id, product_name, quantity, suggested_price_snapshot,
-			min_price_snapshot, final_price, priority, reference_images, customer_name,
-			customer_email, customer_phone, customer_notes, status, commission_type_snapshot, commission_value_snapshot
-		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			min_price_snapshot, final_price, customer_amount_paid, customer_payment_status, customer_payment_method,
+			customer_payment_reference, customer_payment_notes, priority, reference_images, customer_name,
+			customer_email, customer_phone, customer_notes, status, promised_delivery_date, delivery_method,
+			delivery_status, delivery_address, delivery_tracking_number, delivery_notes, production_checklist,
+			duplicated_from_request_id, commission_type_snapshot, commission_value_snapshot
+		) VALUES (
+			uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9,
+			$10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+			$20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+		)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -298,11 +357,16 @@ func (r *PostgresAffiliateRepository) CreateOrderRequest(req *domain.AffiliateOr
 		productID = req.ProductID
 	}
 	referenceImages, _ := json.Marshal(req.ReferenceImages)
+	productionChecklist, _ := json.Marshal(req.ProductionChecklist)
 
 	return r.db.QueryRow(context.Background(), query,
 		req.OrganizationID, req.AffiliateID, productID, req.ProductName, req.Quantity, req.SuggestedPriceSnapshot,
-		req.MinPriceSnapshot, req.FinalPrice, req.Priority, referenceImages, req.CustomerName,
-		req.CustomerEmail, req.CustomerPhone, req.CustomerNotes, req.Status,
+		req.MinPriceSnapshot, req.FinalPrice, req.CustomerAmountPaid, req.CustomerPaymentStatus,
+		nullableString(req.CustomerPaymentMethod), nullableString(req.CustomerPaymentReference), nullableString(req.CustomerPaymentNotes),
+		req.Priority, referenceImages, req.CustomerName, req.CustomerEmail, req.CustomerPhone, req.CustomerNotes, req.Status,
+		req.PromisedDeliveryDate, req.DeliveryMethod, req.DeliveryStatus, nullableString(req.DeliveryAddress),
+		nullableString(req.DeliveryTrackingNumber), nullableString(req.DeliveryNotes), productionChecklist,
+		nullableString(req.DuplicatedFromRequestID),
 		nullableString(req.CommissionTypeSnapshot), nullableFloat(req.CommissionValueSnapshot),
 	).Scan(&req.ID, &req.CreatedAt, &req.UpdatedAt)
 }
@@ -384,26 +448,37 @@ func (r *PostgresAffiliateRepository) ListOrderRequests(filters domain.OrderRequ
 // calificadas con el alias "req." para usarlas en queries con JOIN.
 func prefixedOrderRequestColumns() string {
 	return `req.id, req.organization_id, req.affiliate_id, req.product_id, req.product_name, req.quantity,
-		req.suggested_price_snapshot, req.min_price_snapshot, req.final_price, req.priority,
+		req.suggested_price_snapshot, req.min_price_snapshot, req.final_price, req.customer_amount_paid,
+		req.customer_payment_status, req.customer_payment_method, req.customer_payment_reference,
+		req.customer_payment_notes, req.priority,
 		req.reference_images, req.customer_name, req.customer_email,
 		req.customer_phone, req.customer_notes, req.status, req.requested_changes, req.rejection_reason,
 		req.reviewed_by, req.reviewed_at, req.cancelled_reason, req.cancelled_by, req.cancelled_at,
+		req.promised_delivery_date, req.delivery_method, req.delivery_status, req.delivery_address,
+		req.delivery_tracking_number, req.delivery_notes, req.production_checklist, req.internal_owner_id,
+		req.duplicated_from_request_id,
 		req.order_id, req.commission_type_snapshot, req.commission_value_snapshot, req.created_at, req.updated_at`
 }
 
 func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderRequest, string, error) {
 	var req domain.AffiliateOrderRequest
-	var productID, customerEmail, customerPhone, customerNotes, requestedChanges, rejectionReason, reviewedBy, cancelledReason, cancelledBy, orderID, commissionTypeSnapshot sql.NullString
+	var productID, customerPaymentMethod, customerPaymentReference, customerPaymentNotes sql.NullString
+	var customerEmail, customerPhone, customerNotes, requestedChanges, rejectionReason, reviewedBy sql.NullString
+	var cancelledReason, cancelledBy, deliveryAddress, deliveryTrackingNumber, deliveryNotes sql.NullString
+	var internalOwnerID, duplicatedFromRequestID, orderID, commissionTypeSnapshot sql.NullString
 	var suggestedPriceSnapshot, minPriceSnapshot, commissionValueSnapshot sql.NullFloat64
-	var reviewedAt, cancelledAt sql.NullTime
-	var referenceImagesJSON []byte
+	var reviewedAt, cancelledAt, promisedDeliveryDate sql.NullTime
+	var referenceImagesJSON, productionChecklistJSON []byte
 	var orderStatus string
 
 	err := rows.Scan(
 		&req.ID, &req.OrganizationID, &req.AffiliateID, &productID, &req.ProductName, &req.Quantity, &suggestedPriceSnapshot,
-		&minPriceSnapshot, &req.FinalPrice, &req.Priority, &referenceImagesJSON, &req.CustomerName, &customerEmail, &customerPhone, &customerNotes,
+		&minPriceSnapshot, &req.FinalPrice, &req.CustomerAmountPaid, &req.CustomerPaymentStatus, &customerPaymentMethod,
+		&customerPaymentReference, &customerPaymentNotes, &req.Priority, &referenceImagesJSON, &req.CustomerName, &customerEmail, &customerPhone, &customerNotes,
 		&req.Status, &requestedChanges, &rejectionReason, &reviewedBy, &reviewedAt,
-		&cancelledReason, &cancelledBy, &cancelledAt, &orderID,
+		&cancelledReason, &cancelledBy, &cancelledAt, &promisedDeliveryDate, &req.DeliveryMethod, &req.DeliveryStatus,
+		&deliveryAddress, &deliveryTrackingNumber, &deliveryNotes, &productionChecklistJSON, &internalOwnerID,
+		&duplicatedFromRequestID, &orderID,
 		&commissionTypeSnapshot, &commissionValueSnapshot, &req.CreatedAt, &req.UpdatedAt,
 		&orderStatus,
 	)
@@ -419,6 +494,18 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 	}
 	if minPriceSnapshot.Valid {
 		req.MinPriceSnapshot = minPriceSnapshot.Float64
+	}
+	if req.CustomerPaymentStatus == "" {
+		req.CustomerPaymentStatus = "unpaid"
+	}
+	if customerPaymentMethod.Valid {
+		req.CustomerPaymentMethod = customerPaymentMethod.String
+	}
+	if customerPaymentReference.Valid {
+		req.CustomerPaymentReference = customerPaymentReference.String
+	}
+	if customerPaymentNotes.Valid {
+		req.CustomerPaymentNotes = customerPaymentNotes.String
 	}
 	if len(referenceImagesJSON) > 0 {
 		_ = json.Unmarshal(referenceImagesJSON, &req.ReferenceImages)
@@ -454,6 +541,37 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 	if cancelledAt.Valid {
 		t := cancelledAt.Time
 		req.CancelledAt = &t
+	}
+	if promisedDeliveryDate.Valid {
+		t := promisedDeliveryDate.Time
+		req.PromisedDeliveryDate = &t
+	}
+	if req.DeliveryMethod == "" {
+		req.DeliveryMethod = "pickup"
+	}
+	if req.DeliveryStatus == "" {
+		req.DeliveryStatus = "pending"
+	}
+	if deliveryAddress.Valid {
+		req.DeliveryAddress = deliveryAddress.String
+	}
+	if deliveryTrackingNumber.Valid {
+		req.DeliveryTrackingNumber = deliveryTrackingNumber.String
+	}
+	if deliveryNotes.Valid {
+		req.DeliveryNotes = deliveryNotes.String
+	}
+	if len(productionChecklistJSON) > 0 {
+		_ = json.Unmarshal(productionChecklistJSON, &req.ProductionChecklist)
+	}
+	if req.ProductionChecklist == nil {
+		req.ProductionChecklist = map[string]bool{}
+	}
+	if internalOwnerID.Valid {
+		req.InternalOwnerID = internalOwnerID.String
+	}
+	if duplicatedFromRequestID.Valid {
+		req.DuplicatedFromRequestID = duplicatedFromRequestID.String
 	}
 	if orderID.Valid {
 		req.OrderID = orderID.String
@@ -513,10 +631,15 @@ func (r *PostgresAffiliateRepository) UpdateOrderRequestDetails(req *domain.Affi
 	query := `
 		UPDATE affiliate_order_requests SET
 			product_id = $2, product_name = $3, quantity = $4, suggested_price_snapshot = $5,
-			min_price_snapshot = $6, final_price = $7, priority = $8, reference_images = $9,
-			customer_name = $10, customer_email = $11, customer_phone = $12, customer_notes = $13,
-			status = $14, requested_changes = $15, commission_type_snapshot = $16,
-			commission_value_snapshot = $17, updated_at = NOW()
+			min_price_snapshot = $6, final_price = $7, customer_amount_paid = $8,
+			customer_payment_status = $9, customer_payment_method = $10, customer_payment_reference = $11,
+			customer_payment_notes = $12, priority = $13, reference_images = $14,
+			customer_name = $15, customer_email = $16, customer_phone = $17, customer_notes = $18,
+			status = $19, requested_changes = $20, promised_delivery_date = $21,
+			delivery_method = $22, delivery_status = $23, delivery_address = $24,
+			delivery_tracking_number = $25, delivery_notes = $26, production_checklist = $27,
+			internal_owner_id = $28, duplicated_from_request_id = $29,
+			commission_type_snapshot = $30, commission_value_snapshot = $31, updated_at = NOW()
 		WHERE id = $1
 	`
 	var productID interface{}
@@ -524,14 +647,19 @@ func (r *PostgresAffiliateRepository) UpdateOrderRequestDetails(req *domain.Affi
 		productID = req.ProductID
 	}
 	referenceImages, _ := json.Marshal(req.ReferenceImages)
+	productionChecklist, _ := json.Marshal(req.ProductionChecklist)
 	args := []interface{}{
 		req.ID, productID, req.ProductName, req.Quantity, req.SuggestedPriceSnapshot,
-		req.MinPriceSnapshot, req.FinalPrice, req.Priority, referenceImages, req.CustomerName,
-		req.CustomerEmail, req.CustomerPhone, req.CustomerNotes, req.Status, nullableString(req.RequestedChanges),
+		req.MinPriceSnapshot, req.FinalPrice, req.CustomerAmountPaid, req.CustomerPaymentStatus,
+		nullableString(req.CustomerPaymentMethod), nullableString(req.CustomerPaymentReference), nullableString(req.CustomerPaymentNotes),
+		req.Priority, referenceImages, req.CustomerName, req.CustomerEmail, req.CustomerPhone, req.CustomerNotes,
+		req.Status, nullableString(req.RequestedChanges), req.PromisedDeliveryDate, req.DeliveryMethod, req.DeliveryStatus,
+		nullableString(req.DeliveryAddress), nullableString(req.DeliveryTrackingNumber), nullableString(req.DeliveryNotes),
+		productionChecklist, nullableString(req.InternalOwnerID), nullableString(req.DuplicatedFromRequestID),
 		nullableString(req.CommissionTypeSnapshot), nullableFloat(req.CommissionValueSnapshot),
 	}
 	if req.OrganizationID != "" {
-		query += " AND organization_id = $18"
+		query += " AND organization_id = $32"
 		args = append(args, req.OrganizationID)
 	}
 	_, err := r.db.Exec(context.Background(), query, args...)

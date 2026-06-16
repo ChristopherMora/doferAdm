@@ -116,6 +116,11 @@ export interface AffiliateOrderRequest {
   suggested_price_snapshot?: number
   min_price_snapshot?: number
   final_price: number
+  customer_amount_paid: number
+  customer_payment_status: 'unpaid' | 'deposit' | 'paid'
+  customer_payment_method?: string
+  customer_payment_reference?: string
+  customer_payment_notes?: string
   priority: 'urgent' | 'normal' | 'low'
   reference_images?: string[]
   customer_name: string
@@ -130,6 +135,15 @@ export interface AffiliateOrderRequest {
   cancelled_reason?: string
   cancelled_by?: string
   cancelled_at?: string
+  promised_delivery_date?: string
+  delivery_method: 'pickup' | 'local_delivery' | 'shipping'
+  delivery_status: 'pending' | 'ready' | 'delivered' | 'shipped' | 'cancelled'
+  delivery_address?: string
+  delivery_tracking_number?: string
+  delivery_notes?: string
+  production_checklist?: Record<string, boolean>
+  internal_owner_id?: string
+  duplicated_from_request_id?: string
   order_id?: string
   order_status?: string
   commission_type_snapshot?: 'percentage' | 'fixed'

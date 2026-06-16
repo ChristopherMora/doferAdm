@@ -31,8 +31,8 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata, delivery_deadline,
-			affiliate_id, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+			amount, amount_paid, balance, affiliate_id, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 	`
 
 	metadata, _ := json.Marshal(order.Metadata)
@@ -64,6 +64,9 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 		order.InternalNotes,
 		metadata,
 		order.DeliveryDeadline,
+		order.Amount,
+		order.AmountPaid,
+		order.Balance,
 		affiliateID,
 		order.CreatedAt,
 		order.UpdatedAt,

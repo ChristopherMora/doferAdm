@@ -56,6 +56,7 @@ func RegisterRoutes(r chi.Router, handler *AffiliateHandler) {
 		r.Patch("/{id}/approve", handler.ApproveOrderRequest)
 		r.Patch("/{id}/reject", handler.RejectOrderRequest)
 		r.Patch("/{id}/changes", handler.RequestOrderRequestChanges)
+		r.Patch("/{id}/operations", handler.UpdateOrderRequestOperations)
 		r.Post("/{id}/comments", handler.CreateOrderRequestComment)
 	})
 
