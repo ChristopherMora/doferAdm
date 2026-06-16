@@ -20,8 +20,13 @@ export default function AffiliateDetailPage() {
   const [requests, setRequests] = useState<AffiliateOrderRequest[]>([])
   const [commissions, setCommissions] = useState<AffiliateCommission[]>([])
   const [loading, setLoading] = useState(true)
+  const [activityLoading, setActivityLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingEmail, setSavingEmail] = useState(false)
+  const [resettingPassword, setResettingPassword] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [accountEmail, setAccountEmail] = useState('')
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null)
 
   const [editForm, setEditForm] = useState({
     display_name: '',
@@ -34,20 +39,33 @@ export default function AffiliateDetailPage() {
     notes: '',
   })
 
+  const loadActivity = useCallback(async () => {
+    setActivityLoading(true)
+    try {
+      const [requestsRes, commissionsRes] = await Promise.all([
+        apiClient.get<{ requests: AffiliateOrderRequest[] }>(`/affiliates/${affiliateId}/requests`),
+        apiClient.get<{ commissions: AffiliateCommission[] }>(`/affiliates/${affiliateId}/commissions`),
+      ])
+      setRequests(requestsRes.requests || [])
+      setCommissions(commissionsRes.commissions || [])
+    } catch (error: unknown) {
+      setApiError(`Error cargando actividad del afiliado: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setActivityLoading(false)
+    }
+  }, [affiliateId])
+
   const load = useCallback(async () => {
     setLoading(true)
     setApiError(null)
     try {
-      const [affiliateRes, statsRes, requestsRes, commissionsRes] = await Promise.all([
+      const [affiliateRes, statsRes] = await Promise.all([
         apiClient.get<Affiliate>(`/affiliates/${affiliateId}`),
         apiClient.get<AffiliateStats>(`/affiliates/${affiliateId}/stats`),
-        apiClient.get<{ requests: AffiliateOrderRequest[] }>(`/affiliates/${affiliateId}/requests`),
-        apiClient.get<{ commissions: AffiliateCommission[] }>(`/affiliates/${affiliateId}/commissions`),
       ])
       setAffiliate(affiliateRes)
       setStats(statsRes)
-      setRequests(requestsRes.requests || [])
-      setCommissions(commissionsRes.commissions || [])
+      setAccountEmail(affiliateRes.email)
       setEditForm({
         display_name: affiliateRes.display_name,
         phone: affiliateRes.phone || '',
@@ -58,12 +76,13 @@ export default function AffiliateDetailPage() {
         status: affiliateRes.status,
         notes: affiliateRes.notes || '',
       })
+      void loadActivity()
     } catch (error: unknown) {
       setApiError(`Error cargando afiliado: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
       setLoading(false)
     }
-  }, [affiliateId])
+  }, [affiliateId, loadActivity])
 
   useEffect(() => {
     if (affiliateId) void load()
@@ -80,6 +99,38 @@ export default function AffiliateDetailPage() {
       setApiError(`Error guardando cambios: ${getErrorMessage(error, 'Error desconocido')}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleEmailSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingEmail(true)
+    setTemporaryPassword(null)
+    setApiError(null)
+    try {
+      const response = await apiClient.patch<{ affiliate: Affiliate }>(`/affiliates/${affiliateId}/account/email`, {
+        email: accountEmail,
+      })
+      setAffiliate(response.affiliate)
+      setAccountEmail(response.affiliate.email)
+    } catch (error: unknown) {
+      setApiError(`Error actualizando correo: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
+  const handlePasswordReset = async () => {
+    setResettingPassword(true)
+    setTemporaryPassword(null)
+    setApiError(null)
+    try {
+      const response = await apiClient.patch<{ temporary_password: string }>(`/affiliates/${affiliateId}/account/password`)
+      setTemporaryPassword(response.temporary_password)
+    } catch (error: unknown) {
+      setApiError(`Error generando contraseña temporal: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -111,6 +162,46 @@ export default function AffiliateDetailPage() {
           <StatCard label="Comisión pagada" value={`$${stats.commission_paid.toFixed(2)}`} valueClass="text-green-600" />
         </div>
       )}
+
+      <PanelCard>
+        <h2 className="text-xl font-bold mb-4">Acceso y recuperación</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <form onSubmit={handleEmailSave} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+            <input
+              type="email"
+              value={accountEmail}
+              onChange={(e) => setAccountEmail(e.target.value)}
+              placeholder="Correo de acceso"
+              className="px-3 py-2 border rounded-xl bg-background"
+              required
+            />
+            <button
+              type="submit"
+              disabled={savingEmail || accountEmail.trim() === affiliate.email}
+              className="rounded-xl bg-cyan-700 px-4 py-2 font-semibold text-white hover:bg-cyan-800 disabled:opacity-60"
+            >
+              {savingEmail ? 'Guardando...' : 'Actualizar correo'}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            onClick={handlePasswordReset}
+            disabled={resettingPassword}
+            className="rounded-xl border border-border px-4 py-2 font-semibold hover:bg-accent disabled:opacity-60"
+          >
+            {resettingPassword ? 'Generando...' : 'Generar contraseña temporal'}
+          </button>
+        </div>
+
+        {temporaryPassword && (
+          <div className="mt-4 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900">
+            <p className="font-semibold">Comparte esta contraseña temporal de forma segura. No se mostrará de nuevo.</p>
+            <p className="mt-1">Email: <code className="font-mono">{affiliate.email}</code></p>
+            <p>Contraseña temporal: <code className="font-mono">{temporaryPassword}</code></p>
+          </div>
+        )}
+      </PanelCard>
 
       <PanelCard>
         <h2 className="text-xl font-bold mb-4">Perfil y comisión</h2>
@@ -190,6 +281,9 @@ export default function AffiliateDetailPage() {
         <PanelCard>
           <h2 className="text-xl font-bold mb-4">Solicitudes recientes</h2>
           <div className="space-y-2">
+            {activityLoading && requests.length === 0 && (
+              <p className="text-sm text-muted-foreground">Cargando solicitudes...</p>
+            )}
             {requests.map((req) => (
               <Link
                 key={req.id}
@@ -205,13 +299,16 @@ export default function AffiliateDetailPage() {
                 </p>
               </Link>
             ))}
-            {requests.length === 0 && <p className="text-sm text-muted-foreground">Sin solicitudes todavía.</p>}
+            {!activityLoading && requests.length === 0 && <p className="text-sm text-muted-foreground">Sin solicitudes todavía.</p>}
           </div>
         </PanelCard>
 
         <PanelCard>
           <h2 className="text-xl font-bold mb-4">Comisiones recientes</h2>
           <div className="space-y-2">
+            {activityLoading && commissions.length === 0 && (
+              <p className="text-sm text-muted-foreground">Cargando comisiones...</p>
+            )}
             {commissions.map((c) => (
               <div key={c.id} className="rounded-lg border border-border/70 p-3 text-sm flex justify-between">
                 <span>${c.commission_amount.toFixed(2)}</span>
@@ -220,7 +317,7 @@ export default function AffiliateDetailPage() {
                 </span>
               </div>
             ))}
-            {commissions.length === 0 && <p className="text-sm text-muted-foreground">Sin comisiones todavía.</p>}
+            {!activityLoading && commissions.length === 0 && <p className="text-sm text-muted-foreground">Sin comisiones todavía.</p>}
           </div>
         </PanelCard>
       </div>

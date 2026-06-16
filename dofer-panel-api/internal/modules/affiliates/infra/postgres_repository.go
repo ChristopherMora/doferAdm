@@ -161,6 +161,56 @@ func (r *PostgresAffiliateRepository) UpdateAffiliate(a *domain.Affiliate) error
 	return err
 }
 
+func (r *PostgresAffiliateRepository) UpdateAffiliateAccountEmail(affiliateID, organizationID, email string) (*domain.Affiliate, error) {
+	ctx := context.Background()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	query := `SELECT ` + affiliateColumns + ` FROM affiliates WHERE id = $1`
+	args := []interface{}{affiliateID}
+	if organizationID != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID)
+	}
+
+	affiliate, err := scanAffiliate(tx.QueryRow(ctx, query, args...))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("affiliate not found")
+		}
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE users
+		SET email = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, affiliate.UserID, email)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE affiliates
+		SET email = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, affiliate.ID, email)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return r.FindAffiliateByID(affiliate.ID, organizationID)
+}
+
 // CreateAffiliateUser inserta directamente la fila en `users` con role='affiliate'.
 // A propósito NO reusa auth.UpsertUser (que hardcodea role='operator'): esta fila
 // debe existir con el rol correcto ANTES del primer login del afiliado, para que
@@ -259,6 +309,7 @@ func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 	if len(referenceImagesJSON) > 0 {
 		_ = json.Unmarshal(referenceImagesJSON, &req.ReferenceImages)
 	}
+	req.ReferenceImagesCount = len(req.ReferenceImages)
 	if customerEmail.Valid {
 		req.CustomerEmail = customerEmail.String
 	}
@@ -392,7 +443,9 @@ func (r *PostgresAffiliateRepository) FindOrderRequestByID(id string, organizati
 // vía LEFT JOIN, para que el portal de afiliado no necesite un segundo fetch.
 func (r *PostgresAffiliateRepository) ListOrderRequests(filters domain.OrderRequestFilters) ([]*domain.AffiliateOrderRequest, error) {
 	query := `
-		SELECT ` + prefixedOrderRequestColumns() + `, COALESCE(o.status, '')
+		SELECT ` + prefixedOrderRequestListColumns() + `,
+			COALESCE(o.status, ''),
+			COALESCE(jsonb_array_length(req.reference_images), 0)
 		FROM affiliate_order_requests req
 		LEFT JOIN orders o ON o.id = req.order_id
 		WHERE 1=1
@@ -460,6 +513,27 @@ func prefixedOrderRequestColumns() string {
 		req.order_id, req.commission_type_snapshot, req.commission_value_snapshot, req.created_at, req.updated_at`
 }
 
+// prefixedOrderRequestListColumns devuelve columnas de lista sin cargar todas
+// las imágenes base64. Conserva solo la primera imagen para preview.
+func prefixedOrderRequestListColumns() string {
+	return `req.id, req.organization_id, req.affiliate_id, req.product_id, req.product_name, req.quantity,
+		req.suggested_price_snapshot, req.min_price_snapshot, req.final_price, req.customer_amount_paid,
+		req.customer_payment_status, req.customer_payment_method, req.customer_payment_reference,
+		req.customer_payment_notes, req.priority,
+		CASE
+			WHEN COALESCE(jsonb_array_length(req.reference_images), 0) > 0
+				THEN jsonb_build_array(req.reference_images ->> 0)
+			ELSE '[]'::jsonb
+		END,
+		req.customer_name, req.customer_email,
+		req.customer_phone, req.customer_notes, req.status, req.requested_changes, req.rejection_reason,
+		req.reviewed_by, req.reviewed_at, req.cancelled_reason, req.cancelled_by, req.cancelled_at,
+		req.promised_delivery_date, req.delivery_method, req.delivery_status, req.delivery_address,
+		req.delivery_tracking_number, req.delivery_notes, req.production_checklist, req.internal_owner_id,
+		req.duplicated_from_request_id,
+		req.order_id, req.commission_type_snapshot, req.commission_value_snapshot, req.created_at, req.updated_at`
+}
+
 func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderRequest, string, error) {
 	var req domain.AffiliateOrderRequest
 	var productID, customerPaymentMethod, customerPaymentReference, customerPaymentNotes sql.NullString
@@ -470,6 +544,7 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 	var reviewedAt, cancelledAt, promisedDeliveryDate sql.NullTime
 	var referenceImagesJSON, productionChecklistJSON []byte
 	var orderStatus string
+	var referenceImagesCount int
 
 	err := rows.Scan(
 		&req.ID, &req.OrganizationID, &req.AffiliateID, &productID, &req.ProductName, &req.Quantity, &suggestedPriceSnapshot,
@@ -481,6 +556,7 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 		&duplicatedFromRequestID, &orderID,
 		&commissionTypeSnapshot, &commissionValueSnapshot, &req.CreatedAt, &req.UpdatedAt,
 		&orderStatus,
+		&referenceImagesCount,
 	)
 	if err != nil {
 		return nil, "", err
@@ -510,6 +586,7 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 	if len(referenceImagesJSON) > 0 {
 		_ = json.Unmarshal(referenceImagesJSON, &req.ReferenceImages)
 	}
+	req.ReferenceImagesCount = referenceImagesCount
 	if customerEmail.Valid {
 		req.CustomerEmail = customerEmail.String
 	}

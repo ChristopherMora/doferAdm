@@ -21,6 +21,8 @@ func RegisterRoutes(r chi.Router, handler *AffiliateHandler) {
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", handler.GetAffiliate)
 			r.Put("/", handler.UpdateAffiliate)
+			r.Patch("/account/email", handler.UpdateAffiliateEmail)
+			r.Patch("/account/password", handler.ResetAffiliatePassword)
 			r.Get("/stats", handler.GetAffiliateStats)
 			r.Get("/requests", handler.ListAffiliateRequests)
 			r.Get("/commissions", handler.ListAffiliateCommissions)

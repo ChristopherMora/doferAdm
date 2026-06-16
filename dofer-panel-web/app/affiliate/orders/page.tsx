@@ -198,10 +198,10 @@ export default function MyAffiliateOrdersPage() {
                       {req.promised_delivery_date && (
                         <InfoPill label="Prometido" value={promisedDateLabel(req.promised_delivery_date)} />
                       )}
-                      {(req.reference_images?.length || 0) > 0 && (
+                      {imageCount(req) > 0 && (
                         <InfoPill
                           label="Referencias"
-                          value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                          value={`${imageCount(req)} imagen${imageCount(req) === 1 ? '' : 'es'}`}
                         />
                       )}
                     </div>
@@ -252,7 +252,7 @@ export default function MyAffiliateOrdersPage() {
                     <Detail label="Fecha prometida" value={promisedDateLabel(req.promised_delivery_date)} />
                     <Detail
                       label="Referencias"
-                      value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                      value={`${imageCount(req)} imagen${imageCount(req) === 1 ? '' : 'es'}`}
                     />
                     <Detail label="Estado de pago" value={paymentLabel(req)} />
                   </div>
@@ -411,6 +411,10 @@ function deliveryLabel(value?: string) {
 function promisedDateLabel(value?: string) {
   if (!value) return 'Sin fecha'
   return new Date(value).toLocaleDateString()
+}
+
+function imageCount(request: AffiliateOrderRequest) {
+  return request.reference_images_count ?? request.reference_images?.length ?? 0
 }
 
 function ReviewBadge({ status, rejectionReason }: { status: string; rejectionReason?: string }) {

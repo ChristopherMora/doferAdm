@@ -218,7 +218,7 @@ export default function AffiliateRequestsPage() {
                     />
                     <QuickFact
                       label="Referencias"
-                      value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                      value={`${imageCount(req)} imagen${imageCount(req) === 1 ? '' : 'es'}`}
                     />
                     <QuickFact label="Pago" value={paymentLabel(req)} strong={req.customer_payment_status === 'paid'} />
                     <QuickFact label="Saldo" value={`$${Math.max(0, req.final_price - (req.customer_amount_paid || 0)).toFixed(2)}`} />
@@ -371,6 +371,10 @@ function isLate(request: AffiliateOrderRequest) {
   const promised = new Date(request.promised_delivery_date)
   promised.setHours(23, 59, 59, 999)
   return promised.getTime() < Date.now()
+}
+
+function imageCount(request: AffiliateOrderRequest) {
+  return request.reference_images_count ?? request.reference_images?.length ?? 0
 }
 
 function RequestMediaPreview({ request }: { request: AffiliateOrderRequest }) {

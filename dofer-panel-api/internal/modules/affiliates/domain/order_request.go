@@ -32,6 +32,7 @@ type AffiliateOrderRequest struct {
 	CustomerPaymentNotes     string          `json:"customer_payment_notes,omitempty"`
 	Priority                 string          `json:"priority"`
 	ReferenceImages          []string        `json:"reference_images,omitempty"`
+	ReferenceImagesCount     int             `json:"reference_images_count"`
 	CustomerName             string          `json:"customer_name"`
 	CustomerEmail            string          `json:"customer_email,omitempty"`
 	CustomerPhone            string          `json:"customer_phone,omitempty"`

@@ -36,6 +36,12 @@ type createUserRequest struct {
 	AppMetadata  map[string]interface{} `json:"app_metadata"`
 }
 
+type updateUserRequest struct {
+	Email        string `json:"email,omitempty"`
+	Password     string `json:"password,omitempty"`
+	EmailConfirm *bool  `json:"email_confirm,omitempty"`
+}
+
 type createUserResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
@@ -114,6 +120,75 @@ func (c *SupabaseAdminClient) CreateAuthUser(email string) (userID string, tempo
 	}
 
 	return created.ID, temporaryPassword, nil
+}
+
+func (c *SupabaseAdminClient) UpdateAuthUserEmail(userID, email string) error {
+	confirmed := true
+	return c.updateAuthUser(userID, updateUserRequest{
+		Email:        email,
+		EmailConfirm: &confirmed,
+	})
+}
+
+func (c *SupabaseAdminClient) ResetAuthUserPassword(userID string) (string, error) {
+	temporaryPassword, err := generateTemporaryPassword()
+	if err != nil {
+		return "", err
+	}
+	if err := c.updateAuthUser(userID, updateUserRequest{Password: temporaryPassword}); err != nil {
+		return "", err
+	}
+	return temporaryPassword, nil
+}
+
+func (c *SupabaseAdminClient) updateAuthUser(userID string, payload updateUserRequest) error {
+	if c.baseURL == "" || c.serviceKey == "" {
+		return fmt.Errorf("supabase admin client not configured: faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return fmt.Errorf("auth user id is required")
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	url := c.baseURL + "/auth/v1/admin/users/" + userID
+	httpReq, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("apikey", c.serviceKey)
+	httpReq.Header.Set("Authorization", "Bearer "+c.serviceKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var apiErr supabaseErrorResponse
+		_ = json.Unmarshal(respBody, &apiErr)
+		message := apiErr.Message
+		if message == "" {
+			message = apiErr.Error
+		}
+		if message == "" {
+			message = strings.TrimSpace(string(respBody))
+		}
+		return fmt.Errorf("supabase admin api error (status %d): %s", resp.StatusCode, message)
+	}
+
+	return nil
 }
 
 const tempPasswordChars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%"

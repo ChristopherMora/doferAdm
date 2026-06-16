@@ -123,6 +123,7 @@ export interface AffiliateOrderRequest {
   customer_payment_notes?: string
   priority: 'urgent' | 'normal' | 'low'
   reference_images?: string[]
+  reference_images_count?: number
   customer_name: string
   customer_email?: string
   customer_phone?: string

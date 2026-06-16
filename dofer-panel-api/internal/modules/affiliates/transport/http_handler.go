@@ -18,6 +18,7 @@ type AffiliateHandler struct {
 	getAffiliateHandler         *app.GetAffiliateHandler
 	getAffiliateByUserIDHandler *app.GetAffiliateByUserIDHandler
 	updateAffiliateHandler      *app.UpdateAffiliateHandler
+	updateAffiliateAccount      *app.UpdateAffiliateAccountHandler
 	createOrderRequestHandler   *app.CreateOrderRequestHandler
 	listOrderRequestsHandler    *app.ListOrderRequestsHandler
 	getOrderRequestHandler      *app.GetOrderRequestHandler
@@ -36,6 +37,7 @@ func NewAffiliateHandler(
 	getAffiliateHandler *app.GetAffiliateHandler,
 	getAffiliateByUserIDHandler *app.GetAffiliateByUserIDHandler,
 	updateAffiliateHandler *app.UpdateAffiliateHandler,
+	updateAffiliateAccount *app.UpdateAffiliateAccountHandler,
 	createOrderRequestHandler *app.CreateOrderRequestHandler,
 	listOrderRequestsHandler *app.ListOrderRequestsHandler,
 	getOrderRequestHandler *app.GetOrderRequestHandler,
@@ -53,6 +55,7 @@ func NewAffiliateHandler(
 		getAffiliateHandler:         getAffiliateHandler,
 		getAffiliateByUserIDHandler: getAffiliateByUserIDHandler,
 		updateAffiliateHandler:      updateAffiliateHandler,
+		updateAffiliateAccount:      updateAffiliateAccount,
 		createOrderRequestHandler:   createOrderRequestHandler,
 		listOrderRequestsHandler:    listOrderRequestsHandler,
 		getOrderRequestHandler:      getOrderRequestHandler,
@@ -223,6 +226,52 @@ func (h *AffiliateHandler) UpdateAffiliate(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, affiliate)
+}
+
+type UpdateAffiliateEmailRequest struct {
+	Email string `json:"email"`
+}
+
+func (h *AffiliateHandler) UpdateAffiliateEmail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req UpdateAffiliateEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
+
+	affiliate, err := h.updateAffiliateAccount.UpdateEmail(r.Context(), app.UpdateAffiliateEmailCommand{
+		AffiliateID:    id,
+		OrganizationID: organizationID,
+		Email:          req.Email,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"affiliate": affiliate, "message": "Correo de acceso actualizado"})
+}
+
+func (h *AffiliateHandler) ResetAffiliatePassword(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
+
+	result, err := h.updateAffiliateAccount.ResetPassword(r.Context(), app.ResetAffiliatePasswordCommand{
+		AffiliateID:    id,
+		OrganizationID: organizationID,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"affiliate":          result.Affiliate,
+		"temporary_password": result.TemporaryPassword,
+		"message":            "Contraseña temporal generada. Compártela de forma segura; no se mostrará de nuevo.",
+	})
 }
 
 func (h *AffiliateHandler) GetAffiliateStats(w http.ResponseWriter, r *http.Request) {
