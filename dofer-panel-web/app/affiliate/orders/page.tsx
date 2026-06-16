@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Ban, CheckCircle2, Clock3, PackageCheck, Plus, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Clock3, ImageIcon, PackageCheck, Plus, Search, XCircle } from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -172,21 +172,40 @@ export default function MyAffiliateOrdersPage() {
           const isExpanded = expandedId === req.id
           return (
             <article key={req.id} className="rounded-xl border border-border/70 bg-background/90 p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-lg font-bold">{req.product_name} x {req.quantity}</h3>
-                    <ReviewBadge status={req.status} rejectionReason={req.rejection_reason} />
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${PRIORITY_STYLES[req.priority] || PRIORITY_STYLES.normal}`}>
-                      {PRIORITY_LABELS[req.priority] || req.priority}
-                    </span>
-                  </div>
+              <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)_auto]">
+                <OrderMediaPreview request={req} />
 
-                  <div className="mt-2 grid gap-1 text-sm text-muted-foreground md:grid-cols-2 xl:grid-cols-4">
-                    <span>Cliente: <strong className="text-foreground">{req.customer_name}</strong></span>
-                    <span>Fecha: {new Date(req.created_at).toLocaleDateString()}</span>
-                    <span>Pedido: {shortID(req.id)}</span>
-                    <span>Precio final: <strong className="text-foreground">${req.final_price.toFixed(2)}</strong></span>
+                <div className="min-w-0">
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-lg font-bold">{req.product_name} x {req.quantity}</h3>
+                        <ReviewBadge status={req.status} rejectionReason={req.rejection_reason} />
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${PRIORITY_STYLES[req.priority] || PRIORITY_STYLES.normal}`}>
+                          {PRIORITY_LABELS[req.priority] || req.priority}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {req.customer_notes || 'Sin notas adicionales.'}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-4">
+                      <QuickFact label="Cliente" value={req.customer_name} />
+                      <QuickFact label="Fecha" value={new Date(req.created_at).toLocaleDateString()} />
+                      <QuickFact label="Pedido" value={shortID(req.id)} />
+                      <QuickFact label="Precio final" value={`$${req.final_price.toFixed(2)}`} strong />
+                      <QuickFact label="Teléfono" value={req.customer_phone || 'Sin teléfono'} />
+                      <QuickFact label="Email" value={req.customer_email || 'Sin email'} />
+                      <QuickFact
+                        label="Mínimo"
+                        value={req.min_price_snapshot ? `$${req.min_price_snapshot.toFixed(2)}` : 'Sin mínimo'}
+                      />
+                      <QuickFact
+                        label="Referencias"
+                        value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                      />
+                    </div>
                   </div>
 
                   {req.status === 'approved' && (
@@ -196,7 +215,7 @@ export default function MyAffiliateOrdersPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 lg:flex-col lg:items-end">
+                <div className="flex items-center gap-2 xl:flex-col xl:items-end">
                   <button
                     type="button"
                     onClick={() => setExpandedId(isExpanded ? null : req.id)}
@@ -212,22 +231,6 @@ export default function MyAffiliateOrdersPage() {
                   </Link>
                 </div>
               </div>
-
-              {req.reference_images && req.reference_images.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {req.reference_images.slice(0, 6).map((image, index) => (
-                    <a
-                      key={`${req.id}-${index}`}
-                      href={image}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="h-16 w-16 rounded-lg border bg-cover bg-center hover:ring-2 hover:ring-primary"
-                      style={{ backgroundImage: `url(${image})` }}
-                      aria-label={`Abrir referencia ${index + 1}`}
-                    />
-                  ))}
-                </div>
-              )}
 
               {isExpanded && (
                 <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 md:grid-cols-2 xl:grid-cols-4">
@@ -302,6 +305,60 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-1 text-sm font-medium">{value}</p>
+    </div>
+  )
+}
+
+function QuickFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`mt-0.5 truncate ${strong ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>{value}</p>
+    </div>
+  )
+}
+
+function OrderMediaPreview({ request }: { request: AffiliateOrderRequest }) {
+  const images = request.reference_images || []
+  const primaryImage = images[0]
+
+  return (
+    <div className="space-y-2">
+      {primaryImage ? (
+        <a
+          href={primaryImage}
+          target="_blank"
+          rel="noreferrer"
+          className="block aspect-[4/3] overflow-hidden rounded-xl border border-border bg-cover bg-center hover:ring-2 hover:ring-primary"
+          style={{ backgroundImage: `url(${primaryImage})` }}
+          aria-label="Abrir imagen principal del pedido"
+        >
+          <span className="sr-only">Imagen principal del pedido</span>
+        </a>
+      ) : (
+        <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 text-muted-foreground">
+          <div className="text-center">
+            <ImageIcon className="mx-auto h-7 w-7" />
+            <p className="mt-2 text-xs font-medium">Sin imágenes</p>
+          </div>
+        </div>
+      )}
+
+      {images.length > 1 && (
+        <div className="grid grid-cols-5 gap-1">
+          {images.slice(1, 6).map((image, index) => (
+            <a
+              key={`${request.id}-thumb-${index}`}
+              href={image}
+              target="_blank"
+              rel="noreferrer"
+              className="aspect-square rounded-md border bg-cover bg-center hover:ring-2 hover:ring-primary"
+              style={{ backgroundImage: `url(${image})` }}
+              aria-label={`Abrir referencia ${index + 2}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

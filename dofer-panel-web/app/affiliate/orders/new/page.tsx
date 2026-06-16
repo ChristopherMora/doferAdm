@@ -8,6 +8,7 @@ import PageHeader from '@/components/dashboard/PageHeader'
 import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import { imageFileToOptimizedDataURL } from '@/lib/images'
 import type { Affiliate, Product } from '@/types'
 
 interface NewRequestForm {
@@ -43,6 +44,7 @@ export default function NewAffiliateOrderPage() {
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [form, setForm] = useState<NewRequestForm>(initialForm)
   const [submitting, setSubmitting] = useState(false)
+  const [processingImages, setProcessingImages] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
 
   const loadProducts = useCallback(async () => {
@@ -84,8 +86,16 @@ export default function NewAffiliateOrderPage() {
   const handleReferenceImages = async (files: FileList | null) => {
     if (!files) return
     const selectedFiles = Array.from(files).slice(0, 6)
-    const images = await Promise.all(selectedFiles.map(readFileAsDataURL))
-    setForm((prev) => ({ ...prev, reference_images: images }))
+    setProcessingImages(true)
+    setApiError(null)
+    try {
+      const images = await Promise.all(selectedFiles.map(imageFileToOptimizedDataURL))
+      setForm((prev) => ({ ...prev, reference_images: images }))
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudieron procesar las imágenes'))
+    } finally {
+      setProcessingImages(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -215,9 +225,13 @@ export default function NewAffiliateOrderPage() {
                 type="file"
                 accept="image/*"
                 multiple
+                disabled={processingImages}
                 onChange={(e) => void handleReferenceImages(e.target.files)}
                 className="w-full px-3 py-2 border rounded-xl bg-background"
               />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {processingImages ? 'Optimizando imágenes...' : 'Máximo 6 imágenes; se comprimen antes de enviarse.'}
+              </span>
             </label>
           </div>
 
@@ -276,22 +290,13 @@ export default function NewAffiliateOrderPage() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || processingImages}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-60"
           >
-            {submitting ? 'Enviando...' : 'Registrar pedido'}
+            {processingImages ? 'Optimizando imágenes...' : submitting ? 'Enviando...' : 'Registrar pedido'}
           </button>
         </form>
       </PanelCard>
     </div>
   )
-}
-
-function readFileAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
 }

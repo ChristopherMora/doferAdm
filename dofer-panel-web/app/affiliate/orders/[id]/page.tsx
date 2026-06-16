@@ -10,6 +10,7 @@ import PageHeader from '@/components/dashboard/PageHeader'
 import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import { imageFileToOptimizedDataURL } from '@/lib/images'
 import type { AffiliateOrderRequest, AffiliateOrderRequestDetail, Product } from '@/types'
 
 interface RequestForm {
@@ -53,6 +54,7 @@ export default function AffiliateOrderDetailPage() {
   const [form, setForm] = useState<RequestForm>(initialForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [processingImages, setProcessingImages] = useState(false)
   const [submittingComment, setSubmittingComment] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [commentMessage, setCommentMessage] = useState('')
@@ -107,8 +109,16 @@ export default function AffiliateOrderDetailPage() {
   const handleReferenceImages = async (files: FileList | null) => {
     if (!files) return
     const selectedFiles = Array.from(files).slice(0, 6)
-    const images = await Promise.all(selectedFiles.map(readFileAsDataURL))
-    setForm((prev) => ({ ...prev, reference_images: images }))
+    setProcessingImages(true)
+    setApiError(null)
+    try {
+      const images = await Promise.all(selectedFiles.map(imageFileToOptimizedDataURL))
+      setForm((prev) => ({ ...prev, reference_images: images }))
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudieron procesar las imágenes'))
+    } finally {
+      setProcessingImages(false)
+    }
   }
 
   const handleSave = async (event: React.FormEvent) => {
@@ -320,9 +330,13 @@ export default function AffiliateOrderDetailPage() {
                     type="file"
                     accept="image/*"
                     multiple
+                    disabled={processingImages}
                     onChange={(event) => void handleReferenceImages(event.target.files)}
                     className="w-full rounded-xl border bg-background px-3 py-2"
                   />
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {processingImages ? 'Optimizando imágenes...' : 'Máximo 6 imágenes; se comprimen antes de enviarse.'}
+                  </span>
                 </label>
 
                 <ReferenceImages
@@ -333,11 +347,11 @@ export default function AffiliateOrderDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="submit"
-                    disabled={saving}
+                    disabled={saving || processingImages}
                     className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
                     <Save className="h-4 w-4" />
-                    {saving ? 'Guardando...' : 'Guardar cambios'}
+                    {processingImages ? 'Optimizando...' : saving ? 'Guardando...' : 'Guardar cambios'}
                   </button>
                   {canCancel && (
                     <button
@@ -550,13 +564,4 @@ function formatMoney(value: number) {
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString()
-}
-
-function readFileAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
 }

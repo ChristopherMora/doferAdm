@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
+import { ImageIcon } from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -135,44 +136,43 @@ export default function AffiliateRequestsPage() {
         <div className="space-y-3">
           {requests.map((req) => (
             <div key={req.id} className="rounded-xl border border-border/70 bg-background/70 p-4 space-y-3">
-              <div className="flex items-start justify-between flex-wrap gap-2">
-                <div>
-                  <h3 className="font-bold">{req.product_name} × {req.quantity}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Cliente: {req.customer_name}
-                    {req.customer_phone ? ` · ${req.customer_phone}` : ''}
-                  </p>
-                  {req.customer_notes && <p className="text-sm text-muted-foreground">Notas: {req.customer_notes}</p>}
-                  <span className={`mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs ${PRIORITY_STYLES[req.priority] || PRIORITY_STYLES.normal}`}>
-                    Prioridad {PRIORITY_LABELS[req.priority] || req.priority}
-                  </span>
+              <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_auto]">
+                <RequestMediaPreview request={req} />
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-bold">{req.product_name} × {req.quantity}</h3>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${PRIORITY_STYLES[req.priority] || PRIORITY_STYLES.normal}`}>
+                      Prioridad {PRIORITY_LABELS[req.priority] || req.priority}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{req.customer_notes || 'Sin notas adicionales.'}</p>
+                  <div className="mt-3 grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-4">
+                    <QuickFact label="Cliente" value={req.customer_name} />
+                    <QuickFact label="Teléfono" value={req.customer_phone || 'Sin teléfono'} />
+                    <QuickFact label="Email" value={req.customer_email || 'Sin email'} />
+                    <QuickFact label="Pedido" value={req.id.slice(0, 8).toUpperCase()} />
+                    <QuickFact label="Final" value={`$${req.final_price.toFixed(2)}`} strong />
+                    <QuickFact
+                      label="Sugerido"
+                      value={req.suggested_price_snapshot ? `$${req.suggested_price_snapshot.toFixed(2)}` : 'Sin sugerido'}
+                    />
+                    <QuickFact
+                      label="Mínimo"
+                      value={req.min_price_snapshot ? `$${req.min_price_snapshot.toFixed(2)}` : 'Sin mínimo'}
+                    />
+                    <QuickFact
+                      label="Referencias"
+                      value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                    />
+                  </div>
                 </div>
-                <div className="text-right">
+
+                <div className="text-left lg:text-right">
                   <p className="font-bold text-lg">${req.final_price.toFixed(2)}</p>
-                  {req.suggested_price_snapshot ? (
-                    <p className="text-xs text-muted-foreground">Sugerido: ${req.suggested_price_snapshot.toFixed(2)}</p>
-                  ) : null}
-                  {req.min_price_snapshot ? (
-                    <p className="text-xs text-muted-foreground">Minimo: ${req.min_price_snapshot.toFixed(2)}</p>
-                  ) : null}
+                  <p className="text-xs text-muted-foreground">{new Date(req.created_at).toLocaleDateString()}</p>
                 </div>
               </div>
-
-              {req.reference_images && req.reference_images.length > 0 && (
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                  {req.reference_images.map((image, index) => (
-                    <a
-                      key={`${req.id}-${index}`}
-                      href={image}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="aspect-square rounded-lg border bg-cover bg-center hover:ring-2 hover:ring-primary"
-                      style={{ backgroundImage: `url(${image})` }}
-                      aria-label={`Abrir referencia ${index + 1}`}
-                    />
-                  ))}
-                </div>
-              )}
 
               <div className="flex flex-wrap gap-2">
                 <Link
@@ -257,5 +257,59 @@ function StatusBadge({ request }: { request: AffiliateOrderRequest }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${styles[request.status]}`}>
       {labels[request.status]}
     </span>
+  )
+}
+
+function QuickFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`mt-0.5 truncate ${strong ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>{value}</p>
+    </div>
+  )
+}
+
+function RequestMediaPreview({ request }: { request: AffiliateOrderRequest }) {
+  const images = request.reference_images || []
+  const primaryImage = images[0]
+
+  return (
+    <div className="space-y-2">
+      {primaryImage ? (
+        <a
+          href={primaryImage}
+          target="_blank"
+          rel="noreferrer"
+          className="block aspect-[4/3] overflow-hidden rounded-xl border border-border bg-cover bg-center hover:ring-2 hover:ring-primary"
+          style={{ backgroundImage: `url(${primaryImage})` }}
+          aria-label="Abrir imagen principal de la solicitud"
+        >
+          <span className="sr-only">Imagen principal de la solicitud</span>
+        </a>
+      ) : (
+        <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 text-muted-foreground">
+          <div className="text-center">
+            <ImageIcon className="mx-auto h-7 w-7" />
+            <p className="mt-2 text-xs font-medium">Sin imágenes</p>
+          </div>
+        </div>
+      )}
+
+      {images.length > 1 && (
+        <div className="grid grid-cols-5 gap-1">
+          {images.slice(1, 6).map((image, index) => (
+            <a
+              key={`${request.id}-thumb-${index}`}
+              href={image}
+              target="_blank"
+              rel="noreferrer"
+              className="aspect-square rounded-md border bg-cover bg-center hover:ring-2 hover:ring-primary"
+              style={{ backgroundImage: `url(${image})` }}
+              aria-label={`Abrir referencia ${index + 2}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
