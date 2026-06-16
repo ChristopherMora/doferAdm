@@ -27,11 +27,16 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 			customer_name, customer_email, customer_phone,
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata, delivery_deadline,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+			affiliate_id, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
 
 	metadata, _ := json.Marshal(order.Metadata)
+
+	var affiliateID interface{}
+	if order.AffiliateID != "" {
+		affiliateID = order.AffiliateID
+	}
 
 	_, err := r.db.Exec(
 		context.Background(),
@@ -54,6 +59,7 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 		order.InternalNotes,
 		metadata,
 		order.DeliveryDeadline,
+		affiliateID,
 		order.CreatedAt,
 		order.UpdatedAt,
 	)
@@ -68,7 +74,7 @@ func (r *PostgresOrderRepository) FindByID(id string) (*domain.Order, error) {
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
 			assigned_to, assigned_at, created_at, updated_at, completed_at, delivery_deadline,
-			amount, amount_paid, balance
+			amount, amount_paid, balance, affiliate_id
 		FROM orders
 		WHERE id = $1
 	`
@@ -83,7 +89,7 @@ func (r *PostgresOrderRepository) FindByPublicID(publicID string) (*domain.Order
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
 			assigned_to, assigned_at, created_at, updated_at, completed_at, delivery_deadline,
-			amount, amount_paid, balance
+			amount, amount_paid, balance, affiliate_id
 		FROM orders
 		WHERE public_id = $1
 	`
@@ -98,7 +104,7 @@ func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domai
 			product_name, product_image, print_file, print_file_name,
 			quantity, notes, internal_notes, metadata,
 			assigned_to, assigned_at, created_at, updated_at, completed_at, delivery_deadline,
-			amount, amount_paid, balance
+			amount, amount_paid, balance, affiliate_id
 		FROM orders
 		WHERE 1=1
 	`
@@ -121,6 +127,12 @@ func (r *PostgresOrderRepository) FindAll(filters domain.OrderFilters) ([]*domai
 	if filters.AssignedTo != "" {
 		query += fmt.Sprintf(" AND assigned_to = $%d", argPos)
 		args = append(args, filters.AssignedTo)
+		argPos++
+	}
+
+	if filters.AffiliateID != "" {
+		query += fmt.Sprintf(" AND affiliate_id = $%d", argPos)
+		args = append(args, filters.AffiliateID)
 		argPos++
 	}
 
@@ -213,7 +225,7 @@ func (r *PostgresOrderRepository) Update(order *domain.Order) error {
 func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) {
 	var order domain.Order
 	var metadataJSON []byte
-	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
+	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo, affiliateID sql.NullString
 	var assignedAt, completedAt, deliveryDeadline sql.NullTime
 
 	err := row.Scan(
@@ -243,6 +255,7 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 		&order.Amount,
 		&order.AmountPaid,
 		&order.Balance,
+		&affiliateID,
 	)
 
 	if err != nil {
@@ -276,6 +289,9 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 	if assignedTo.Valid {
 		order.AssignedTo = assignedTo.String
 	}
+	if affiliateID.Valid {
+		order.AffiliateID = affiliateID.String
+	}
 	if assignedAt.Valid {
 		t := assignedAt.Time
 		order.AssignedAt = &t
@@ -299,7 +315,7 @@ func (r *PostgresOrderRepository) scanOrder(row pgx.Row) (*domain.Order, error) 
 func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Order, error) {
 	var order domain.Order
 	var metadataJSON []byte
-	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo sql.NullString
+	var productImage, printFile, printFileName, customerEmail, customerPhone, notes, internalNotes, assignedTo, affiliateID sql.NullString
 	var assignedAt, completedAt, deliveryDeadline sql.NullTime
 
 	err := rows.Scan(
@@ -329,6 +345,7 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 		&order.Amount,
 		&order.AmountPaid,
 		&order.Balance,
+		&affiliateID,
 	)
 
 	if err != nil {
@@ -358,6 +375,9 @@ func (r *PostgresOrderRepository) scanOrderFromRows(rows pgx.Rows) (*domain.Orde
 	}
 	if assignedTo.Valid {
 		order.AssignedTo = assignedTo.String
+	}
+	if affiliateID.Valid {
+		order.AffiliateID = affiliateID.String
 	}
 	if assignedAt.Valid {
 		t := assignedAt.Time

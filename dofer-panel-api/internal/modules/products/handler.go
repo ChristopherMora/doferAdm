@@ -22,6 +22,9 @@ func NewHandler(repo *Repository) *Handler {
 func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Route("/products", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		// Excluye explícitamente el rol "affiliate": consultan catálogo activo
+		// vía /affiliates/me/products, sin acceso al CRUD completo de productos.
+		r.Use(middleware.RequireRole("admin", "operator", "viewer"))
 
 		r.Get("/", h.List)
 		r.Get("/{id}", h.GetByID)

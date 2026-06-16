@@ -7,11 +7,12 @@ import (
 )
 
 type ListOrdersQuery struct {
-	Status     string
-	Platform   string
-	AssignedTo string
-	Limit      int
-	Offset     int
+	Status      string
+	Platform    string
+	AssignedTo  string
+	AffiliateID string
+	Limit       int
+	Offset      int
 }
 
 type ListOrdersHandler struct {
@@ -38,6 +39,10 @@ func (h *ListOrdersHandler) Handle(ctx context.Context, query ListOrdersQuery) (
 
 	if query.AssignedTo != "" {
 		filters.AssignedTo = query.AssignedTo
+	}
+
+	if query.AffiliateID != "" {
+		filters.AffiliateID = query.AffiliateID
 	}
 
 	if filters.Limit == 0 {

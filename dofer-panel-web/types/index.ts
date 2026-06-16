@@ -2,7 +2,7 @@ export interface Order {
   id: string
   public_id: string
   order_number: string
-  platform: 'tiktok' | 'shopify' | 'local' | 'other'
+  platform: 'tiktok' | 'shopify' | 'local' | 'other' | 'affiliate'
   status: 'new' | 'printing' | 'post' | 'packed' | 'ready' | 'delivered' | 'cancelled'
   priority: 'urgent' | 'normal' | 'low'
   customer_name: string
@@ -16,6 +16,7 @@ export interface Order {
   notes?: string
   internal_notes?: string
   assigned_to?: string
+  affiliate_id?: string
   created_at: string
   updated_at: string
   completed_at?: string
@@ -69,6 +70,7 @@ export interface Product {
   material?: string
   color?: string
   is_active: boolean
+  suggested_price?: number
   created_at: string
   updated_at: string
 }
@@ -77,8 +79,67 @@ export interface User {
   id: string
   email: string
   full_name?: string
-  role: 'admin' | 'operator' | 'viewer'
+  role: 'admin' | 'operator' | 'viewer' | 'affiliate'
   created_at: string
+}
+
+export interface Affiliate {
+  id: string
+  user_id: string
+  display_name: string
+  email: string
+  phone?: string
+  commission_type: 'percentage' | 'fixed'
+  commission_value: number
+  status: 'active' | 'suspended'
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AffiliateOrderRequest {
+  id: string
+  affiliate_id: string
+  product_id?: string
+  product_name: string
+  quantity: number
+  suggested_price_snapshot?: number
+  final_price: number
+  customer_name: string
+  customer_email?: string
+  customer_phone?: string
+  customer_notes?: string
+  status: 'pending' | 'approved' | 'rejected'
+  rejection_reason?: string
+  reviewed_by?: string
+  reviewed_at?: string
+  order_id?: string
+  order_status?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AffiliateCommission {
+  id: string
+  affiliate_id: string
+  affiliate_order_request_id: string
+  order_id: string
+  commission_amount: number
+  status: 'pending' | 'paid'
+  paid_at?: string
+  paid_by?: string
+  payment_notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AffiliateStats {
+  pending_requests: number
+  approved_requests: number
+  rejected_requests: number
+  commission_pending: number
+  commission_paid: number
+  total_orders_amount: number
 }
 
 export interface Quote {

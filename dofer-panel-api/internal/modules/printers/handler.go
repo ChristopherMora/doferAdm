@@ -22,6 +22,8 @@ func NewHandler(repo *Repository) *Handler {
 func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Route("/printers", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		// Excluye explícitamente el rol "affiliate".
+		r.Use(middleware.RequireRole("admin", "operator", "viewer"))
 
 		r.Get("/", h.List)
 		r.Get("/{id}", h.GetByID)

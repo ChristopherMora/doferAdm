@@ -172,11 +172,13 @@ export default function DashboardLayout({
   const [showSearch, setShowSearch] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [orderStats, setOrderStats] = useState<{ urgent: number; new: number; total: number }>({ urgent: 0, new: 0, total: 0 })
+  const [pendingAffiliateRequests, setPendingAffiliateRequests] = useState(0)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean | undefined>>({})
 
   const autoExpandedSections = useMemo<Record<string, boolean>>(() => ({
     'Órdenes': pathname.includes('/orders') || pathname.includes('/kanban') || pathname.includes('/search'),
     'Cotizaciones': pathname.includes('/quotes'),
+    'Afiliados': pathname.includes('/affiliates'),
     'Configuración':
       pathname.includes('/printers') ||
       pathname.includes('/products') ||
@@ -233,16 +235,17 @@ export default function DashboardLayout({
         return
       }
       
-      // Atajos numéricos Cmd/Ctrl + 1-6 para navegación
-      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
+      // Atajos numéricos Cmd/Ctrl + 1-7 para navegación
+      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5', '6', '7'].includes(e.key)) {
         e.preventDefault()
         const routes = [
-          '/dashboard', 
-          '/dashboard/orders', 
-          '/dashboard/quotes', 
-          '/dashboard/customers', 
+          '/dashboard',
+          '/dashboard/orders',
+          '/dashboard/quotes',
+          '/dashboard/customers',
           '/dashboard/kanban',
-          '/dashboard/stats'
+          '/dashboard/stats',
+          '/dashboard/affiliates/requests'
         ]
         const index = parseInt(e.key) - 1
         if (routes[index]) router.push(routes[index])
@@ -277,9 +280,23 @@ export default function DashboardLayout({
       }
     }
     loadOrderStats()
-    
+
+    // Cargar conteo de solicitudes de afiliados pendientes de revisión
+    const loadAffiliateRequestStats = async () => {
+      try {
+        const data = await apiClient.get<{ requests: unknown[] }>('/affiliate-requests', { params: { status: 'pending' } })
+        setPendingAffiliateRequests(data.requests?.length || 0)
+      } catch (error) {
+        console.error('Error loading affiliate request stats:', error)
+      }
+    }
+    loadAffiliateRequestStats()
+
     // Actualizar stats cada minuto
-    const interval = setInterval(loadOrderStats, 60000)
+    const interval = setInterval(() => {
+      loadOrderStats()
+      loadAffiliateRequestStats()
+    }, 60000)
     return () => clearInterval(interval)
   }, [])
 
@@ -317,6 +334,16 @@ export default function DashboardLayout({
     },
     { name: 'Clientes', href: '/dashboard/customers', icon: '👥', shortcut: '⌘4' },
     { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈', shortcut: '⌘5' },
+    {
+      name: 'Afiliados',
+      icon: '🤝',
+      shortcut: '⌘7',
+      subItems: [
+        { name: 'Solicitudes', href: '/dashboard/affiliates/requests', icon: '📨' },
+        { name: 'Listado', href: '/dashboard/affiliates', icon: '👥' },
+        { name: 'Comisiones', href: '/dashboard/affiliates/commissions', icon: '💵' },
+      ]
+    },
     { 
       name: 'Configuración', 
       icon: '⚙️',
@@ -442,6 +469,8 @@ export default function DashboardLayout({
                 badge = orderStats.urgent + orderStats.new
               } else if (item.name === 'Dashboard') {
                 badge = orderStats.urgent > 0 ? orderStats.urgent : undefined
+              } else if (item.name === 'Afiliados') {
+                badge = pendingAffiliateRequests > 0 ? pendingAffiliateRequests : undefined
               }
               
               return (

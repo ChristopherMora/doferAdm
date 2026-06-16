@@ -14,7 +14,7 @@ import (
 const productSelectColumns = `
 	id, sku, name, description, stl_file_path,
 	estimated_print_time_minutes, material, color, is_active, image_url,
-	created_at, updated_at
+	suggested_price, created_at, updated_at
 `
 
 type Repository struct {
@@ -40,6 +40,7 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 	var product Product
 	var description, stlFilePath, material, color, imageURL sql.NullString
 	var estimatedPrintTime sql.NullInt32
+	var suggestedPrice sql.NullFloat64
 
 	err := row.Scan(
 		&product.ID,
@@ -52,6 +53,7 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 		&color,
 		&product.IsActive,
 		&imageURL,
+		&suggestedPrice,
 		&product.CreatedAt,
 		&product.UpdatedAt,
 	)
@@ -77,6 +79,9 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 	}
 	if imageURL.Valid {
 		product.ImageURL = &imageURL.String
+	}
+	if suggestedPrice.Valid {
+		product.SuggestedPrice = &suggestedPrice.Float64
 	}
 
 	return &product, nil
@@ -160,8 +165,8 @@ func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Pro
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
 			sku, name, description, stl_file_path, estimated_print_time_minutes,
-			material, color, is_active, image_url
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+			material, color, is_active, image_url, suggested_price
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		RETURNING `+productSelectColumns,
 		sku,
 		name,
@@ -172,6 +177,7 @@ func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Pro
 		sanitizeOptionalString(req.Color),
 		isActive,
 		sanitizeOptionalString(req.ImageURL),
+		req.SuggestedPrice,
 	)
 
 	return scanProductRow(row)
@@ -241,6 +247,12 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req UpdateProduct
 	if req.IsActive != nil {
 		query += fmt.Sprintf(", is_active = $%d", argNum)
 		args = append(args, *req.IsActive)
+		argNum++
+	}
+
+	if req.SuggestedPrice != nil {
+		query += fmt.Sprintf(", suggested_price = $%d", argNum)
+		args = append(args, *req.SuggestedPrice)
 		argNum++
 	}
 

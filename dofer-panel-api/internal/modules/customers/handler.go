@@ -22,6 +22,8 @@ func NewHandler(repo *Repository) *Handler {
 func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Route("/customers", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		// Excluye explícitamente el rol "affiliate": no debe ver clientes ajenos.
+		r.Use(middleware.RequireRole("admin", "operator", "viewer"))
 
 		r.Get("/", h.GetAll)
 		r.Get("/stats", h.GetStats)

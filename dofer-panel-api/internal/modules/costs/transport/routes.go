@@ -8,6 +8,8 @@ import (
 func RegisterRoutes(r chi.Router, handler *CostHandler) {
 	r.Route("/costs", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		// Excluye explícitamente el rol "affiliate": no debe ver costos internos.
+		r.Use(middleware.RequireRole("admin", "operator", "viewer"))
 
 		r.Get("/settings", handler.GetCostSettings)
 		r.Get("/materials", handler.GetAllMaterials)

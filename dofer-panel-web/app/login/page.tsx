@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { apiClient } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
@@ -28,6 +29,19 @@ export default function LoginPage() {
 
       if (data.session) {
         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=86400; SameSite=Lax`
+
+        // El middleware protege accesos directos por URL; este redirect
+        // cubre el primer salto post-login según el rol del usuario.
+        try {
+          const me = await apiClient.get<{ role?: string }>('/auth/me', { token: data.session.access_token })
+          if (me.role === 'affiliate') {
+            router.push('/affiliate')
+            return
+          }
+        } catch {
+          // Si falla la consulta de rol, seguimos al dashboard por defecto.
+        }
+
         router.push('/dashboard')
       }
     } catch (err: unknown) {

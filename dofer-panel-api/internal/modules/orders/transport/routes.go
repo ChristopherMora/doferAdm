@@ -8,6 +8,9 @@ import (
 func RegisterRoutes(r chi.Router, handler *OrderHandler) {
 	r.Route("/orders", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		// Excluye explícitamente el rol "affiliate": ese rol solo puede
+		// operar dentro de su propio módulo (/affiliates/me/*).
+		r.Use(middleware.RequireRole("admin", "operator", "viewer"))
 
 		r.Post("/", handler.CreateOrder)
 		r.Get("/", handler.ListOrders)

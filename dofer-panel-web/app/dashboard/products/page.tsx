@@ -21,6 +21,7 @@ interface Product {
   color?: string
   is_active: boolean
   image_url?: string
+  suggested_price?: number
   created_at: string
 }
 
@@ -34,6 +35,7 @@ interface ProductFormState {
   color: string
   image_url: string
   is_active: boolean
+  suggested_price: string
 }
 
 const initialForm: ProductFormState = {
@@ -46,6 +48,7 @@ const initialForm: ProductFormState = {
   color: '',
   image_url: '',
   is_active: true,
+  suggested_price: '',
 }
 
 export default function ProductsPage() {
@@ -130,6 +133,7 @@ export default function ProductsPage() {
       color: product.color || '',
       image_url: product.image_url || '',
       is_active: product.is_active,
+      suggested_price: product.suggested_price?.toString() || '',
     })
   }
 
@@ -277,6 +281,9 @@ export default function ProductsPage() {
                       <h2 className="font-bold text-lg">{product.name}</h2>
                       <p className="text-sm text-muted-foreground">SKU: {product.sku}</p>
                       <p className="text-sm text-muted-foreground">Material: {product.material || 'N/D'}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Precio sugerido (afiliados): {product.suggested_price ? `$${product.suggested_price.toFixed(2)}` : 'Sin definir'}
+                      </p>
                       {product.description && <p className="text-sm mt-1">{product.description}</p>}
                     </div>
                     <span
@@ -406,6 +413,15 @@ function ProductForm({
         placeholder="URL Imagen"
         className="px-3 py-2 border rounded-lg"
       />
+      <input
+        type="number"
+        value={form.suggested_price}
+        onChange={(e) => setForm((prev) => ({ ...prev, suggested_price: e.target.value }))}
+        placeholder="Precio sugerido (afiliados)"
+        className="px-3 py-2 border rounded-lg"
+        min="0"
+        step="0.01"
+      />
       <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm">
         <input
           type="checkbox"
@@ -440,5 +456,6 @@ function buildPayload(form: ProductFormState) {
     color: form.color.trim() || null,
     image_url: form.image_url.trim() || null,
     is_active: form.is_active,
+    suggested_price: form.suggested_price.trim() === '' ? null : Number(form.suggested_price),
   }
 }

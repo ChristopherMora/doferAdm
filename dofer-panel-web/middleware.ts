@@ -100,11 +100,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Protected routes (dashboard)
+  // Protected routes (dashboard) y portal de afiliados (panel reducido,
+  // exclusivo para el rol "affiliate")
   const isProtectedRoute = path.startsWith('/dashboard')
+  const isAffiliateRoute = path.startsWith('/affiliate')
 
-  // In development mode, bypass authentication for dashboard
-  if (isProtectedRoute && process.env.NODE_ENV === 'development') {
+  // In development mode, bypass authentication (mismo criterio para ambos
+  // paneles: el entorno local ya se asume de confianza)
+  if ((isProtectedRoute || isAffiliateRoute) && process.env.NODE_ENV === 'development') {
+    return NextResponse.next()
+  }
+
+  if (!isProtectedRoute && !isAffiliateRoute) {
     return NextResponse.next()
   }
 
@@ -115,25 +122,38 @@ export function middleware(request: NextRequest) {
                    [...request.cookies.getAll()].find(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'))?.value
   const token = extractAccessToken(rawToken)
 
-  // Redirect to login if accessing protected route without token
-  if (isProtectedRoute && !token) {
+  if (!token) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (isProtectedRoute && token) {
-    const payload = decodeJwtPayload(token)
-    if (!payload) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
+  const payload = decodeJwtPayload(token)
+  if (!payload) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
 
-    const nowInSeconds = Math.floor(Date.now() / 1000)
-    if (typeof payload.exp === 'number' && payload.exp <= nowInSeconds) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
+  const nowInSeconds = Math.floor(Date.now() / 1000)
+  if (typeof payload.exp === 'number' && payload.exp <= nowInSeconds) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
 
+  const userRole = extractUserRole(payload)?.toLowerCase()
+
+  // El rol "affiliate" tiene su propio panel: si intenta entrar a /dashboard
+  // lo mandamos a /affiliate en vez de a /login (ya está autenticado, solo
+  // está en el panel equivocado).
+  if (isProtectedRoute && userRole === 'affiliate') {
+    return NextResponse.redirect(new URL('/affiliate', request.url))
+  }
+
+  // Y al revés: cualquier rol que no sea "affiliate" no debe entrar al
+  // portal de afiliados.
+  if (isAffiliateRoute && userRole !== 'affiliate') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  if (isProtectedRoute) {
     const requiredRole = process.env.DASHBOARD_REQUIRED_ROLE?.trim().toLowerCase()
     if (requiredRole) {
-      const userRole = extractUserRole(payload)?.toLowerCase()
       if (!userRole || userRole !== requiredRole) {
         return NextResponse.redirect(new URL('/login', request.url))
       }

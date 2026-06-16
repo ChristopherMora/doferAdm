@@ -132,6 +132,7 @@ type OrderResponse struct {
 	Notes            string     `json:"notes"`
 	AssignedTo       string     `json:"assigned_to,omitempty"`
 	AssignedAt       *time.Time `json:"assigned_at,omitempty"`
+	AffiliateID      string     `json:"affiliate_id,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
@@ -213,6 +214,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		PrintFileName:    order.PrintFileName,
 		Quantity:         order.Quantity,
 		Notes:            order.Notes,
+		AffiliateID:      order.AffiliateID,
 		CreatedAt:        order.CreatedAt,
 		UpdatedAt:        order.UpdatedAt,
 		DeliveryDeadline: order.DeliveryDeadline,
@@ -253,6 +255,7 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 		Notes:            order.Notes,
 		AssignedTo:       order.AssignedTo,
 		AssignedAt:       order.AssignedAt,
+		AffiliateID:      order.AffiliateID,
 		CreatedAt:        order.CreatedAt,
 		UpdatedAt:        order.UpdatedAt,
 		CompletedAt:      order.CompletedAt,
@@ -270,13 +273,15 @@ func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	platform := r.URL.Query().Get("platform")
 	assignedTo := r.URL.Query().Get("assigned_to")
+	affiliateID := r.URL.Query().Get("affiliate_id")
 
 	orders, err := h.listHandler.Handle(r.Context(), app.ListOrdersQuery{
-		Status:     status,
-		Platform:   platform,
-		AssignedTo: assignedTo,
-		Limit:      50,
-		Offset:     0,
+		Status:      status,
+		Platform:    platform,
+		AssignedTo:  assignedTo,
+		AffiliateID: affiliateID,
+		Limit:       50,
+		Offset:      0,
 	})
 
 	if err != nil {
@@ -304,6 +309,7 @@ func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 			Notes:            order.Notes,
 			AssignedTo:       order.AssignedTo,
 			AssignedAt:       order.AssignedAt,
+			AffiliateID:      order.AffiliateID,
 			CreatedAt:        order.CreatedAt,
 			UpdatedAt:        order.UpdatedAt,
 			CompletedAt:      order.CompletedAt,

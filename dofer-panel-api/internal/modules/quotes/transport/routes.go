@@ -8,6 +8,8 @@ import (
 func RegisterRoutes(r chi.Router, handler *QuoteHandler) {
 	r.Route("/quotes", func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		// Excluye explícitamente el rol "affiliate".
+		r.Use(middleware.RequireRole("admin", "operator", "viewer"))
 
 		r.Post("/", handler.CreateQuote)
 		r.Get("/", handler.ListQuotes)

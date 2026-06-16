@@ -22,9 +22,10 @@ type OrderRepository interface {
 }
 
 type OrderFilters struct {
-	Status     OrderStatus
-	Platform   OrderPlatform
-	AssignedTo string
-	Limit      int
-	Offset     int
+	Status      OrderStatus
+	Platform    OrderPlatform
+	AssignedTo  string
+	AffiliateID string
+	Limit       int
+	Offset      int
 }

@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	affiliatesApp "github.com/dofer/panel-api/internal/modules/affiliates/app"
+	affiliatesInfra "github.com/dofer/panel-api/internal/modules/affiliates/infra"
+	affiliatesTransport "github.com/dofer/panel-api/internal/modules/affiliates/transport"
 	"github.com/dofer/panel-api/internal/modules/auth/app"
 	authInfra "github.com/dofer/panel-api/internal/modules/auth/infra"
 	authTransport "github.com/dofer/panel-api/internal/modules/auth/transport"
@@ -198,6 +201,40 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	productRepo := products.NewRepository(db)
 	productHandler := products.NewHandler(productRepo)
 
+	// Setup affiliates handlers
+	affiliateRepo := affiliatesInfra.NewPostgresAffiliateRepository(db)
+	supabaseAdminClient := affiliatesInfra.NewSupabaseAdminClient(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
+	createAffiliateHandler := affiliatesApp.NewCreateAffiliateHandler(affiliateRepo, supabaseAdminClient)
+	listAffiliatesHandler := affiliatesApp.NewListAffiliatesHandler(affiliateRepo)
+	getAffiliateHandler := affiliatesApp.NewGetAffiliateHandler(affiliateRepo)
+	getAffiliateByUserIDHandler := affiliatesApp.NewGetAffiliateByUserIDHandler(affiliateRepo)
+	updateAffiliateHandler := affiliatesApp.NewUpdateAffiliateHandler(affiliateRepo)
+	createOrderRequestHandler := affiliatesApp.NewCreateOrderRequestHandler(affiliateRepo, productRepo)
+	listOrderRequestsHandler := affiliatesApp.NewListOrderRequestsHandler(affiliateRepo)
+	getOrderRequestHandler := affiliatesApp.NewGetOrderRequestHandler(affiliateRepo)
+	approveOrderRequestHandler := affiliatesApp.NewApproveOrderRequestHandler(affiliateRepo, orderRepo)
+	rejectOrderRequestHandler := affiliatesApp.NewRejectOrderRequestHandler(affiliateRepo)
+	listCommissionsHandler := affiliatesApp.NewListCommissionsHandler(affiliateRepo)
+	markCommissionPaidHandler := affiliatesApp.NewMarkCommissionPaidHandler(affiliateRepo)
+	getAffiliateStatsHandler := affiliatesApp.NewGetAffiliateStatsHandler(affiliateRepo)
+	listActiveProductsForAffiliateHandler := affiliatesApp.NewListActiveProductsForAffiliateHandler(productRepo)
+	affiliateHandler := affiliatesTransport.NewAffiliateHandler(
+		createAffiliateHandler,
+		listAffiliatesHandler,
+		getAffiliateHandler,
+		getAffiliateByUserIDHandler,
+		updateAffiliateHandler,
+		createOrderRequestHandler,
+		listOrderRequestsHandler,
+		getOrderRequestHandler,
+		approveOrderRequestHandler,
+		rejectOrderRequestHandler,
+		listCommissionsHandler,
+		markCommissionPaidHandler,
+		getAffiliateStatsHandler,
+		listActiveProductsForAffiliateHandler,
+	)
+
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// Ping test (público, sin auth)
@@ -220,6 +257,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 			customers.RegisterRoutes(r, customerHandler)
 			printers.RegisterRoutes(r, printerHandler)
 			products.RegisterRoutes(r, productHandler)
+			affiliatesTransport.RegisterRoutes(r, affiliateHandler)
 		})
 	})
 

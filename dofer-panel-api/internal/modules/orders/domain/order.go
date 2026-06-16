@@ -28,10 +28,11 @@ const (
 )
 
 const (
-	PlatformTikTok  OrderPlatform = "tiktok"
-	PlatformShopify OrderPlatform = "shopify"
-	PlatformLocal   OrderPlatform = "local"
-	PlatformOther   OrderPlatform = "other"
+	PlatformTikTok    OrderPlatform = "tiktok"
+	PlatformShopify   OrderPlatform = "shopify"
+	PlatformLocal     OrderPlatform = "local"
+	PlatformOther     OrderPlatform = "other"
+	PlatformAffiliate OrderPlatform = "affiliate"
 )
 
 type Order struct {
@@ -55,6 +56,7 @@ type Order struct {
 	Metadata         map[string]interface{}
 	AssignedTo       string
 	AssignedAt       *time.Time
+	AffiliateID      string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	CompletedAt      *time.Time
