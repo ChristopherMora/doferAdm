@@ -203,7 +203,7 @@ func (c *SupabaseAdminClient) updateAuthUser(userID string, payload updateUserRe
 	}
 
 	url := c.baseURL + "/auth/v1/admin/users/" + userID
-	httpReq, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -231,6 +231,9 @@ func (c *SupabaseAdminClient) updateAuthUser(userID string, payload updateUserRe
 		}
 		if message == "" {
 			message = strings.TrimSpace(string(respBody))
+		}
+		if message == "" {
+			message = http.StatusText(resp.StatusCode)
 		}
 		return fmt.Errorf("supabase admin api error (status %d): %s", resp.StatusCode, message)
 	}
