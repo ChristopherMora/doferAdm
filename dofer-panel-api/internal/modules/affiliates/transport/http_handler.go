@@ -2,6 +2,7 @@ package transport
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ type AffiliateHandler struct {
 	getAffiliateByUserIDHandler *app.GetAffiliateByUserIDHandler
 	updateAffiliateHandler      *app.UpdateAffiliateHandler
 	updateAffiliateAccount      *app.UpdateAffiliateAccountHandler
+	deleteAffiliateHandler      *app.DeleteAffiliateHandler
 	createOrderRequestHandler   *app.CreateOrderRequestHandler
 	listOrderRequestsHandler    *app.ListOrderRequestsHandler
 	getOrderRequestHandler      *app.GetOrderRequestHandler
@@ -38,6 +40,7 @@ func NewAffiliateHandler(
 	getAffiliateByUserIDHandler *app.GetAffiliateByUserIDHandler,
 	updateAffiliateHandler *app.UpdateAffiliateHandler,
 	updateAffiliateAccount *app.UpdateAffiliateAccountHandler,
+	deleteAffiliateHandler *app.DeleteAffiliateHandler,
 	createOrderRequestHandler *app.CreateOrderRequestHandler,
 	listOrderRequestsHandler *app.ListOrderRequestsHandler,
 	getOrderRequestHandler *app.GetOrderRequestHandler,
@@ -56,6 +59,7 @@ func NewAffiliateHandler(
 		getAffiliateByUserIDHandler: getAffiliateByUserIDHandler,
 		updateAffiliateHandler:      updateAffiliateHandler,
 		updateAffiliateAccount:      updateAffiliateAccount,
+		deleteAffiliateHandler:      deleteAffiliateHandler,
 		createOrderRequestHandler:   createOrderRequestHandler,
 		listOrderRequestsHandler:    listOrderRequestsHandler,
 		getOrderRequestHandler:      getOrderRequestHandler,
@@ -77,10 +81,18 @@ func (h *AffiliateHandler) resolveOwnAffiliate(r *http.Request) (*domain.Affilia
 	if !ok || strings.TrimSpace(userID) == "" {
 		return nil, errUnauthorized
 	}
-	return h.getAffiliateByUserIDHandler.Handle(r.Context(), userID)
+	affiliate, err := h.getAffiliateByUserIDHandler.Handle(r.Context(), userID)
+	if err != nil {
+		return nil, err
+	}
+	if affiliate.Status == domain.AffiliateSuspended {
+		return nil, errAffiliateSuspended
+	}
+	return affiliate, nil
 }
 
 var errUnauthorized = &httpError{status: http.StatusUnauthorized, message: "unauthorized"}
+var errAffiliateSuspended = &httpError{status: http.StatusForbidden, message: "cuenta de afiliado suspendida"}
 
 type httpError struct {
 	status  int
@@ -97,6 +109,15 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	http.Error(w, message, status)
+}
+
+func writeAffiliateAccessError(w http.ResponseWriter, err error) {
+	var httpErr *httpError
+	if errors.As(err, &httpErr) {
+		writeError(w, httpErr.status, httpErr.message)
+		return
+	}
+	writeError(w, http.StatusUnauthorized, err.Error())
 }
 
 func parseDateInput(value string) (*time.Time, error) {
@@ -272,6 +293,31 @@ func (h *AffiliateHandler) ResetAffiliatePassword(w http.ResponseWriter, r *http
 		"temporary_password": result.TemporaryPassword,
 		"message":            "Contraseña temporal generada. Compártela de forma segura; no se mostrará de nuevo.",
 	})
+}
+
+func (h *AffiliateHandler) DeleteAffiliate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
+
+	result, err := h.deleteAffiliateHandler.Handle(r.Context(), app.DeleteAffiliateCommand{
+		AffiliateID:    id,
+		OrganizationID: organizationID,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	response := map[string]interface{}{
+		"affiliate":    result.Affiliate,
+		"auth_deleted": result.AuthDeleted,
+		"message":      "Afiliado eliminado",
+	}
+	if result.AuthDeleteError != "" {
+		response["auth_delete_error"] = result.AuthDeleteError
+		response["message"] = "Afiliado eliminado del panel; revisa la cuenta de Supabase Auth"
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *AffiliateHandler) GetAffiliateStats(w http.ResponseWriter, r *http.Request) {
@@ -595,7 +641,7 @@ func (h *AffiliateHandler) PayCommissionsBatch(w http.ResponseWriter, r *http.Re
 func (h *AffiliateHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 
@@ -606,6 +652,11 @@ func (h *AffiliateHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) 
 // para que el afiliado elija al armar una solicitud, sin darle acceso al
 // módulo /products (reservado a admin/operator/viewer).
 func (h *AffiliateHandler) ListMyAvailableProducts(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.resolveOwnAffiliate(r); err != nil {
+		writeAffiliateAccessError(w, err)
+		return
+	}
+
 	products, err := h.listActiveProductsHandler.Handle(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -640,7 +691,7 @@ type CreateMyOrderRequestRequest struct {
 func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 
@@ -689,7 +740,7 @@ func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.R
 func (h *AffiliateHandler) GetMyOrderRequestDetail(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -708,7 +759,7 @@ func (h *AffiliateHandler) GetMyOrderRequestDetail(w http.ResponseWriter, r *htt
 func (h *AffiliateHandler) UpdateMyOrderRequest(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -760,7 +811,7 @@ type CancelMyOrderRequestRequest struct {
 func (h *AffiliateHandler) CancelMyOrderRequest(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -778,7 +829,7 @@ func (h *AffiliateHandler) CancelMyOrderRequest(w http.ResponseWriter, r *http.R
 func (h *AffiliateHandler) CreateMyOrderRequestComment(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -804,7 +855,7 @@ func (h *AffiliateHandler) CreateMyOrderRequestComment(w http.ResponseWriter, r 
 func (h *AffiliateHandler) ListMyOrderRequests(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 
@@ -822,7 +873,7 @@ func (h *AffiliateHandler) ListMyOrderRequests(w http.ResponseWriter, r *http.Re
 func (h *AffiliateHandler) ListMyCommissions(w http.ResponseWriter, r *http.Request) {
 	affiliate, err := h.resolveOwnAffiliate(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAffiliateAccessError(w, err)
 		return
 	}
 

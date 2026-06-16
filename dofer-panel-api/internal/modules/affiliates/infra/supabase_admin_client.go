@@ -141,6 +141,53 @@ func (c *SupabaseAdminClient) ResetAuthUserPassword(userID string) (string, erro
 	return temporaryPassword, nil
 }
 
+func (c *SupabaseAdminClient) DeleteAuthUser(userID string) error {
+	if c.baseURL == "" || c.serviceKey == "" {
+		return fmt.Errorf("supabase admin client not configured: faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return fmt.Errorf("auth user id is required")
+	}
+
+	url := c.baseURL + "/auth/v1/admin/users/" + userID
+	httpReq, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("apikey", c.serviceKey)
+	httpReq.Header.Set("Authorization", "Bearer "+c.serviceKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var apiErr supabaseErrorResponse
+		_ = json.Unmarshal(respBody, &apiErr)
+		message := apiErr.Message
+		if message == "" {
+			message = apiErr.Error
+		}
+		if message == "" {
+			message = strings.TrimSpace(string(respBody))
+		}
+		return fmt.Errorf("supabase admin api error (status %d): %s", resp.StatusCode, message)
+	}
+
+	return nil
+}
+
 func (c *SupabaseAdminClient) updateAuthUser(userID string, payload updateUserRequest) error {
 	if c.baseURL == "" || c.serviceKey == "" {
 		return fmt.Errorf("supabase admin client not configured: faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY")

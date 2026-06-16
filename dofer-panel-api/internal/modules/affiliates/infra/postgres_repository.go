@@ -211,6 +211,78 @@ func (r *PostgresAffiliateRepository) UpdateAffiliateAccountEmail(affiliateID, o
 	return r.FindAffiliateByID(affiliate.ID, organizationID)
 }
 
+func (r *PostgresAffiliateRepository) DeleteAffiliateIfUnused(affiliateID, organizationID string) (*domain.Affiliate, error) {
+	ctx := context.Background()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	query := `SELECT ` + affiliateColumns + ` FROM affiliates WHERE id = $1`
+	args := []interface{}{affiliateID}
+	if organizationID != "" {
+		query += " AND organization_id = $2"
+		args = append(args, organizationID)
+	}
+	query += " FOR UPDATE"
+
+	affiliate, err := scanAffiliate(tx.QueryRow(ctx, query, args...))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("affiliate not found")
+		}
+		return nil, err
+	}
+
+	var linkedRecords int
+	err = tx.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM affiliate_order_requests WHERE affiliate_id = $1) +
+			(SELECT COUNT(*) FROM affiliate_commissions WHERE affiliate_id = $1) +
+			(SELECT COUNT(*) FROM orders WHERE affiliate_id = $1)
+	`, affiliate.ID).Scan(&linkedRecords)
+	if err != nil {
+		return nil, err
+	}
+	if linkedRecords > 0 {
+		return nil, errors.New("el afiliado tiene pedidos, solicitudes o comisiones; suspéndelo en lugar de eliminarlo")
+	}
+
+	if _, err = tx.Exec(ctx, `DELETE FROM affiliates WHERE id = $1`, affiliate.ID); err != nil {
+		return nil, err
+	}
+
+	if organizationID != "" {
+		if _, err = tx.Exec(ctx, `
+			DELETE FROM organization_members
+			WHERE organization_id = $1 AND user_id = $2
+		`, organizationID, affiliate.UserID); err != nil {
+			return nil, err
+		}
+	}
+
+	var remainingMemberships int
+	if err = tx.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM organization_members
+		WHERE user_id = $1
+	`, affiliate.UserID).Scan(&remainingMemberships); err != nil {
+		return nil, err
+	}
+	if remainingMemberships == 0 {
+		if _, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, affiliate.UserID); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return affiliate, nil
+}
+
 // CreateAffiliateUser inserta directamente la fila en `users` con role='affiliate'.
 // A propósito NO reusa auth.UpsertUser (que hardcodea role='operator'): esta fila
 // debe existir con el rol correcto ANTES del primer login del afiliado, para que

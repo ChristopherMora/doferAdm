@@ -11,6 +11,7 @@ type AuthUserProvisioner interface {
 type AuthUserAccountManager interface {
 	UpdateAuthUserEmail(userID, email string) error
 	ResetAuthUserPassword(userID string) (temporaryPassword string, err error)
+	DeleteAuthUser(userID string) error
 }
 
 // AffiliateFilters filtra el listado de afiliados (uso admin).
@@ -44,6 +45,7 @@ type AffiliateRepository interface {
 	ListAffiliates(filters AffiliateFilters) ([]*Affiliate, error)
 	UpdateAffiliate(a *Affiliate) error
 	UpdateAffiliateAccountEmail(affiliateID, organizationID, email string) (*Affiliate, error)
+	DeleteAffiliateIfUnused(affiliateID, organizationID string) (*Affiliate, error)
 
 	// Provisioning: inserta la fila local en users con el rol correcto
 	// ANTES del primer login del afiliado (ver SyncUser en auth middleware).

@@ -211,6 +211,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	getAffiliateByUserIDHandler := affiliatesApp.NewGetAffiliateByUserIDHandler(affiliateRepo)
 	updateAffiliateHandler := affiliatesApp.NewUpdateAffiliateHandler(affiliateRepo)
 	updateAffiliateAccountHandler := affiliatesApp.NewUpdateAffiliateAccountHandler(affiliateRepo, supabaseAdminClient)
+	deleteAffiliateHandler := affiliatesApp.NewDeleteAffiliateHandler(affiliateRepo, supabaseAdminClient)
 	createOrderRequestHandler := affiliatesApp.NewCreateOrderRequestHandler(affiliateRepo, productRepo)
 	listOrderRequestsHandler := affiliatesApp.NewListOrderRequestsHandler(affiliateRepo)
 	getOrderRequestHandler := affiliatesApp.NewGetOrderRequestHandler(affiliateRepo)
@@ -228,6 +229,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		getAffiliateByUserIDHandler,
 		updateAffiliateHandler,
 		updateAffiliateAccountHandler,
+		deleteAffiliateHandler,
 		createOrderRequestHandler,
 		listOrderRequestsHandler,
 		getOrderRequestHandler,

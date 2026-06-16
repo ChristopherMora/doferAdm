@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -13,6 +13,7 @@ import type { Affiliate, AffiliateCommission, AffiliateOrderRequest, AffiliateSt
 
 export default function AffiliateDetailPage() {
   const params = useParams<{ id: string }>()
+  const router = useRouter()
   const affiliateId = params.id
 
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null)
@@ -24,6 +25,8 @@ export default function AffiliateDetailPage() {
   const [saving, setSaving] = useState(false)
   const [savingEmail, setSavingEmail] = useState(false)
   const [resettingPassword, setResettingPassword] = useState(false)
+  const [savingStatus, setSavingStatus] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [accountEmail, setAccountEmail] = useState('')
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null)
@@ -134,6 +137,38 @@ export default function AffiliateDetailPage() {
     }
   }
 
+  const handleStatusChange = async (status: 'active' | 'suspended') => {
+    setSavingStatus(true)
+    setApiError(null)
+    try {
+      const updated = await apiClient.put<Affiliate>(`/affiliates/${affiliateId}`, { status })
+      setAffiliate(updated)
+      setEditForm((prev) => ({ ...prev, status: updated.status }))
+    } catch (error: unknown) {
+      setApiError(`Error actualizando estado: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setSavingStatus(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      'Esto eliminará definitivamente el afiliado si no tiene pedidos, órdenes o comisiones. Si ya tiene historial, suspéndelo en lugar de borrarlo. ¿Continuar?'
+    )
+    if (!confirmed) return
+
+    setDeleting(true)
+    setApiError(null)
+    try {
+      await apiClient.delete(`/affiliates/${affiliateId}`)
+      router.push('/dashboard/affiliates')
+    } catch (error: unknown) {
+      setApiError(`No se pudo eliminar: ${getErrorMessage(error, 'Si tiene historial, suspéndelo para conservar reportes.')}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) {
     return <LoadingState label="Cargando afiliado..." />
   }
@@ -162,6 +197,48 @@ export default function AffiliateDetailPage() {
           <StatCard label="Comisión pagada" value={`$${stats.commission_paid.toFixed(2)}`} valueClass="text-green-600" />
         </div>
       )}
+
+      <PanelCard>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-bold">Estado del afiliado</h2>
+            <p className="text-sm text-muted-foreground">
+              {affiliate.status === 'active'
+                ? 'Activo: puede entrar al portal y registrar pedidos.'
+                : 'Suspendido: conserva historial, pero no puede operar en el portal.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {affiliate.status === 'active' ? (
+              <button
+                type="button"
+                onClick={() => handleStatusChange('suspended')}
+                disabled={savingStatus}
+                className="rounded-xl border border-orange-300 px-4 py-2 font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-60"
+              >
+                {savingStatus ? 'Actualizando...' : 'Suspender afiliado'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleStatusChange('active')}
+                disabled={savingStatus}
+                className="rounded-xl bg-green-700 px-4 py-2 font-semibold text-white hover:bg-green-800 disabled:opacity-60"
+              >
+                {savingStatus ? 'Actualizando...' : 'Reactivar afiliado'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-xl border border-red-300 px-4 py-2 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+            >
+              {deleting ? 'Eliminando...' : 'Eliminar definitivo'}
+            </button>
+          </div>
+        </div>
+      </PanelCard>
 
       <PanelCard>
         <h2 className="text-xl font-bold mb-4">Acceso y recuperación</h2>
