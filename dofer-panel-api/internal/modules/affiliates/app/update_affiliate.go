@@ -8,13 +8,15 @@ import (
 )
 
 type UpdateAffiliateCommand struct {
-	AffiliateID     string
-	DisplayName     *string
-	Phone           *string
-	CommissionType  *domain.CommissionType
-	CommissionValue *float64
-	Status          *domain.AffiliateStatus
-	Notes           *string
+	AffiliateID        string
+	DisplayName        *string
+	Phone              *string
+	CommissionType     *domain.CommissionType
+	CommissionValue    *float64
+	MaxPendingRequests *int
+	AllowUrgentOrders  *bool
+	Status             *domain.AffiliateStatus
+	Notes              *string
 }
 
 type UpdateAffiliateHandler struct {
@@ -48,6 +50,15 @@ func (h *UpdateAffiliateHandler) Handle(ctx context.Context, cmd UpdateAffiliate
 			return nil, errors.New("commission value cannot be negative")
 		}
 		affiliate.CommissionValue = *cmd.CommissionValue
+	}
+	if cmd.MaxPendingRequests != nil {
+		if *cmd.MaxPendingRequests < 0 {
+			return nil, errors.New("max pending requests cannot be negative")
+		}
+		affiliate.MaxPendingRequests = *cmd.MaxPendingRequests
+	}
+	if cmd.AllowUrgentOrders != nil {
+		affiliate.AllowUrgentOrders = *cmd.AllowUrgentOrders
 	}
 	if cmd.Status != nil {
 		if *cmd.Status != domain.AffiliateActive && *cmd.Status != domain.AffiliateSuspended {

@@ -13,15 +13,17 @@ import (
 var ErrAffiliateEmailRequired = errors.New("affiliate email is required")
 
 type CreateAffiliateCommand struct {
-	OrganizationID  string
-	DisplayName     string
-	Email           string
-	Phone           string
-	ReferralCode    string
-	CommissionType  domain.CommissionType
-	CommissionValue float64
-	Notes           string
-	CreatedBy       string
+	OrganizationID     string
+	DisplayName        string
+	Email              string
+	Phone              string
+	ReferralCode       string
+	CommissionType     domain.CommissionType
+	CommissionValue    float64
+	MaxPendingRequests int
+	AllowUrgentOrders  *bool
+	Notes              string
+	CreatedBy          string
 }
 
 type CreateAffiliateResult struct {
@@ -52,6 +54,9 @@ func (h *CreateAffiliateHandler) Handle(ctx context.Context, cmd CreateAffiliate
 	if cmd.CommissionValue < 0 {
 		return nil, errors.New("commission value cannot be negative")
 	}
+	if cmd.MaxPendingRequests < 0 {
+		return nil, errors.New("max pending requests cannot be negative")
+	}
 	organizationID := strings.TrimSpace(cmd.OrganizationID)
 	if organizationID == "" {
 		organizationID = organizationIDFromContext(ctx)
@@ -75,17 +80,22 @@ func (h *CreateAffiliateHandler) Handle(ctx context.Context, cmd CreateAffiliate
 
 	// 3. Crear el perfil de negocio en affiliates.
 	affiliate := &domain.Affiliate{
-		OrganizationID:  organizationID,
-		UserID:          userID,
-		ReferralCode:    normalizeReferralCode(cmd.ReferralCode, cmd.DisplayName),
-		DisplayName:     cmd.DisplayName,
-		Email:           email,
-		Phone:           cmd.Phone,
-		CommissionType:  cmd.CommissionType,
-		CommissionValue: cmd.CommissionValue,
-		Status:          domain.AffiliateActive,
-		Notes:           cmd.Notes,
-		CreatedBy:       cmd.CreatedBy,
+		OrganizationID:     organizationID,
+		UserID:             userID,
+		ReferralCode:       normalizeReferralCode(cmd.ReferralCode, cmd.DisplayName),
+		DisplayName:        cmd.DisplayName,
+		Email:              email,
+		Phone:              cmd.Phone,
+		CommissionType:     cmd.CommissionType,
+		CommissionValue:    cmd.CommissionValue,
+		MaxPendingRequests: cmd.MaxPendingRequests,
+		AllowUrgentOrders:  true,
+		Status:             domain.AffiliateActive,
+		Notes:              cmd.Notes,
+		CreatedBy:          cmd.CreatedBy,
+	}
+	if cmd.AllowUrgentOrders != nil {
+		affiliate.AllowUrgentOrders = *cmd.AllowUrgentOrders
 	}
 
 	if err := h.repo.CreateAffiliate(affiliate); err != nil {

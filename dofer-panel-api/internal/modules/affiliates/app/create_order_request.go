@@ -46,6 +46,24 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 		return nil, errors.New("organization id is required")
 	}
 	priority := normalizePriority(cmd.Priority)
+	affiliate, err := h.repo.FindAffiliateByID(cmd.AffiliateID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	if priority == "urgent" && !affiliate.AllowUrgentOrders {
+		return nil, errors.New("urgent orders are disabled for this affiliate")
+	}
+	if affiliate.MaxPendingRequests > 0 {
+		openRequests, err := h.repo.CountOpenOrderRequests(organizationID, affiliate.ID)
+		if err != nil {
+			return nil, err
+		}
+		if openRequests >= affiliate.MaxPendingRequests {
+			return nil, errors.New("affiliate pending request limit reached")
+		}
+	}
+	commissionTypeSnapshot := string(affiliate.CommissionType)
+	commissionValueSnapshot := affiliate.CommissionValue
 
 	// Si el afiliado eligió un producto del catálogo, tomamos snapshot de su
 	// nombre y precio sugerido al momento de la solicitud (auditoría).
@@ -62,6 +80,10 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 				}
 				if product.AffiliateMinPrice != nil {
 					minPriceSnapshot = *product.AffiliateMinPrice
+				}
+				if product.AffiliateCommissionType != nil && product.AffiliateCommissionValue != nil {
+					commissionTypeSnapshot = *product.AffiliateCommissionType
+					commissionValueSnapshot = *product.AffiliateCommissionValue
 				}
 			}
 		}
@@ -81,6 +103,8 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 	req.MinPriceSnapshot = minPriceSnapshot
 	req.Priority = priority
 	req.ReferenceImages = sanitizeReferenceImages(cmd.ReferenceImages)
+	req.CommissionTypeSnapshot = commissionTypeSnapshot
+	req.CommissionValueSnapshot = commissionValueSnapshot
 	req.CustomerEmail = cmd.CustomerEmail
 	req.CustomerPhone = cmd.CustomerPhone
 	req.CustomerNotes = cmd.CustomerNotes
@@ -88,6 +112,17 @@ func (h *CreateOrderRequestHandler) Handle(ctx context.Context, cmd CreateOrderR
 	if err := h.repo.CreateOrderRequest(req); err != nil {
 		return nil, err
 	}
+	_ = h.repo.CreateOrderRequestEvent(&domain.AffiliateOrderRequestEvent{
+		OrganizationID:          organizationID,
+		AffiliateOrderRequestID: req.ID,
+		ActorRole:               "affiliate",
+		EventType:               "request.created",
+		Message:                 "Solicitud registrada por el afiliado",
+		Metadata: map[string]interface{}{
+			"priority":    req.Priority,
+			"final_price": req.FinalPrice,
+		},
+	})
 
 	return req, nil
 }

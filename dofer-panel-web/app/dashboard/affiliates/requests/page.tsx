@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
@@ -10,7 +11,7 @@ import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import type { AffiliateOrderRequest } from '@/types'
 
-type StatusFilter = 'pending' | 'approved' | 'rejected' | ''
+type StatusFilter = 'pending' | 'needs_changes' | 'approved' | 'rejected' | 'cancelled' | ''
 type PriorityFilter = 'urgent' | 'normal' | 'low' | ''
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -106,8 +107,10 @@ export default function AffiliateRequestsPage() {
               className="px-3 py-2 rounded-xl bg-white/15 text-white border border-white/20"
             >
               <option value="pending">Pendientes</option>
+              <option value="needs_changes">Con cambios solicitados</option>
               <option value="approved">Aprobadas</option>
               <option value="rejected">Rechazadas</option>
+              <option value="cancelled">Canceladas</option>
               <option value="">Todas</option>
             </select>
             <select
@@ -171,6 +174,15 @@ export default function AffiliateRequestsPage() {
                 </div>
               )}
 
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/dashboard/affiliates/requests/${req.id}`}
+                  className="px-3 py-1.5 text-sm border rounded-lg hover:bg-accent"
+                >
+                  Ver detalle
+                </Link>
+              </div>
+
               {req.status === 'pending' ? (
                 rejectingId === req.id ? (
                   <div className="flex flex-wrap items-center gap-2">
@@ -211,13 +223,7 @@ export default function AffiliateRequestsPage() {
                   </div>
                 )
               ) : (
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${
-                    req.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}
-                >
-                  {req.status === 'approved' ? 'Aprobada' : `Rechazada: ${req.rejection_reason || ''}`}
-                </span>
+                <StatusBadge request={req} />
               )}
             </div>
           ))}
@@ -228,5 +234,28 @@ export default function AffiliateRequestsPage() {
         </div>
       </PanelCard>
     </div>
+  )
+}
+
+function StatusBadge({ request }: { request: AffiliateOrderRequest }) {
+  const styles: Record<AffiliateOrderRequest['status'], string> = {
+    pending: 'bg-yellow-100 text-yellow-700',
+    needs_changes: 'bg-orange-100 text-orange-700',
+    approved: 'bg-green-100 text-green-700',
+    rejected: 'bg-red-100 text-red-700',
+    cancelled: 'bg-gray-100 text-gray-600',
+  }
+  const labels: Record<AffiliateOrderRequest['status'], string> = {
+    pending: 'Pendiente',
+    needs_changes: `Cambios solicitados${request.requested_changes ? `: ${request.requested_changes}` : ''}`,
+    approved: 'Aprobada',
+    rejected: `Rechazada${request.rejection_reason ? `: ${request.rejection_reason}` : ''}`,
+    cancelled: `Cancelada${request.cancelled_reason ? `: ${request.cancelled_reason}` : ''}`,
+  }
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${styles[request.status]}`}>
+      {labels[request.status]}
+    </span>
   )
 }

@@ -33,6 +33,14 @@ func (h *RejectOrderRequestHandler) Handle(ctx context.Context, cmd RejectOrderR
 	if err := h.repo.UpdateOrderRequest(req); err != nil {
 		return nil, err
 	}
+	_ = h.repo.CreateOrderRequestEvent(&domain.AffiliateOrderRequestEvent{
+		OrganizationID:          req.OrganizationID,
+		AffiliateOrderRequestID: req.ID,
+		ActorUserID:             cmd.ReviewedBy,
+		ActorRole:               "operator",
+		EventType:               "request.rejected",
+		Message:                 cmd.RejectionReason,
+	})
 
 	return req, nil
 }

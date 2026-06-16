@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -18,6 +18,8 @@ interface CreateAffiliateForm {
   referral_code: string
   commission_type: 'percentage' | 'fixed'
   commission_value: number
+  max_pending_requests: number
+  allow_urgent_orders: boolean
   notes: string
 }
 
@@ -28,6 +30,8 @@ const initialForm: CreateAffiliateForm = {
   referral_code: '',
   commission_type: 'percentage',
   commission_value: 10,
+  max_pending_requests: 0,
+  allow_urgent_orders: true,
   notes: '',
 }
 
@@ -57,6 +61,15 @@ export default function AffiliatesPage() {
   useEffect(() => {
     void loadAffiliates()
   }, [loadAffiliates])
+
+  const summary = useMemo(() => {
+    const active = affiliates.filter((affiliate) => affiliate.status === 'active').length
+    const suspended = affiliates.filter((affiliate) => affiliate.status === 'suspended').length
+    const limited = affiliates.filter((affiliate) => affiliate.max_pending_requests > 0).length
+    const urgentBlocked = affiliates.filter((affiliate) => !affiliate.allow_urgent_orders).length
+
+    return { active, suspended, limited, urgentBlocked }
+  }, [affiliates])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,6 +122,13 @@ export default function AffiliatesPage() {
         </div>
       )}
 
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Metric label="Activos" value={summary.active} tone="green" />
+        <Metric label="Suspendidos" value={summary.suspended} />
+        <Metric label="Con límite" value={summary.limited} tone="blue" />
+        <Metric label="Sin urgentes" value={summary.urgentBlocked} tone="orange" />
+      </section>
+
       {showCreateForm && (
         <form onSubmit={handleCreate} className="panel-surface rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <input
@@ -160,6 +180,22 @@ export default function AffiliatesPage() {
             required
           />
           <input
+            type="number"
+            min={0}
+            value={form.max_pending_requests}
+            onChange={(e) => setForm((prev) => ({ ...prev, max_pending_requests: Number(e.target.value) }))}
+            placeholder="Máx. solicitudes abiertas (0 = sin límite)"
+            className="px-3 py-2 border rounded-xl bg-background"
+          />
+          <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-xl bg-background text-sm">
+            <input
+              type="checkbox"
+              checked={form.allow_urgent_orders}
+              onChange={(e) => setForm((prev) => ({ ...prev, allow_urgent_orders: e.target.checked }))}
+            />
+            Permitir pedidos urgentes
+          </label>
+          <input
             type="text"
             value={form.notes}
             onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
@@ -190,6 +226,11 @@ export default function AffiliatesPage() {
                   <h3 className="font-bold">{affiliate.display_name}</h3>
                   <p className="text-sm text-muted-foreground">{affiliate.email}{affiliate.phone ? ` · ${affiliate.phone}` : ''}</p>
                   <p className="text-xs text-muted-foreground">Codigo: {affiliate.referral_code}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Reglas: {affiliate.max_pending_requests > 0 ? `${affiliate.max_pending_requests} abiertas máx.` : 'sin límite'}
+                    {' · '}
+                    {affiliate.allow_urgent_orders ? 'urgentes permitidos' : 'sin urgentes'}
+                  </p>
                 </div>
                 <div className="text-right text-sm">
                   <span
@@ -214,6 +255,23 @@ export default function AffiliatesPage() {
           )}
         </div>
       </PanelCard>
+    </div>
+  )
+}
+
+function Metric({ label, value, tone }: { label: string; value: number; tone?: 'green' | 'blue' | 'orange' }) {
+  const toneClass = tone
+    ? {
+        green: 'text-green-600',
+        blue: 'text-blue-600',
+        orange: 'text-orange-600',
+      }[tone]
+    : 'text-foreground'
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-background/85 p-4">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-2xl font-bold ${toneClass}`}>{value}</div>
     </div>
   )
 }

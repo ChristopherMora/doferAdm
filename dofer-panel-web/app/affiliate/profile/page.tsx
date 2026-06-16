@@ -54,6 +54,14 @@ export default function AffiliateProfilePage() {
         <Field label="Teléfono" value={affiliate.phone || 'Sin definir'} />
         <Field label="Codigo de afiliado" value={affiliate.referral_code} />
         <Field
+          label="Solicitudes abiertas"
+          value={affiliate.max_pending_requests > 0 ? `Máximo ${affiliate.max_pending_requests}` : 'Sin límite definido'}
+        />
+        <Field
+          label="Pedidos urgentes"
+          value={affiliate.allow_urgent_orders ? 'Permitidos' : 'No disponibles'}
+        />
+        <Field
           label="Comisión"
           value={
             affiliate.commission_type === 'percentage'

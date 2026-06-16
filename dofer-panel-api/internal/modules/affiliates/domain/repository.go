@@ -46,6 +46,14 @@ type AffiliateRepository interface {
 	FindOrderRequestByID(id string, organizationID ...string) (*AffiliateOrderRequest, error)
 	ListOrderRequests(filters OrderRequestFilters) ([]*AffiliateOrderRequest, error)
 	UpdateOrderRequest(req *AffiliateOrderRequest) error
+	UpdateOrderRequestDetails(req *AffiliateOrderRequest) error
+	CountOpenOrderRequests(organizationID, affiliateID string) (int, error)
+
+	// Order request activity
+	CreateOrderRequestEvent(event *AffiliateOrderRequestEvent) error
+	ListOrderRequestEvents(organizationID, requestID string) ([]*AffiliateOrderRequestEvent, error)
+	CreateOrderRequestComment(comment *AffiliateOrderRequestComment) error
+	ListOrderRequestComments(organizationID, requestID string, includeInternal bool) ([]*AffiliateOrderRequestComment, error)
 
 	// Commissions
 	CreateCommission(c *AffiliateCommission) error

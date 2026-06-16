@@ -87,7 +87,13 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 
 	// 2. Calcular y registrar la comisión pendiente (snapshot, no se
 	//    recalcula si la comisión del afiliado cambia después).
-	commissionAmount := affiliate.CalculateCommission(req.FinalPrice)
+	commissionType := affiliate.CommissionType
+	commissionValue := affiliate.CommissionValue
+	if req.CommissionTypeSnapshot != "" {
+		commissionType = domain.CommissionType(req.CommissionTypeSnapshot)
+		commissionValue = req.CommissionValueSnapshot
+	}
+	commissionAmount := domain.CalculateCommission(commissionType, commissionValue, req.FinalPrice)
 	commission := domain.NewAffiliateCommission(affiliate.ID, req.ID, order.ID, commissionAmount)
 	commission.OrganizationID = organizationID
 	if err := h.repo.CreateCommission(commission); err != nil {
@@ -101,6 +107,18 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 	if err := h.repo.UpdateOrderRequest(req); err != nil {
 		return nil, err
 	}
+	_ = h.repo.CreateOrderRequestEvent(&domain.AffiliateOrderRequestEvent{
+		OrganizationID:          organizationID,
+		AffiliateOrderRequestID: req.ID,
+		ActorUserID:             cmd.ReviewedBy,
+		ActorRole:               "operator",
+		EventType:               "request.approved",
+		Message:                 "Solicitud aprobada y convertida a orden",
+		Metadata: map[string]interface{}{
+			"order_id":          order.ID,
+			"commission_amount": commission.CommissionAmount,
+		},
+	})
 
 	return &ApproveOrderRequestResult{Order: order, Commission: commission}, nil
 }

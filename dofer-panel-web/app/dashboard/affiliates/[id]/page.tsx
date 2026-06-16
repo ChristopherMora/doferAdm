@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -27,6 +28,8 @@ export default function AffiliateDetailPage() {
     phone: '',
     commission_type: 'percentage' as 'percentage' | 'fixed',
     commission_value: 0,
+    max_pending_requests: 0,
+    allow_urgent_orders: true,
     status: 'active' as 'active' | 'suspended',
     notes: '',
   })
@@ -50,6 +53,8 @@ export default function AffiliateDetailPage() {
         phone: affiliateRes.phone || '',
         commission_type: affiliateRes.commission_type,
         commission_value: affiliateRes.commission_value,
+        max_pending_requests: affiliateRes.max_pending_requests,
+        allow_urgent_orders: affiliateRes.allow_urgent_orders,
         status: affiliateRes.status,
         notes: affiliateRes.notes || '',
       })
@@ -149,6 +154,22 @@ export default function AffiliateDetailPage() {
             className="px-3 py-2 border rounded-xl bg-background"
           />
           <input
+            type="number"
+            min={0}
+            value={editForm.max_pending_requests}
+            onChange={(e) => setEditForm((prev) => ({ ...prev, max_pending_requests: Number(e.target.value) }))}
+            placeholder="Máx. solicitudes abiertas"
+            className="px-3 py-2 border rounded-xl bg-background"
+          />
+          <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-xl bg-background text-sm">
+            <input
+              type="checkbox"
+              checked={editForm.allow_urgent_orders}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, allow_urgent_orders: e.target.checked }))}
+            />
+            Permitir urgentes
+          </label>
+          <input
             type="text"
             value={editForm.notes}
             onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
@@ -170,7 +191,11 @@ export default function AffiliateDetailPage() {
           <h2 className="text-xl font-bold mb-4">Solicitudes recientes</h2>
           <div className="space-y-2">
             {requests.map((req) => (
-              <div key={req.id} className="rounded-lg border border-border/70 p-3 text-sm">
+              <Link
+                key={req.id}
+                href={`/dashboard/affiliates/requests/${req.id}`}
+                className="block rounded-lg border border-border/70 p-3 text-sm hover:bg-accent/50"
+              >
                 <div className="flex justify-between">
                   <span className="font-medium">{req.product_name} × {req.quantity}</span>
                   <StatusBadge status={req.status} />
@@ -178,7 +203,7 @@ export default function AffiliateDetailPage() {
                 <p className="text-muted-foreground">
                   {req.customer_name} · ${req.final_price.toFixed(2)} · {req.priority === 'urgent' ? 'Urgente' : req.priority === 'low' ? 'Baja' : 'Normal'}
                 </p>
-              </div>
+              </Link>
             ))}
             {requests.length === 0 && <p className="text-sm text-muted-foreground">Sin solicitudes todavía.</p>}
           </div>
@@ -215,13 +240,17 @@ function StatCard({ label, value, valueClass }: { label: string; value: number |
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-700',
+    needs_changes: 'bg-orange-100 text-orange-700',
     approved: 'bg-green-100 text-green-700',
     rejected: 'bg-red-100 text-red-700',
+    cancelled: 'bg-gray-100 text-gray-600',
   }
   const labels: Record<string, string> = {
     pending: 'Pendiente',
+    needs_changes: 'Pide cambios',
     approved: 'Aprobada',
     rejected: 'Rechazada',
+    cancelled: 'Cancelada',
   }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${styles[status] || 'bg-gray-100 text-gray-600'}`}>

@@ -26,6 +26,7 @@ type AffiliateHandler struct {
 	markCommissionPaidHandler   *app.MarkCommissionPaidHandler
 	getAffiliateStatsHandler    *app.GetAffiliateStatsHandler
 	listActiveProductsHandler   *app.ListActiveProductsForAffiliateHandler
+	orderRequestControlHandler  *app.OrderRequestControlHandler
 }
 
 func NewAffiliateHandler(
@@ -43,6 +44,7 @@ func NewAffiliateHandler(
 	markCommissionPaidHandler *app.MarkCommissionPaidHandler,
 	getAffiliateStatsHandler *app.GetAffiliateStatsHandler,
 	listActiveProductsHandler *app.ListActiveProductsForAffiliateHandler,
+	orderRequestControlHandler *app.OrderRequestControlHandler,
 ) *AffiliateHandler {
 	return &AffiliateHandler{
 		createAffiliateHandler:      createAffiliateHandler,
@@ -59,6 +61,7 @@ func NewAffiliateHandler(
 		markCommissionPaidHandler:   markCommissionPaidHandler,
 		getAffiliateStatsHandler:    getAffiliateStatsHandler,
 		listActiveProductsHandler:   listActiveProductsHandler,
+		orderRequestControlHandler:  orderRequestControlHandler,
 	}
 }
 
@@ -95,13 +98,15 @@ func writeError(w http.ResponseWriter, status int, message string) {
 // ---- Admin: gestión de afiliados ----
 
 type CreateAffiliateRequest struct {
-	DisplayName     string  `json:"display_name"`
-	Email           string  `json:"email"`
-	Phone           string  `json:"phone"`
-	ReferralCode    string  `json:"referral_code"`
-	CommissionType  string  `json:"commission_type"`
-	CommissionValue float64 `json:"commission_value"`
-	Notes           string  `json:"notes"`
+	DisplayName        string  `json:"display_name"`
+	Email              string  `json:"email"`
+	Phone              string  `json:"phone"`
+	ReferralCode       string  `json:"referral_code"`
+	CommissionType     string  `json:"commission_type"`
+	CommissionValue    float64 `json:"commission_value"`
+	MaxPendingRequests int     `json:"max_pending_requests"`
+	AllowUrgentOrders  *bool   `json:"allow_urgent_orders"`
+	Notes              string  `json:"notes"`
 }
 
 func (h *AffiliateHandler) CreateAffiliate(w http.ResponseWriter, r *http.Request) {
@@ -115,15 +120,17 @@ func (h *AffiliateHandler) CreateAffiliate(w http.ResponseWriter, r *http.Reques
 	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
 
 	cmd := app.CreateAffiliateCommand{
-		OrganizationID:  organizationID,
-		DisplayName:     req.DisplayName,
-		Email:           req.Email,
-		Phone:           req.Phone,
-		ReferralCode:    req.ReferralCode,
-		CommissionType:  domain.CommissionType(req.CommissionType),
-		CommissionValue: req.CommissionValue,
-		Notes:           req.Notes,
-		CreatedBy:       createdBy,
+		OrganizationID:     organizationID,
+		DisplayName:        req.DisplayName,
+		Email:              req.Email,
+		Phone:              req.Phone,
+		ReferralCode:       req.ReferralCode,
+		CommissionType:     domain.CommissionType(req.CommissionType),
+		CommissionValue:    req.CommissionValue,
+		MaxPendingRequests: req.MaxPendingRequests,
+		AllowUrgentOrders:  req.AllowUrgentOrders,
+		Notes:              req.Notes,
+		CreatedBy:          createdBy,
 	}
 
 	result, err := h.createAffiliateHandler.Handle(r.Context(), cmd)
@@ -164,12 +171,14 @@ func (h *AffiliateHandler) GetAffiliate(w http.ResponseWriter, r *http.Request) 
 }
 
 type UpdateAffiliateRequest struct {
-	DisplayName     *string  `json:"display_name,omitempty"`
-	Phone           *string  `json:"phone,omitempty"`
-	CommissionType  *string  `json:"commission_type,omitempty"`
-	CommissionValue *float64 `json:"commission_value,omitempty"`
-	Status          *string  `json:"status,omitempty"`
-	Notes           *string  `json:"notes,omitempty"`
+	DisplayName        *string  `json:"display_name,omitempty"`
+	Phone              *string  `json:"phone,omitempty"`
+	CommissionType     *string  `json:"commission_type,omitempty"`
+	CommissionValue    *float64 `json:"commission_value,omitempty"`
+	MaxPendingRequests *int     `json:"max_pending_requests,omitempty"`
+	AllowUrgentOrders  *bool    `json:"allow_urgent_orders,omitempty"`
+	Status             *string  `json:"status,omitempty"`
+	Notes              *string  `json:"notes,omitempty"`
 }
 
 func (h *AffiliateHandler) UpdateAffiliate(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +196,8 @@ func (h *AffiliateHandler) UpdateAffiliate(w http.ResponseWriter, r *http.Reques
 		cmd.CommissionType = &ct
 	}
 	cmd.CommissionValue = req.CommissionValue
+	cmd.MaxPendingRequests = req.MaxPendingRequests
+	cmd.AllowUrgentOrders = req.AllowUrgentOrders
 	if req.Status != nil {
 		st := domain.AffiliateStatus(*req.Status)
 		cmd.Status = &st
@@ -267,6 +278,18 @@ func (h *AffiliateHandler) GetOrderRequest(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, req)
 }
 
+func (h *AffiliateHandler) GetOrderRequestDetail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	detail, err := h.orderRequestControlHandler.Detail(r.Context(), id, true)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, detail)
+}
+
 func (h *AffiliateHandler) ApproveOrderRequest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	reviewedBy, _ := middleware.UserIDFromContext(r.Context())
@@ -321,6 +344,51 @@ func (h *AffiliateHandler) RejectOrderRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"request": updated, "message": "Solicitud rechazada"})
+}
+
+type RequestChangesRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (h *AffiliateHandler) RequestOrderRequestChanges(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req RequestChangesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	reviewedBy, _ := middleware.UserIDFromContext(r.Context())
+	updated, err := h.orderRequestControlHandler.RequestChanges(r.Context(), id, reviewedBy, req.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"request": updated, "message": "Cambios solicitados"})
+}
+
+type CreateOrderRequestCommentRequest struct {
+	Message      string `json:"message"`
+	InternalOnly bool   `json:"internal_only"`
+}
+
+func (h *AffiliateHandler) CreateOrderRequestComment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req CreateOrderRequestCommentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	role, _ := middleware.UserRoleFromContext(r.Context())
+	if role == "" {
+		role = "operator"
+	}
+	comment, err := h.orderRequestControlHandler.AddComment(r.Context(), id, userID, role, req.Message, req.InternalOnly)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, comment)
 }
 
 func (h *AffiliateHandler) ListAllCommissions(w http.ResponseWriter, r *http.Request) {
@@ -480,6 +548,108 @@ func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.R
 	}
 
 	writeJSON(w, http.StatusCreated, created)
+}
+
+func (h *AffiliateHandler) GetMyOrderRequestDetail(w http.ResponseWriter, r *http.Request) {
+	affiliate, err := h.resolveOwnAffiliate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	id := chi.URLParam(r, "id")
+	detail, err := h.orderRequestControlHandler.Detail(r.Context(), id, false)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if detail.Request.AffiliateID != affiliate.ID {
+		writeError(w, http.StatusNotFound, "affiliate order request not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *AffiliateHandler) UpdateMyOrderRequest(w http.ResponseWriter, r *http.Request) {
+	affiliate, err := h.resolveOwnAffiliate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req CreateMyOrderRequestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	updated, err := h.orderRequestControlHandler.UpdateOwn(r.Context(), app.UpdateOwnOrderRequestCommand{
+		RequestID:       id,
+		AffiliateID:     affiliate.ID,
+		ProductID:       req.ProductID,
+		ProductName:     req.ProductName,
+		Quantity:        req.Quantity,
+		FinalPrice:      req.FinalPrice,
+		Priority:        req.Priority,
+		ReferenceImages: req.ReferenceImages,
+		CustomerName:    req.CustomerName,
+		CustomerEmail:   req.CustomerEmail,
+		CustomerPhone:   req.CustomerPhone,
+		CustomerNotes:   req.CustomerNotes,
+		ActorUserID:     userID,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+type CancelMyOrderRequestRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (h *AffiliateHandler) CancelMyOrderRequest(w http.ResponseWriter, r *http.Request) {
+	affiliate, err := h.resolveOwnAffiliate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req CancelMyOrderRequestRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	updated, err := h.orderRequestControlHandler.CancelOwn(r.Context(), id, affiliate.ID, userID, req.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"request": updated, "message": "Solicitud cancelada"})
+}
+
+func (h *AffiliateHandler) CreateMyOrderRequestComment(w http.ResponseWriter, r *http.Request) {
+	affiliate, err := h.resolveOwnAffiliate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	id := chi.URLParam(r, "id")
+	detail, err := h.orderRequestControlHandler.Detail(r.Context(), id, false)
+	if err != nil || detail.Request.AffiliateID != affiliate.ID {
+		writeError(w, http.StatusNotFound, "affiliate order request not found")
+		return
+	}
+	var req CreateOrderRequestCommentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	comment, err := h.orderRequestControlHandler.AddComment(r.Context(), id, userID, "affiliate", req.Message, false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, comment)
 }
 
 func (h *AffiliateHandler) ListMyOrderRequests(w http.ResponseWriter, r *http.Request) {

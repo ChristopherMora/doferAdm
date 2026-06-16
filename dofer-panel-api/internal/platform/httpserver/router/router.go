@@ -219,6 +219,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	markCommissionPaidHandler := affiliatesApp.NewMarkCommissionPaidHandler(affiliateRepo)
 	getAffiliateStatsHandler := affiliatesApp.NewGetAffiliateStatsHandler(affiliateRepo)
 	listActiveProductsForAffiliateHandler := affiliatesApp.NewListActiveProductsForAffiliateHandler(productRepo)
+	orderRequestControlHandler := affiliatesApp.NewOrderRequestControlHandler(affiliateRepo, productRepo)
 	affiliateHandler := affiliatesTransport.NewAffiliateHandler(
 		createAffiliateHandler,
 		listAffiliatesHandler,
@@ -234,6 +235,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 		markCommissionPaidHandler,
 		getAffiliateStatsHandler,
 		listActiveProductsForAffiliateHandler,
+		orderRequestControlHandler,
 	)
 
 	// Setup admin handler

@@ -38,6 +38,10 @@ func RegisterRoutes(r chi.Router, handler *AffiliateHandler) {
 		r.Get("/products", handler.ListMyAvailableProducts)
 		r.Get("/requests", handler.ListMyOrderRequests)
 		r.Post("/requests", handler.CreateMyOrderRequest)
+		r.Get("/requests/{id}", handler.GetMyOrderRequestDetail)
+		r.Put("/requests/{id}", handler.UpdateMyOrderRequest)
+		r.Patch("/requests/{id}/cancel", handler.CancelMyOrderRequest)
+		r.Post("/requests/{id}/comments", handler.CreateMyOrderRequestComment)
 		r.Get("/commissions", handler.ListMyCommissions)
 	})
 
@@ -48,8 +52,11 @@ func RegisterRoutes(r chi.Router, handler *AffiliateHandler) {
 
 		r.Get("/", handler.ListAllOrderRequests)
 		r.Get("/{id}", handler.GetOrderRequest)
+		r.Get("/{id}/detail", handler.GetOrderRequestDetail)
 		r.Patch("/{id}/approve", handler.ApproveOrderRequest)
 		r.Patch("/{id}/reject", handler.RejectOrderRequest)
+		r.Patch("/{id}/changes", handler.RequestOrderRequestChanges)
+		r.Post("/{id}/comments", handler.CreateOrderRequestComment)
 	})
 
 	// Comisiones, vista global (admin/operator).

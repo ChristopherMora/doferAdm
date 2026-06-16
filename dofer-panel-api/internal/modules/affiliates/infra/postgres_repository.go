@@ -22,7 +22,7 @@ func NewPostgresAffiliateRepository(db *pgxpool.Pool) *PostgresAffiliateReposito
 
 const affiliateColumns = `
 	id, organization_id, user_id, referral_code, display_name, email, phone, commission_type, commission_value,
-	status, notes, created_by, created_at, updated_at
+	max_pending_requests, allow_urgent_orders, status, notes, created_by, created_at, updated_at
 `
 
 func scanAffiliate(row pgx.Row) (*domain.Affiliate, error) {
@@ -31,7 +31,7 @@ func scanAffiliate(row pgx.Row) (*domain.Affiliate, error) {
 
 	err := row.Scan(
 		&a.ID, &a.OrganizationID, &a.UserID, &a.ReferralCode, &a.DisplayName, &a.Email, &phone,
-		&a.CommissionType, &a.CommissionValue, &a.Status, &notes, &createdBy,
+		&a.CommissionType, &a.CommissionValue, &a.MaxPendingRequests, &a.AllowUrgentOrders, &a.Status, &notes, &createdBy,
 		&a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
@@ -55,8 +55,8 @@ func (r *PostgresAffiliateRepository) CreateAffiliate(a *domain.Affiliate) error
 	query := `
 		INSERT INTO affiliates (
 			id, organization_id, user_id, referral_code, display_name, email, phone, commission_type,
-			commission_value, status, notes, created_by
-		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			commission_value, max_pending_requests, allow_urgent_orders, status, notes, created_by
+		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -67,7 +67,7 @@ func (r *PostgresAffiliateRepository) CreateAffiliate(a *domain.Affiliate) error
 
 	return r.db.QueryRow(context.Background(), query,
 		a.OrganizationID, a.UserID, a.ReferralCode, a.DisplayName, a.Email, a.Phone, a.CommissionType,
-		a.CommissionValue, a.Status, a.Notes, createdBy,
+		a.CommissionValue, a.MaxPendingRequests, a.AllowUrgentOrders, a.Status, a.Notes, createdBy,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 }
 
@@ -145,14 +145,16 @@ func (r *PostgresAffiliateRepository) UpdateAffiliate(a *domain.Affiliate) error
 	query := `
 		UPDATE affiliates SET
 			display_name = $2, phone = $3, commission_type = $4,
-			commission_value = $5, status = $6, notes = $7, updated_at = NOW()
+			commission_value = $5, max_pending_requests = $6, allow_urgent_orders = $7,
+			status = $8, notes = $9, updated_at = NOW()
 		WHERE id = $1
 	`
 	args := []interface{}{
-		a.ID, a.DisplayName, a.Phone, a.CommissionType, a.CommissionValue, a.Status, a.Notes,
+		a.ID, a.DisplayName, a.Phone, a.CommissionType, a.CommissionValue,
+		a.MaxPendingRequests, a.AllowUrgentOrders, a.Status, a.Notes,
 	}
 	if a.OrganizationID != "" {
-		query += " AND organization_id = $8"
+		query += " AND organization_id = $10"
 		args = append(args, a.OrganizationID)
 	}
 	_, err := r.db.Exec(context.Background(), query, args...)
@@ -201,20 +203,24 @@ func (r *PostgresAffiliateRepository) CreateAffiliateUser(id, email, fullName, o
 const orderRequestColumns = `
 	id, organization_id, affiliate_id, product_id, product_name, quantity, suggested_price_snapshot,
 	min_price_snapshot, final_price, priority, reference_images, customer_name, customer_email, customer_phone, customer_notes,
-	status, rejection_reason, reviewed_by, reviewed_at, order_id, created_at, updated_at
+	status, requested_changes, rejection_reason, reviewed_by, reviewed_at,
+	cancelled_reason, cancelled_by, cancelled_at, order_id,
+	commission_type_snapshot, commission_value_snapshot, created_at, updated_at
 `
 
 func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 	var req domain.AffiliateOrderRequest
-	var productID, customerEmail, customerPhone, customerNotes, rejectionReason, reviewedBy, orderID sql.NullString
-	var suggestedPriceSnapshot, minPriceSnapshot sql.NullFloat64
-	var reviewedAt sql.NullTime
+	var productID, customerEmail, customerPhone, customerNotes, requestedChanges, rejectionReason, reviewedBy, cancelledReason, cancelledBy, orderID, commissionTypeSnapshot sql.NullString
+	var suggestedPriceSnapshot, minPriceSnapshot, commissionValueSnapshot sql.NullFloat64
+	var reviewedAt, cancelledAt sql.NullTime
 	var referenceImagesJSON []byte
 
 	err := row.Scan(
 		&req.ID, &req.OrganizationID, &req.AffiliateID, &productID, &req.ProductName, &req.Quantity, &suggestedPriceSnapshot,
 		&minPriceSnapshot, &req.FinalPrice, &req.Priority, &referenceImagesJSON, &req.CustomerName, &customerEmail, &customerPhone, &customerNotes,
-		&req.Status, &rejectionReason, &reviewedBy, &reviewedAt, &orderID, &req.CreatedAt, &req.UpdatedAt,
+		&req.Status, &requestedChanges, &rejectionReason, &reviewedBy, &reviewedAt,
+		&cancelledReason, &cancelledBy, &cancelledAt, &orderID,
+		&commissionTypeSnapshot, &commissionValueSnapshot, &req.CreatedAt, &req.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -241,6 +247,9 @@ func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 	if customerNotes.Valid {
 		req.CustomerNotes = customerNotes.String
 	}
+	if requestedChanges.Valid {
+		req.RequestedChanges = requestedChanges.String
+	}
 	if rejectionReason.Valid {
 		req.RejectionReason = rejectionReason.String
 	}
@@ -251,8 +260,24 @@ func scanOrderRequest(row pgx.Row) (*domain.AffiliateOrderRequest, error) {
 		t := reviewedAt.Time
 		req.ReviewedAt = &t
 	}
+	if cancelledReason.Valid {
+		req.CancelledReason = cancelledReason.String
+	}
+	if cancelledBy.Valid {
+		req.CancelledBy = cancelledBy.String
+	}
+	if cancelledAt.Valid {
+		t := cancelledAt.Time
+		req.CancelledAt = &t
+	}
 	if orderID.Valid {
 		req.OrderID = orderID.String
+	}
+	if commissionTypeSnapshot.Valid {
+		req.CommissionTypeSnapshot = commissionTypeSnapshot.String
+	}
+	if commissionValueSnapshot.Valid {
+		req.CommissionValueSnapshot = commissionValueSnapshot.Float64
 	}
 
 	return &req, nil
@@ -263,8 +288,8 @@ func (r *PostgresAffiliateRepository) CreateOrderRequest(req *domain.AffiliateOr
 		INSERT INTO affiliate_order_requests (
 			id, organization_id, affiliate_id, product_id, product_name, quantity, suggested_price_snapshot,
 			min_price_snapshot, final_price, priority, reference_images, customer_name,
-			customer_email, customer_phone, customer_notes, status
-		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			customer_email, customer_phone, customer_notes, status, commission_type_snapshot, commission_value_snapshot
+		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING id, created_at, updated_at
 	`
 
@@ -278,6 +303,7 @@ func (r *PostgresAffiliateRepository) CreateOrderRequest(req *domain.AffiliateOr
 		req.OrganizationID, req.AffiliateID, productID, req.ProductName, req.Quantity, req.SuggestedPriceSnapshot,
 		req.MinPriceSnapshot, req.FinalPrice, req.Priority, referenceImages, req.CustomerName,
 		req.CustomerEmail, req.CustomerPhone, req.CustomerNotes, req.Status,
+		nullableString(req.CommissionTypeSnapshot), nullableFloat(req.CommissionValueSnapshot),
 	).Scan(&req.ID, &req.CreatedAt, &req.UpdatedAt)
 }
 
@@ -360,22 +386,25 @@ func prefixedOrderRequestColumns() string {
 	return `req.id, req.organization_id, req.affiliate_id, req.product_id, req.product_name, req.quantity,
 		req.suggested_price_snapshot, req.min_price_snapshot, req.final_price, req.priority,
 		req.reference_images, req.customer_name, req.customer_email,
-		req.customer_phone, req.customer_notes, req.status, req.rejection_reason,
-		req.reviewed_by, req.reviewed_at, req.order_id, req.created_at, req.updated_at`
+		req.customer_phone, req.customer_notes, req.status, req.requested_changes, req.rejection_reason,
+		req.reviewed_by, req.reviewed_at, req.cancelled_reason, req.cancelled_by, req.cancelled_at,
+		req.order_id, req.commission_type_snapshot, req.commission_value_snapshot, req.created_at, req.updated_at`
 }
 
 func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderRequest, string, error) {
 	var req domain.AffiliateOrderRequest
-	var productID, customerEmail, customerPhone, customerNotes, rejectionReason, reviewedBy, orderID sql.NullString
-	var suggestedPriceSnapshot, minPriceSnapshot sql.NullFloat64
-	var reviewedAt sql.NullTime
+	var productID, customerEmail, customerPhone, customerNotes, requestedChanges, rejectionReason, reviewedBy, cancelledReason, cancelledBy, orderID, commissionTypeSnapshot sql.NullString
+	var suggestedPriceSnapshot, minPriceSnapshot, commissionValueSnapshot sql.NullFloat64
+	var reviewedAt, cancelledAt sql.NullTime
 	var referenceImagesJSON []byte
 	var orderStatus string
 
 	err := rows.Scan(
 		&req.ID, &req.OrganizationID, &req.AffiliateID, &productID, &req.ProductName, &req.Quantity, &suggestedPriceSnapshot,
 		&minPriceSnapshot, &req.FinalPrice, &req.Priority, &referenceImagesJSON, &req.CustomerName, &customerEmail, &customerPhone, &customerNotes,
-		&req.Status, &rejectionReason, &reviewedBy, &reviewedAt, &orderID, &req.CreatedAt, &req.UpdatedAt,
+		&req.Status, &requestedChanges, &rejectionReason, &reviewedBy, &reviewedAt,
+		&cancelledReason, &cancelledBy, &cancelledAt, &orderID,
+		&commissionTypeSnapshot, &commissionValueSnapshot, &req.CreatedAt, &req.UpdatedAt,
 		&orderStatus,
 	)
 	if err != nil {
@@ -403,6 +432,9 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 	if customerNotes.Valid {
 		req.CustomerNotes = customerNotes.String
 	}
+	if requestedChanges.Valid {
+		req.RequestedChanges = requestedChanges.String
+	}
 	if rejectionReason.Valid {
 		req.RejectionReason = rejectionReason.String
 	}
@@ -413,8 +445,24 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 		t := reviewedAt.Time
 		req.ReviewedAt = &t
 	}
+	if cancelledReason.Valid {
+		req.CancelledReason = cancelledReason.String
+	}
+	if cancelledBy.Valid {
+		req.CancelledBy = cancelledBy.String
+	}
+	if cancelledAt.Valid {
+		t := cancelledAt.Time
+		req.CancelledAt = &t
+	}
 	if orderID.Valid {
 		req.OrderID = orderID.String
+	}
+	if commissionTypeSnapshot.Valid {
+		req.CommissionTypeSnapshot = commissionTypeSnapshot.String
+	}
+	if commissionValueSnapshot.Valid {
+		req.CommissionValueSnapshot = commissionValueSnapshot.Float64
 	}
 
 	return &req, orderStatus, nil
@@ -423,12 +471,12 @@ func scanOrderRequestWithOrderStatus(rows pgx.Rows) (*domain.AffiliateOrderReque
 func (r *PostgresAffiliateRepository) UpdateOrderRequest(req *domain.AffiliateOrderRequest) error {
 	query := `
 		UPDATE affiliate_order_requests SET
-			status = $2, rejection_reason = $3, reviewed_by = $4, reviewed_at = $5,
-			order_id = $6, updated_at = NOW()
+			status = $2, requested_changes = $3, rejection_reason = $4, reviewed_by = $5, reviewed_at = $6,
+			cancelled_reason = $7, cancelled_by = $8, cancelled_at = $9, order_id = $10, updated_at = NOW()
 		WHERE id = $1
 	`
 
-	var reviewedBy, orderID, rejectionReason interface{}
+	var reviewedBy, orderID, rejectionReason, requestedChanges, cancelledBy, cancelledReason interface{}
 	if req.ReviewedBy != "" {
 		reviewedBy = req.ReviewedBy
 	}
@@ -438,15 +486,199 @@ func (r *PostgresAffiliateRepository) UpdateOrderRequest(req *domain.AffiliateOr
 	if req.RejectionReason != "" {
 		rejectionReason = req.RejectionReason
 	}
+	if req.RequestedChanges != "" {
+		requestedChanges = req.RequestedChanges
+	}
+	if req.CancelledBy != "" {
+		cancelledBy = req.CancelledBy
+	}
+	if req.CancelledReason != "" {
+		cancelledReason = req.CancelledReason
+	}
 
-	args := []interface{}{req.ID, req.Status, rejectionReason, reviewedBy, req.ReviewedAt, orderID}
+	args := []interface{}{
+		req.ID, req.Status, requestedChanges, rejectionReason, reviewedBy, req.ReviewedAt,
+		cancelledReason, cancelledBy, req.CancelledAt, orderID,
+	}
 	if req.OrganizationID != "" {
-		query += " AND organization_id = $7"
+		query += " AND organization_id = $11"
 		args = append(args, req.OrganizationID)
 	}
 
 	_, err := r.db.Exec(context.Background(), query, args...)
 	return err
+}
+
+func (r *PostgresAffiliateRepository) UpdateOrderRequestDetails(req *domain.AffiliateOrderRequest) error {
+	query := `
+		UPDATE affiliate_order_requests SET
+			product_id = $2, product_name = $3, quantity = $4, suggested_price_snapshot = $5,
+			min_price_snapshot = $6, final_price = $7, priority = $8, reference_images = $9,
+			customer_name = $10, customer_email = $11, customer_phone = $12, customer_notes = $13,
+			status = $14, requested_changes = $15, commission_type_snapshot = $16,
+			commission_value_snapshot = $17, updated_at = NOW()
+		WHERE id = $1
+	`
+	var productID interface{}
+	if req.ProductID != "" {
+		productID = req.ProductID
+	}
+	referenceImages, _ := json.Marshal(req.ReferenceImages)
+	args := []interface{}{
+		req.ID, productID, req.ProductName, req.Quantity, req.SuggestedPriceSnapshot,
+		req.MinPriceSnapshot, req.FinalPrice, req.Priority, referenceImages, req.CustomerName,
+		req.CustomerEmail, req.CustomerPhone, req.CustomerNotes, req.Status, nullableString(req.RequestedChanges),
+		nullableString(req.CommissionTypeSnapshot), nullableFloat(req.CommissionValueSnapshot),
+	}
+	if req.OrganizationID != "" {
+		query += " AND organization_id = $18"
+		args = append(args, req.OrganizationID)
+	}
+	_, err := r.db.Exec(context.Background(), query, args...)
+	return err
+}
+
+func (r *PostgresAffiliateRepository) CountOpenOrderRequests(organizationID, affiliateID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(context.Background(), `
+		SELECT COUNT(*)
+		FROM affiliate_order_requests
+		WHERE organization_id = $1
+		  AND affiliate_id = $2
+		  AND status IN ('pending', 'needs_changes')
+	`, organizationID, affiliateID).Scan(&count)
+	return count, err
+}
+
+func (r *PostgresAffiliateRepository) CreateOrderRequestEvent(event *domain.AffiliateOrderRequestEvent) error {
+	if event.Metadata == nil {
+		event.Metadata = map[string]interface{}{}
+	}
+	metadataJSON, _ := json.Marshal(event.Metadata)
+	query := `
+		INSERT INTO affiliate_order_request_events (
+			id, organization_id, affiliate_order_request_id, actor_user_id, actor_role,
+			event_type, message, metadata
+		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, created_at
+	`
+	return r.db.QueryRow(context.Background(), query,
+		event.OrganizationID,
+		event.AffiliateOrderRequestID,
+		nullableString(event.ActorUserID),
+		event.ActorRole,
+		event.EventType,
+		event.Message,
+		metadataJSON,
+	).Scan(&event.ID, &event.CreatedAt)
+}
+
+func (r *PostgresAffiliateRepository) ListOrderRequestEvents(organizationID, requestID string) ([]*domain.AffiliateOrderRequestEvent, error) {
+	rows, err := r.db.Query(context.Background(), `
+		SELECT id, organization_id, affiliate_order_request_id, actor_user_id, actor_role,
+		       event_type, message, metadata, created_at
+		FROM affiliate_order_request_events
+		WHERE organization_id = $1
+		  AND affiliate_order_request_id = $2
+		ORDER BY created_at ASC
+	`, organizationID, requestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []*domain.AffiliateOrderRequestEvent{}
+	for rows.Next() {
+		var event domain.AffiliateOrderRequestEvent
+		var actorUserID, message sql.NullString
+		var metadataJSON []byte
+		if err := rows.Scan(
+			&event.ID,
+			&event.OrganizationID,
+			&event.AffiliateOrderRequestID,
+			&actorUserID,
+			&event.ActorRole,
+			&event.EventType,
+			&message,
+			&metadataJSON,
+			&event.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if actorUserID.Valid {
+			event.ActorUserID = actorUserID.String
+		}
+		if message.Valid {
+			event.Message = message.String
+		}
+		if len(metadataJSON) > 0 {
+			_ = json.Unmarshal(metadataJSON, &event.Metadata)
+		}
+		events = append(events, &event)
+	}
+	return events, rows.Err()
+}
+
+func (r *PostgresAffiliateRepository) CreateOrderRequestComment(comment *domain.AffiliateOrderRequestComment) error {
+	query := `
+		INSERT INTO affiliate_order_request_comments (
+			id, organization_id, affiliate_order_request_id, author_user_id, author_role,
+			message, internal_only
+		) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at
+	`
+	return r.db.QueryRow(context.Background(), query,
+		comment.OrganizationID,
+		comment.AffiliateOrderRequestID,
+		nullableString(comment.AuthorUserID),
+		comment.AuthorRole,
+		comment.Message,
+		comment.InternalOnly,
+	).Scan(&comment.ID, &comment.CreatedAt)
+}
+
+func (r *PostgresAffiliateRepository) ListOrderRequestComments(organizationID, requestID string, includeInternal bool) ([]*domain.AffiliateOrderRequestComment, error) {
+	query := `
+		SELECT id, organization_id, affiliate_order_request_id, author_user_id, author_role,
+		       message, internal_only, created_at
+		FROM affiliate_order_request_comments
+		WHERE organization_id = $1
+		  AND affiliate_order_request_id = $2
+	`
+	args := []interface{}{organizationID, requestID}
+	if !includeInternal {
+		query += " AND internal_only = false"
+	}
+	query += " ORDER BY created_at ASC"
+
+	rows, err := r.db.Query(context.Background(), query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	comments := []*domain.AffiliateOrderRequestComment{}
+	for rows.Next() {
+		var comment domain.AffiliateOrderRequestComment
+		var authorUserID sql.NullString
+		if err := rows.Scan(
+			&comment.ID,
+			&comment.OrganizationID,
+			&comment.AffiliateOrderRequestID,
+			&authorUserID,
+			&comment.AuthorRole,
+			&comment.Message,
+			&comment.InternalOnly,
+			&comment.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if authorUserID.Valid {
+			comment.AuthorUserID = authorUserID.String
+		}
+		comments = append(comments, &comment)
+	}
+	return comments, rows.Err()
 }
 
 const commissionColumns = `
@@ -589,7 +821,7 @@ func (r *PostgresAffiliateRepository) UpdateCommission(c *domain.AffiliateCommis
 func (r *PostgresAffiliateRepository) GetAffiliateStats(affiliateID string, organizationID ...string) (*domain.AffiliateStats, error) {
 	query := `
 		SELECT
-			COUNT(*) FILTER (WHERE status = 'pending'),
+			COUNT(*) FILTER (WHERE status IN ('pending', 'needs_changes')),
 			COUNT(*) FILTER (WHERE status = 'approved'),
 			COUNT(*) FILTER (WHERE status = 'rejected'),
 			COALESCE(SUM(final_price) FILTER (WHERE status = 'approved'), 0)
@@ -630,4 +862,18 @@ func (r *PostgresAffiliateRepository) GetAffiliateStats(affiliateID string, orga
 	}
 
 	return &stats, nil
+}
+
+func nullableString(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableFloat(value float64) interface{} {
+	if value == 0 {
+		return nil
+	}
+	return value
 }

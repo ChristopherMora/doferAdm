@@ -16,20 +16,22 @@ const (
 )
 
 type Affiliate struct {
-	ID              string          `json:"id"`
-	OrganizationID  string          `json:"organization_id"`
-	UserID          string          `json:"user_id"`
-	ReferralCode    string          `json:"referral_code"`
-	DisplayName     string          `json:"display_name"`
-	Email           string          `json:"email"`
-	Phone           string          `json:"phone,omitempty"`
-	CommissionType  CommissionType  `json:"commission_type"`
-	CommissionValue float64         `json:"commission_value"`
-	Status          AffiliateStatus `json:"status"`
-	Notes           string          `json:"notes,omitempty"`
-	CreatedBy       string          `json:"created_by,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                 string          `json:"id"`
+	OrganizationID     string          `json:"organization_id"`
+	UserID             string          `json:"user_id"`
+	ReferralCode       string          `json:"referral_code"`
+	DisplayName        string          `json:"display_name"`
+	Email              string          `json:"email"`
+	Phone              string          `json:"phone,omitempty"`
+	CommissionType     CommissionType  `json:"commission_type"`
+	CommissionValue    float64         `json:"commission_value"`
+	MaxPendingRequests int             `json:"max_pending_requests"`
+	AllowUrgentOrders  bool            `json:"allow_urgent_orders"`
+	Status             AffiliateStatus `json:"status"`
+	Notes              string          `json:"notes,omitempty"`
+	CreatedBy          string          `json:"created_by,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // CalculateCommission aplica la comisión configurada sobre el precio final

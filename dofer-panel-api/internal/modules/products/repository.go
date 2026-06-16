@@ -14,7 +14,8 @@ import (
 const productSelectColumns = `
 	id, organization_id, sku, name, description, stl_file_path,
 	estimated_print_time_minutes, material, color, is_active, image_url,
-	suggested_price, affiliate_visible, affiliate_min_price, created_at, updated_at
+	suggested_price, affiliate_visible, affiliate_min_price,
+	affiliate_commission_type, affiliate_commission_value, created_at, updated_at
 `
 
 type Repository struct {
@@ -38,9 +39,9 @@ func sanitizeOptionalString(value *string) *string {
 
 func scanProductRow(row pgx.Row) (*Product, error) {
 	var product Product
-	var description, stlFilePath, material, color, imageURL sql.NullString
+	var description, stlFilePath, material, color, imageURL, affiliateCommissionType sql.NullString
 	var estimatedPrintTime sql.NullInt32
-	var suggestedPrice, affiliateMinPrice sql.NullFloat64
+	var suggestedPrice, affiliateMinPrice, affiliateCommissionValue sql.NullFloat64
 
 	err := row.Scan(
 		&product.ID,
@@ -57,6 +58,8 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 		&suggestedPrice,
 		&product.AffiliateVisible,
 		&affiliateMinPrice,
+		&affiliateCommissionType,
+		&affiliateCommissionValue,
 		&product.CreatedAt,
 		&product.UpdatedAt,
 	)
@@ -88,6 +91,12 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 	}
 	if affiliateMinPrice.Valid {
 		product.AffiliateMinPrice = &affiliateMinPrice.Float64
+	}
+	if affiliateCommissionType.Valid {
+		product.AffiliateCommissionType = &affiliateCommissionType.String
+	}
+	if affiliateCommissionValue.Valid {
+		product.AffiliateCommissionValue = &affiliateCommissionValue.Float64
 	}
 
 	return &product, nil
@@ -177,12 +186,16 @@ func (r *Repository) Create(ctx context.Context, organizationID string, req Crea
 	if req.AffiliateMinPrice != nil && *req.AffiliateMinPrice < 0 {
 		return nil, fmt.Errorf("affiliate_min_price cannot be negative")
 	}
+	if err := validateAffiliateCommission(req.AffiliateCommissionType, req.AffiliateCommissionValue); err != nil {
+		return nil, err
+	}
 
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
 			organization_id, sku, name, description, stl_file_path, estimated_print_time_minutes,
-			material, color, is_active, image_url, suggested_price, affiliate_visible, affiliate_min_price
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			material, color, is_active, image_url, suggested_price, affiliate_visible, affiliate_min_price,
+			affiliate_commission_type, affiliate_commission_value
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		RETURNING `+productSelectColumns,
 		organizationID,
 		sku,
@@ -197,6 +210,8 @@ func (r *Repository) Create(ctx context.Context, organizationID string, req Crea
 		req.SuggestedPrice,
 		affiliateVisible,
 		req.AffiliateMinPrice,
+		req.AffiliateCommissionType,
+		req.AffiliateCommissionValue,
 	)
 
 	return scanProductRow(row)
@@ -293,6 +308,22 @@ func (r *Repository) Update(ctx context.Context, organizationID string, id uuid.
 		argNum++
 	}
 
+	if req.AffiliateCommissionType != nil || req.AffiliateCommissionValue != nil {
+		if err := validateAffiliateCommission(req.AffiliateCommissionType, req.AffiliateCommissionValue); err != nil {
+			return nil, err
+		}
+	}
+	if req.AffiliateCommissionType != nil {
+		query += fmt.Sprintf(", affiliate_commission_type = $%d", argNum)
+		args = append(args, sanitizeOptionalString(req.AffiliateCommissionType))
+		argNum++
+	}
+	if req.AffiliateCommissionValue != nil {
+		query += fmt.Sprintf(", affiliate_commission_value = $%d", argNum)
+		args = append(args, *req.AffiliateCommissionValue)
+		argNum++
+	}
+
 	query += fmt.Sprintf(" WHERE id = $%d", argNum)
 	args = append(args, id)
 	argNum++
@@ -302,6 +333,20 @@ func (r *Repository) Update(ctx context.Context, organizationID string, id uuid.
 
 	row := r.db.QueryRow(ctx, query, args...)
 	return scanProductRow(row)
+}
+
+func validateAffiliateCommission(commissionType *string, commissionValue *float64) error {
+	if commissionType != nil {
+		value := strings.ToLower(strings.TrimSpace(*commissionType))
+		if value != "" && value != "percentage" && value != "fixed" {
+			return fmt.Errorf("affiliate_commission_type must be percentage or fixed")
+		}
+		*commissionType = value
+	}
+	if commissionValue != nil && *commissionValue < 0 {
+		return fmt.Errorf("affiliate_commission_value cannot be negative")
+	}
+	return nil
 }
 
 func (r *Repository) UpdateActive(ctx context.Context, organizationID string, id uuid.UUID, isActive bool) (*Product, error) {

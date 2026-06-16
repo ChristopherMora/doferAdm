@@ -21,6 +21,8 @@ type Product struct {
 	SuggestedPrice            *float64  `json:"suggested_price,omitempty" db:"suggested_price"`
 	AffiliateVisible          bool      `json:"affiliate_visible" db:"affiliate_visible"`
 	AffiliateMinPrice         *float64  `json:"affiliate_min_price,omitempty" db:"affiliate_min_price"`
+	AffiliateCommissionType   *string   `json:"affiliate_commission_type,omitempty" db:"affiliate_commission_type"`
+	AffiliateCommissionValue  *float64  `json:"affiliate_commission_value,omitempty" db:"affiliate_commission_value"`
 	CreatedAt                 time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt                 time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -38,6 +40,8 @@ type CreateProductRequest struct {
 	SuggestedPrice            *float64 `json:"suggested_price,omitempty"`
 	AffiliateVisible          *bool    `json:"affiliate_visible,omitempty"`
 	AffiliateMinPrice         *float64 `json:"affiliate_min_price,omitempty"`
+	AffiliateCommissionType   *string  `json:"affiliate_commission_type,omitempty"`
+	AffiliateCommissionValue  *float64 `json:"affiliate_commission_value,omitempty"`
 }
 
 type UpdateProductRequest struct {
@@ -53,6 +57,8 @@ type UpdateProductRequest struct {
 	SuggestedPrice            *float64 `json:"suggested_price,omitempty"`
 	AffiliateVisible          *bool    `json:"affiliate_visible,omitempty"`
 	AffiliateMinPrice         *float64 `json:"affiliate_min_price,omitempty"`
+	AffiliateCommissionType   *string  `json:"affiliate_commission_type,omitempty"`
+	AffiliateCommissionValue  *float64 `json:"affiliate_commission_value,omitempty"`
 }
 
 type UpdateProductActiveRequest struct {

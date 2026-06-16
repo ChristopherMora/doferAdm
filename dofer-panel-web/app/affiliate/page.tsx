@@ -7,11 +7,12 @@ import { Copy, ExternalLink, PackagePlus, WalletCards } from 'lucide-react'
 import LoadingState from '@/components/dashboard/LoadingState'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
-import type { Affiliate, AffiliateStats } from '@/types'
+import type { Affiliate, AffiliateOrderRequest, AffiliateStats } from '@/types'
 
 export default function AffiliateHomePage() {
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null)
   const [stats, setStats] = useState<AffiliateStats | null>(null)
+  const [requests, setRequests] = useState<AffiliateOrderRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState<string | null>(null)
   const [copiedCode, setCopiedCode] = useState(false)
@@ -22,8 +23,12 @@ export default function AffiliateHomePage() {
     try {
       const me = await apiClient.get<Affiliate>('/affiliates/me')
       setAffiliate(me)
-      const statsRes = await apiClient.get<AffiliateStats>(`/affiliates/${me.id}/stats`).catch(() => null)
+      const [statsRes, requestsRes] = await Promise.all([
+        apiClient.get<AffiliateStats>(`/affiliates/${me.id}/stats`).catch(() => null),
+        apiClient.get<{ requests: AffiliateOrderRequest[] }>('/affiliates/me/requests').catch(() => ({ requests: [] })),
+      ])
       setStats(statsRes)
+      setRequests(requestsRes.requests || [])
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'Error cargando tu perfil'))
     } finally {
@@ -38,6 +43,8 @@ export default function AffiliateHomePage() {
   if (loading) {
     return <LoadingState label="Cargando tu panel..." />
   }
+
+  const attentionRequests = requests.filter((request) => request.status === 'needs_changes')
 
   return (
     <div className="space-y-6">
@@ -66,10 +73,48 @@ export default function AffiliateHomePage() {
             </button>
           </div>
         )}
+        {affiliate && (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/75">
+            <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+              {affiliate.max_pending_requests > 0 ? `${affiliate.max_pending_requests} pendientes máx.` : 'Sin límite de pendientes'}
+            </span>
+            <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+              {affiliate.allow_urgent_orders ? 'Urgentes permitidos' : 'Urgentes no disponibles'}
+            </span>
+          </div>
+        )}
       </section>
 
       {apiError && (
         <div className="p-3 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm">{apiError}</div>
+      )}
+
+      {attentionRequests.length > 0 && (
+        <section className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-orange-900">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="font-semibold">Requieren atención</h2>
+              <p className="text-sm text-orange-800">
+                {attentionRequests.length} solicitud{attentionRequests.length === 1 ? '' : 'es'} con cambios solicitados.
+              </p>
+            </div>
+            <Link href="/affiliate/orders" className="rounded-xl bg-orange-600 px-3 py-2 text-sm text-white hover:bg-orange-700">
+              Revisar
+            </Link>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            {attentionRequests.slice(0, 3).map((request) => (
+              <Link
+                key={request.id}
+                href={`/affiliate/orders/${request.id}`}
+                className="rounded-lg border border-orange-200 bg-white/70 p-3 text-sm hover:bg-white"
+              >
+                <p className="font-medium">{request.product_name} × {request.quantity}</p>
+                <p className="mt-1 line-clamp-2 text-orange-800">{request.requested_changes || 'Cambios pendientes de revisar.'}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
 
       {stats && (

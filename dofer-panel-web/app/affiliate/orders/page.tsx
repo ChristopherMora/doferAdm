@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Clock3, PackageCheck, Plus, Search, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Clock3, PackageCheck, Plus, Search, XCircle } from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -11,7 +11,7 @@ import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import type { AffiliateOrderRequest } from '@/types'
 
-type ReviewFilter = 'all' | 'pending' | 'approved' | 'rejected'
+type ReviewFilter = 'all' | 'pending' | 'needs_changes' | 'approved' | 'rejected' | 'cancelled'
 type PriorityFilter = 'all' | 'urgent' | 'normal' | 'low'
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
@@ -70,8 +70,10 @@ export default function MyAffiliateOrdersPage() {
     return {
       total: requests.length,
       pending: requests.filter((req) => req.status === 'pending').length,
+      needsChanges: requests.filter((req) => req.status === 'needs_changes').length,
       approved: approved.length,
       rejected: requests.filter((req) => req.status === 'rejected').length,
+      cancelled: requests.filter((req) => req.status === 'cancelled').length,
       inProduction: approved.filter((req) => req.order_status && !['delivered', 'cancelled'].includes(req.order_status)).length,
       delivered: approved.filter((req) => req.order_status === 'delivered').length,
       sales: approved.reduce((sum, req) => sum + req.final_price, 0),
@@ -119,12 +121,14 @@ export default function MyAffiliateOrdersPage() {
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">{apiError}</div>
       )}
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <Metric label="Total" value={summary.total} />
         <Metric label="Pendientes" value={summary.pending} tone="yellow" />
+        <Metric label="Cambios" value={summary.needsChanges} tone="orange" />
         <Metric label="Aprobados" value={summary.approved} tone="green" />
         <Metric label="En producción" value={summary.inProduction} tone="blue" />
         <Metric label="Entregados" value={summary.delivered} tone="green" />
+        <Metric label="Cancelados" value={summary.cancelled} />
         <Metric label="Venta aprobada" value={`$${summary.sales.toFixed(2)}`} />
       </section>
 
@@ -146,8 +150,10 @@ export default function MyAffiliateOrdersPage() {
         >
           <option value="all">Todos los estados</option>
           <option value="pending">Pendientes</option>
+          <option value="needs_changes">Requieren cambios</option>
           <option value="approved">Aprobados</option>
           <option value="rejected">Rechazados</option>
+          <option value="cancelled">Cancelados</option>
         </select>
         <select
           value={priorityFilter}
@@ -199,10 +205,10 @@ export default function MyAffiliateOrdersPage() {
                     {isExpanded ? 'Ocultar detalle' : 'Ver detalle'}
                   </button>
                   <Link
-                    href="/affiliate/orders/new"
+                    href={`/affiliate/orders/${req.id}`}
                     className="rounded-xl border border-border px-3 py-2 text-sm hover:bg-accent"
                   >
-                    Repetir similar
+                    Abrir control
                   </Link>
                 </div>
               </div>
@@ -238,6 +244,16 @@ export default function MyAffiliateOrdersPage() {
                       Motivo de rechazo: {req.rejection_reason || 'No especificado'}
                     </div>
                   )}
+                  {req.status === 'needs_changes' && (
+                    <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+                      Cambios solicitados: {req.requested_changes || 'Revisa el detalle para actualizar la solicitud.'}
+                    </div>
+                  )}
+                  {req.status === 'cancelled' && (
+                    <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                      Cancelado: {req.cancelled_reason || 'Sin motivo especificado'}
+                    </div>
+                  )}
                 </div>
               )}
             </article>
@@ -264,9 +280,10 @@ export default function MyAffiliateOrdersPage() {
   )
 }
 
-function Metric({ label, value, tone }: { label: string; value: number | string; tone?: 'yellow' | 'green' | 'blue' }) {
-  const toneClasses: Record<'yellow' | 'green' | 'blue', string> = {
+function Metric({ label, value, tone }: { label: string; value: number | string; tone?: 'yellow' | 'orange' | 'green' | 'blue' }) {
+  const toneClasses: Record<'yellow' | 'orange' | 'green' | 'blue', string> = {
     yellow: 'text-yellow-600',
+    orange: 'text-orange-600',
     green: 'text-green-600',
     blue: 'text-blue-600',
   }
@@ -290,6 +307,14 @@ function Detail({ label, value }: { label: string; value: string }) {
 }
 
 function ReviewBadge({ status, rejectionReason }: { status: string; rejectionReason?: string }) {
+  if (status === 'needs_changes') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">
+        <AlertTriangle className="h-3 w-3" />
+        Requiere cambios
+      </span>
+    )
+  }
   if (status === 'approved') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
@@ -306,6 +331,14 @@ function ReviewBadge({ status, rejectionReason }: { status: string; rejectionRea
       >
         <XCircle className="h-3 w-3" />
         Rechazado
+      </span>
+    )
+  }
+  if (status === 'cancelled') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+        <Ban className="h-3 w-3" />
+        Cancelado
       </span>
     )
   }

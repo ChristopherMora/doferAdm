@@ -70,9 +70,12 @@ export interface Product {
   material?: string
   color?: string
   is_active: boolean
+  image_url?: string
   suggested_price?: number
   affiliate_visible?: boolean
   affiliate_min_price?: number
+  affiliate_commission_type?: 'percentage' | 'fixed'
+  affiliate_commission_value?: number
   created_at: string
   updated_at: string
 }
@@ -95,6 +98,8 @@ export interface Affiliate {
   phone?: string
   commission_type: 'percentage' | 'fixed'
   commission_value: number
+  max_pending_requests: number
+  allow_urgent_orders: boolean
   status: 'active' | 'suspended'
   notes?: string
   created_at: string
@@ -117,14 +122,49 @@ export interface AffiliateOrderRequest {
   customer_email?: string
   customer_phone?: string
   customer_notes?: string
-  status: 'pending' | 'approved' | 'rejected'
+  status: 'pending' | 'needs_changes' | 'approved' | 'rejected' | 'cancelled'
+  requested_changes?: string
   rejection_reason?: string
   reviewed_by?: string
   reviewed_at?: string
+  cancelled_reason?: string
+  cancelled_by?: string
+  cancelled_at?: string
   order_id?: string
   order_status?: string
+  commission_type_snapshot?: 'percentage' | 'fixed'
+  commission_value_snapshot?: number
   created_at: string
   updated_at: string
+}
+
+export interface AffiliateOrderRequestEvent {
+  id: string
+  organization_id: string
+  affiliate_order_request_id: string
+  actor_user_id?: string
+  actor_role: string
+  event_type: string
+  message?: string
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
+export interface AffiliateOrderRequestComment {
+  id: string
+  organization_id: string
+  affiliate_order_request_id: string
+  author_user_id?: string
+  author_role: string
+  message: string
+  internal_only: boolean
+  created_at: string
+}
+
+export interface AffiliateOrderRequestDetail {
+  request: AffiliateOrderRequest
+  events: AffiliateOrderRequestEvent[]
+  comments: AffiliateOrderRequestComment[]
 }
 
 export interface AffiliateCommission {

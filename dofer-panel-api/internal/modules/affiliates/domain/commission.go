@@ -39,3 +39,10 @@ func NewAffiliateCommission(affiliateID, requestID, orderID string, amount float
 		UpdatedAt:               now,
 	}
 }
+
+func CalculateCommission(commissionType CommissionType, commissionValue float64, finalPrice float64) float64 {
+	if commissionType == CommissionFixed {
+		return commissionValue
+	}
+	return finalPrice * (commissionValue / 100)
+}

@@ -8,7 +8,7 @@ import PageHeader from '@/components/dashboard/PageHeader'
 import PanelCard from '@/components/dashboard/PanelCard'
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
-import type { Product } from '@/types'
+import type { Affiliate, Product } from '@/types'
 
 interface NewRequestForm {
   product_id: string
@@ -39,6 +39,7 @@ const initialForm: NewRequestForm = {
 export default function NewAffiliateOrderPage() {
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
+  const [affiliate, setAffiliate] = useState<Affiliate | null>(null)
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [form, setForm] = useState<NewRequestForm>(initialForm)
   const [submitting, setSubmitting] = useState(false)
@@ -47,8 +48,12 @@ export default function NewAffiliateOrderPage() {
   const loadProducts = useCallback(async () => {
     setLoadingProducts(true)
     try {
-      const response = await apiClient.get<{ products: Product[] }>('/affiliates/me/products')
-      setProducts(response.products || [])
+      const [productsResponse, affiliateResponse] = await Promise.all([
+        apiClient.get<{ products: Product[] }>('/affiliates/me/products'),
+        apiClient.get<Affiliate>('/affiliates/me'),
+      ])
+      setProducts(productsResponse.products || [])
+      setAffiliate(affiliateResponse)
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'Error cargando catálogo'))
     } finally {
@@ -196,9 +201,12 @@ export default function NewAffiliateOrderPage() {
                 className="w-full px-3 py-2 border rounded-xl bg-background"
               >
                 <option value="normal">Normal</option>
-                <option value="urgent">Urgente</option>
+                <option value="urgent" disabled={affiliate?.allow_urgent_orders === false}>Urgente</option>
                 <option value="low">Baja</option>
               </select>
+              {affiliate?.allow_urgent_orders === false && (
+                <span className="mt-1 block text-xs text-muted-foreground">Tu cuenta no tiene pedidos urgentes habilitados.</span>
+              )}
             </label>
 
             <label className="block">
