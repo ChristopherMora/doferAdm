@@ -64,6 +64,7 @@ export default function NewAffiliateOrderPage() {
   const [form, setForm] = useState<NewRequestForm>(initialForm)
   const [submitting, setSubmitting] = useState(false)
   const [processingImages, setProcessingImages] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
 
   const loadProducts = useCallback(async () => {
@@ -202,7 +203,12 @@ export default function NewAffiliateOrderPage() {
             </div>
           )}
 
-          <div>
+          <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+            <div className="mb-3">
+              <h2 className="text-lg font-bold">Datos del pedido</h2>
+              <p className="text-sm text-muted-foreground">Solo captura lo necesario para revisión.</p>
+            </div>
+
             <label className="mb-1 block text-sm font-medium">Producto del catálogo (opcional)</label>
             <select
               value={form.product_id}
@@ -226,195 +232,195 @@ export default function NewAffiliateOrderPage() {
                 Precio minimo para este producto: ${selectedProduct.affiliate_min_price.toFixed(2)}.
               </p>
             ) : null}
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input
-              type="text"
-              value={form.product_name}
-              onChange={(e) => setForm((prev) => ({ ...prev, product_name: e.target.value }))}
-              placeholder="Nombre del producto"
-              className="px-3 py-2 border rounded-xl bg-background md:col-span-2"
-              required
-            />
-            <input
-              type="number"
-              min={1}
-              value={form.quantity}
-              onChange={(e) => setForm((prev) => ({ ...prev, quantity: Number(e.target.value) }))}
-              placeholder="Cantidad"
-              className="px-3 py-2 border rounded-xl bg-background"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">Precio final que le cobrarás a tu cliente</label>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_120px_180px]">
+              <input
+                type="text"
+                value={form.product_name}
+                onChange={(e) => setForm((prev) => ({ ...prev, product_name: e.target.value }))}
+                placeholder="Nombre del producto"
+                className="px-3 py-2 border rounded-xl bg-background"
+                required
+              />
+              <input
+                type="number"
+                min={1}
+                value={form.quantity}
+                onChange={(e) => setForm((prev) => ({ ...prev, quantity: Number(e.target.value) }))}
+                placeholder="Cantidad"
+                className="px-3 py-2 border rounded-xl bg-background"
+                required
+              />
               <input
                 type="number"
                 min={selectedProduct?.affiliate_min_price || 0}
                 step="0.01"
                 value={form.final_price}
                 onChange={(e) => setForm((prev) => ({ ...prev, final_price: e.target.value }))}
-                placeholder="$0.00"
+                placeholder="Precio final"
+                className="px-3 py-2 border rounded-xl bg-background"
+                required
+              />
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <input
+                type="text"
+                value={form.customer_name}
+                onChange={(e) => setForm((prev) => ({ ...prev, customer_name: e.target.value }))}
+                placeholder="Nombre del cliente"
                 className="px-3 py-2 border rounded-xl bg-background"
                 required
               />
               <input
-                type="number"
-                min={0}
-                max={Number(form.final_price || 0)}
-                step="0.01"
-                value={form.customer_amount_paid}
-                onChange={(e) => setForm((prev) => ({ ...prev, customer_amount_paid: e.target.value }))}
-                placeholder="Anticipo recibido"
-                className="px-3 py-2 border rounded-xl bg-background"
-              />
-              <input
                 type="text"
-                value={form.customer_payment_method}
-                onChange={(e) => setForm((prev) => ({ ...prev, customer_payment_method: e.target.value }))}
-                placeholder="Método de pago"
+                value={form.customer_phone}
+                onChange={(e) => setForm((prev) => ({ ...prev, customer_phone: e.target.value }))}
+                placeholder="Teléfono del cliente (opcional)"
                 className="px-3 py-2 border rounded-xl bg-background"
               />
-              <input
-                type="text"
-                value={form.customer_payment_reference}
-                onChange={(e) => setForm((prev) => ({ ...prev, customer_payment_reference: e.target.value }))}
-                placeholder="Referencia de pago"
-                className="px-3 py-2 border rounded-xl bg-background"
-              />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Saldo estimado: ${Math.max(0, Number(form.final_price || 0) - Number(form.customer_amount_paid || 0)).toFixed(2)}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium">Prioridad</span>
-              <select
-                value={form.priority}
-                onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value as NewRequestForm['priority'] }))}
-                className="w-full px-3 py-2 border rounded-xl bg-background"
-              >
-                <option value="normal">Normal</option>
-                <option value="urgent" disabled={affiliate?.allow_urgent_orders === false}>Urgente</option>
-                <option value="low">Baja</option>
-              </select>
-              {affiliate?.allow_urgent_orders === false && (
-                <span className="mt-1 block text-xs text-muted-foreground">Tu cuenta no tiene pedidos urgentes habilitados.</span>
-              )}
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium">Imagenes de referencia</span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                disabled={processingImages}
-                onChange={(e) => void handleReferenceImages(e.target.files)}
-                className="w-full px-3 py-2 border rounded-xl bg-background"
-              />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {processingImages ? 'Optimizando imágenes...' : 'Máximo 6 imágenes; se comprimen antes de enviarse.'}
-              </span>
-            </label>
-          </div>
-
-          {form.reference_images.length > 0 && (
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-              {form.reference_images.map((image, index) => (
-                <div
-                  key={`${image.slice(0, 24)}-${index}`}
-                  className="aspect-square rounded-lg border bg-cover bg-center"
-                  style={{ backgroundImage: `url(${image})` }}
-                  aria-label={`Referencia ${index + 1}`}
+              <label className="flex min-h-11 cursor-pointer flex-col justify-center rounded-xl border border-border bg-background px-3 py-2 hover:bg-accent/40">
+                <span className="text-sm font-medium">
+                  {form.reference_images.length > 0
+                    ? `${form.reference_images.length} foto${form.reference_images.length === 1 ? '' : 's'} agregada${form.reference_images.length === 1 ? '' : 's'}`
+                    : 'Agregar fotos'}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {processingImages ? 'Optimizando imágenes...' : 'Opcional, máximo 6.'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  disabled={processingImages}
+                  onChange={(e) => void handleReferenceImages(e.target.files)}
+                  className="sr-only"
                 />
-              ))}
-              <button
-                type="button"
-                onClick={() => setForm((prev) => ({ ...prev, reference_images: [] }))}
-                className="aspect-square rounded-lg border border-red-300 text-red-600 text-xs hover:bg-red-50"
-              >
-                Limpiar
-              </button>
+              </label>
             </div>
-          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input
-              type="text"
-              value={form.customer_name}
-              onChange={(e) => setForm((prev) => ({ ...prev, customer_name: e.target.value }))}
-              placeholder="Nombre del cliente"
-              className="px-3 py-2 border rounded-xl bg-background"
-              required
-            />
-            <input
-              type="email"
-              value={form.customer_email}
-              onChange={(e) => setForm((prev) => ({ ...prev, customer_email: e.target.value }))}
-              placeholder="Email del cliente (opcional)"
-              className="px-3 py-2 border rounded-xl bg-background"
-            />
-            <input
-              type="text"
-              value={form.customer_phone}
-              onChange={(e) => setForm((prev) => ({ ...prev, customer_phone: e.target.value }))}
-              placeholder="Teléfono del cliente (opcional)"
-              className="px-3 py-2 border rounded-xl bg-background"
-            />
-          </div>
+            {form.reference_images.length > 0 && (
+              <div className="mt-4 grid grid-cols-3 gap-2 md:grid-cols-6">
+                {form.reference_images.map((image, index) => (
+                  <div
+                    key={`${image.slice(0, 24)}-${index}`}
+                    className="aspect-square rounded-lg border bg-cover bg-center"
+                    style={{ backgroundImage: `url(${image})` }}
+                    aria-label={`Referencia ${index + 1}`}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setForm((prev) => ({ ...prev, reference_images: [] }))}
+                  className="aspect-square rounded-lg border border-red-300 text-red-600 text-xs hover:bg-red-50"
+                >
+                  Limpiar
+                </button>
+              </div>
+            )}
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium">Fecha prometida</span>
-              <input
-                type="date"
-                value={form.promised_delivery_date}
-                onChange={(e) => setForm((prev) => ({ ...prev, promised_delivery_date: e.target.value }))}
-                className="w-full px-3 py-2 border rounded-xl bg-background"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium">Entrega</span>
-              <select
-                value={form.delivery_method}
-                onChange={(e) => setForm((prev) => ({ ...prev, delivery_method: e.target.value as NewRequestForm['delivery_method'] }))}
-                className="w-full px-3 py-2 border rounded-xl bg-background"
-              >
-                <option value="pickup">Recoge en DOFER</option>
-                <option value="local_delivery">Entrega local</option>
-                <option value="shipping">Envío</option>
-              </select>
-            </label>
-            <input
-              type="text"
-              value={form.delivery_address}
-              onChange={(e) => setForm((prev) => ({ ...prev, delivery_address: e.target.value }))}
-              placeholder="Dirección de entrega/envío"
-              className="self-end px-3 py-2 border rounded-xl bg-background"
+            <textarea
+              value={form.customer_notes}
+              onChange={(e) => setForm((prev) => ({ ...prev, customer_notes: e.target.value }))}
+              placeholder="Notas importantes: color, medidas, personalización, dirección, etc."
+              className="mt-4 w-full px-3 py-2 border rounded-xl bg-background"
+              rows={3}
             />
           </div>
 
-          <textarea
-            value={form.customer_notes}
-            onChange={(e) => setForm((prev) => ({ ...prev, customer_notes: e.target.value }))}
-            placeholder="Notas (color, personalización, dirección, etc.)"
-            className="w-full px-3 py-2 border rounded-xl bg-background"
-            rows={3}
-          />
+          <div className="rounded-xl border border-border/70 bg-background/70">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((prev) => !prev)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left font-semibold hover:bg-accent/50"
+            >
+              <span>Opciones avanzadas</span>
+              <span className="text-sm text-muted-foreground">{showAdvanced ? 'Ocultar' : 'Agregar pago, entrega y fecha'}</span>
+            </button>
 
-          <textarea
-            value={form.delivery_notes}
-            onChange={(e) => setForm((prev) => ({ ...prev, delivery_notes: e.target.value }))}
-            placeholder="Notas de entrega o pago"
-            className="w-full px-3 py-2 border rounded-xl bg-background"
-            rows={2}
-          />
+            {showAdvanced && (
+              <div className="space-y-4 border-t border-border/70 p-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <input
+                    type="number"
+                    min={0}
+                    max={Number(form.final_price || 0)}
+                    step="0.01"
+                    value={form.customer_amount_paid}
+                    onChange={(e) => setForm((prev) => ({ ...prev, customer_amount_paid: e.target.value }))}
+                    placeholder="Anticipo recibido"
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  />
+                  <input
+                    type="text"
+                    value={form.customer_payment_method}
+                    onChange={(e) => setForm((prev) => ({ ...prev, customer_payment_method: e.target.value }))}
+                    placeholder="Método de pago"
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  />
+                  <input
+                    type="text"
+                    value={form.customer_payment_reference}
+                    onChange={(e) => setForm((prev) => ({ ...prev, customer_payment_reference: e.target.value }))}
+                    placeholder="Referencia de pago"
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  />
+                  <input
+                    type="email"
+                    value={form.customer_email}
+                    onChange={(e) => setForm((prev) => ({ ...prev, customer_email: e.target.value }))}
+                    placeholder="Email del cliente"
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Saldo estimado: ${Math.max(0, Number(form.final_price || 0) - Number(form.customer_amount_paid || 0)).toFixed(2)}
+                </p>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <select
+                    value={form.priority}
+                    onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value as NewRequestForm['priority'] }))}
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  >
+                    <option value="normal">Prioridad normal</option>
+                    <option value="urgent" disabled={affiliate?.allow_urgent_orders === false}>Urgente</option>
+                    <option value="low">Baja</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={form.promised_delivery_date}
+                    onChange={(e) => setForm((prev) => ({ ...prev, promised_delivery_date: e.target.value }))}
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  />
+                  <select
+                    value={form.delivery_method}
+                    onChange={(e) => setForm((prev) => ({ ...prev, delivery_method: e.target.value as NewRequestForm['delivery_method'] }))}
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  >
+                    <option value="pickup">Recoge en DOFER</option>
+                    <option value="local_delivery">Entrega local</option>
+                    <option value="shipping">Envío</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={form.delivery_address}
+                    onChange={(e) => setForm((prev) => ({ ...prev, delivery_address: e.target.value }))}
+                    placeholder="Dirección"
+                    className="px-3 py-2 border rounded-xl bg-background"
+                  />
+                </div>
+
+                <textarea
+                  value={form.delivery_notes || form.customer_payment_notes}
+                  onChange={(e) => setForm((prev) => ({ ...prev, delivery_notes: e.target.value, customer_payment_notes: e.target.value }))}
+                  placeholder="Notas extra de pago o entrega"
+                  className="w-full px-3 py-2 border rounded-xl bg-background"
+                  rows={2}
+                />
+              </div>
+            )}
+          </div>
 
           <button
             type="submit"

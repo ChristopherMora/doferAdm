@@ -190,25 +190,20 @@ export default function MyAffiliateOrdersPage() {
                       </p>
                     </div>
 
-                    <div className="grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-4">
-                      <QuickFact label="Cliente" value={req.customer_name} />
-                      <QuickFact label="Fecha" value={new Date(req.created_at).toLocaleDateString()} />
-                      <QuickFact label="Pedido" value={shortID(req.id)} />
-                      <QuickFact label="Precio final" value={`$${req.final_price.toFixed(2)}`} strong />
-                      <QuickFact label="Teléfono" value={req.customer_phone || 'Sin teléfono'} />
-                      <QuickFact label="Email" value={req.customer_email || 'Sin email'} />
-                      <QuickFact
-                        label="Mínimo"
-                        value={req.min_price_snapshot ? `$${req.min_price_snapshot.toFixed(2)}` : 'Sin mínimo'}
-                      />
-                      <QuickFact
-                        label="Referencias"
-                        value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
-                      />
-                      <QuickFact label="Pago" value={paymentLabel(req)} strong={req.customer_payment_status === 'paid'} />
-                      <QuickFact label="Saldo" value={`$${Math.max(0, req.final_price - (req.customer_amount_paid || 0)).toFixed(2)}`} />
-                      <QuickFact label="Entrega" value={deliveryLabel(req.delivery_method)} />
-                      <QuickFact label="Prometido" value={promisedDateLabel(req.promised_delivery_date)} />
+                    <div className="flex flex-wrap gap-2">
+                      <InfoPill label="Cliente" value={req.customer_name} />
+                      <InfoPill label="Precio" value={`$${req.final_price.toFixed(2)}`} strong />
+                      <InfoPill label="Pago" value={paymentLabel(req)} strong={req.customer_payment_status === 'paid'} />
+                      <InfoPill label="Entrega" value={deliveryLabel(req.delivery_method)} />
+                      {req.promised_delivery_date && (
+                        <InfoPill label="Prometido" value={promisedDateLabel(req.promised_delivery_date)} />
+                      )}
+                      {(req.reference_images?.length || 0) > 0 && (
+                        <InfoPill
+                          label="Referencias"
+                          value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -243,31 +238,49 @@ export default function MyAffiliateOrdersPage() {
               </div>
 
               {isExpanded && (
-                <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 md:grid-cols-2 xl:grid-cols-4">
-                  <Detail label="Email" value={req.customer_email || 'Sin email'} />
-                  <Detail label="Teléfono" value={req.customer_phone || 'Sin teléfono'} />
-                  <Detail label="Sugerido" value={req.suggested_price_snapshot ? `$${req.suggested_price_snapshot.toFixed(2)}` : 'Sin sugerido'} />
-                  <Detail label="Mínimo" value={req.min_price_snapshot ? `$${req.min_price_snapshot.toFixed(2)}` : 'Sin mínimo'} />
-                  <Detail label="Anticipo" value={`$${(req.customer_amount_paid || 0).toFixed(2)}`} />
-                  <Detail label="Pago" value={paymentLabel(req)} />
-                  <Detail label="Entrega" value={deliveryLabel(req.delivery_method)} />
-                  <Detail label="Fecha prometida" value={promisedDateLabel(req.promised_delivery_date)} />
-                  <div className="md:col-span-2 xl:col-span-4">
+                <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                  <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <Detail label="Pedido" value={shortID(req.id)} />
+                    <Detail label="Creado" value={new Date(req.created_at).toLocaleDateString()} />
+                    <Detail label="Teléfono" value={req.customer_phone || 'Sin teléfono'} />
+                    <Detail label="Email" value={req.customer_email || 'Sin email'} />
+                    <Detail label="Anticipo" value={`$${(req.customer_amount_paid || 0).toFixed(2)}`} />
+                    <Detail label="Saldo" value={`$${Math.max(0, req.final_price - (req.customer_amount_paid || 0)).toFixed(2)}`} />
+                    <Detail label="Mínimo" value={req.min_price_snapshot ? `$${req.min_price_snapshot.toFixed(2)}` : 'Sin mínimo'} />
+                    <Detail label="Sugerido" value={req.suggested_price_snapshot ? `$${req.suggested_price_snapshot.toFixed(2)}` : 'Sin sugerido'} />
+                    <Detail label="Entrega" value={deliveryLabel(req.delivery_method)} />
+                    <Detail label="Fecha prometida" value={promisedDateLabel(req.promised_delivery_date)} />
+                    <Detail
+                      label="Referencias"
+                      value={`${req.reference_images?.length || 0} imagen${(req.reference_images?.length || 0) === 1 ? '' : 'es'}`}
+                    />
+                    <Detail label="Estado de pago" value={paymentLabel(req)} />
+                  </div>
+
+                  <div>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Notas</p>
                     <p className="mt-1 text-sm">{req.customer_notes || 'Sin notas adicionales.'}</p>
                   </div>
+                  {(req.delivery_address || req.delivery_notes || req.customer_payment_notes || req.customer_payment_reference) && (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {req.delivery_address && <Detail label="Dirección" value={req.delivery_address} />}
+                      {req.customer_payment_reference && <Detail label="Referencia de pago" value={req.customer_payment_reference} />}
+                      {req.delivery_notes && <Detail label="Notas de entrega" value={req.delivery_notes} />}
+                      {req.customer_payment_notes && <Detail label="Notas de pago" value={req.customer_payment_notes} />}
+                    </div>
+                  )}
                   {req.status === 'rejected' && (
-                    <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                       Motivo de rechazo: {req.rejection_reason || 'No especificado'}
                     </div>
                   )}
                   {req.status === 'needs_changes' && (
-                    <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+                    <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
                       Cambios solicitados: {req.requested_changes || 'Revisa el detalle para actualizar la solicitud.'}
                     </div>
                   )}
                   {req.status === 'cancelled' && (
-                    <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                       Cancelado: {req.cancelled_reason || 'Sin motivo especificado'}
                     </div>
                   )}
@@ -323,11 +336,11 @@ function Detail({ label, value }: { label: string; value: string }) {
   )
 }
 
-function QuickFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function InfoPill({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 truncate ${strong ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>{value}</p>
+    <div className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-sm">
+      <span className="text-xs uppercase text-muted-foreground">{label}</span>
+      <span className={strong ? 'font-semibold text-foreground' : 'text-foreground'}>{value}</span>
     </div>
   )
 }
