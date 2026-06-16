@@ -52,6 +52,7 @@ export default function AffiliateProfilePage() {
         <Field label="Nombre" value={affiliate.display_name} />
         <Field label="Email" value={affiliate.email} />
         <Field label="Teléfono" value={affiliate.phone || 'Sin definir'} />
+        <Field label="Codigo de afiliado" value={affiliate.referral_code} />
         <Field
           label="Comisión"
           value={
