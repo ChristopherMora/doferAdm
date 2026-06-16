@@ -58,6 +58,7 @@ func RegisterRoutes(r chi.Router, handler *AffiliateHandler) {
 		r.Use(middleware.RequireRole("admin", "operator"))
 
 		r.Get("/", handler.ListAllCommissions)
+		r.Patch("/pay-batch", handler.PayCommissionsBatch)
 		r.Patch("/{id}/pay", handler.PayCommission)
 	})
 }

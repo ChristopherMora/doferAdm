@@ -17,6 +17,10 @@ export default function AffiliateCommissionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [selectedCommissionIds, setSelectedCommissionIds] = useState<string[]>([])
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentReference, setPaymentReference] = useState('')
+  const [paymentNotes, setPaymentNotes] = useState('')
   const [apiError, setApiError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -27,6 +31,7 @@ export default function AffiliateCommissionsPage() {
         params: { status: statusFilter || undefined },
       })
       setCommissions(response.commissions || [])
+      setSelectedCommissionIds([])
     } catch (error: unknown) {
       setApiError(`Error cargando comisiones: ${getErrorMessage(error, 'Error desconocido')}`)
       setCommissions([])
@@ -52,7 +57,38 @@ export default function AffiliateCommissionsPage() {
     }
   }
 
+  const toggleCommission = (id: string) => {
+    setSelectedCommissionIds((prev) => (
+      prev.includes(id) ? prev.filter((current) => current !== id) : [...prev, id]
+    ))
+  }
+
+  const handleBatchPay = async () => {
+    if (selectedCommissionIds.length === 0) return
+    setProcessingId('batch')
+    setApiError(null)
+    try {
+      await apiClient.patch('/affiliate-commissions/pay-batch', {
+        commission_ids: selectedCommissionIds,
+        payment_method: paymentMethod || undefined,
+        payment_reference: paymentReference || undefined,
+        payment_notes: paymentNotes || undefined,
+      })
+      setPaymentMethod('')
+      setPaymentReference('')
+      setPaymentNotes('')
+      await load()
+    } catch (error: unknown) {
+      setApiError(`Error pagando lote: ${getErrorMessage(error, 'Error desconocido')}`)
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
   const totalPending = commissions.filter((c) => c.status === 'pending').reduce((sum, c) => sum + c.commission_amount, 0)
+  const selectedTotal = commissions
+    .filter((c) => selectedCommissionIds.includes(c.id))
+    .reduce((sum, c) => sum + c.commission_amount, 0)
 
   if (loading) {
     return <LoadingState label="Cargando comisiones..." />
@@ -82,9 +118,45 @@ export default function AffiliateCommissionsPage() {
       )}
 
       {statusFilter !== 'paid' && (
-        <div className="panel-surface rounded-xl p-4">
-          <div className="text-sm text-muted-foreground">Total pendiente por pagar</div>
-          <div className="text-2xl font-bold text-yellow-600">${totalPending.toFixed(2)}</div>
+        <div className="panel-surface rounded-xl p-4 space-y-3">
+          <div>
+            <div className="text-sm text-muted-foreground">Total pendiente por pagar</div>
+            <div className="text-2xl font-bold text-yellow-600">${totalPending.toFixed(2)}</div>
+          </div>
+          {selectedCommissionIds.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <input
+                type="text"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                placeholder="Metodo de pago"
+                className="px-3 py-2 border rounded-xl bg-background"
+              />
+              <input
+                type="text"
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                placeholder="Referencia"
+                className="px-3 py-2 border rounded-xl bg-background"
+              />
+              <input
+                type="text"
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
+                placeholder="Notas"
+                className="px-3 py-2 border rounded-xl bg-background"
+              />
+              <button
+                onClick={handleBatchPay}
+                disabled={processingId === 'batch'}
+                className="px-3 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-60"
+              >
+                {processingId === 'batch'
+                  ? 'Procesando...'
+                  : `Pagar ${selectedCommissionIds.length} · $${selectedTotal.toFixed(2)}`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -92,11 +164,23 @@ export default function AffiliateCommissionsPage() {
         <div className="space-y-3">
           {commissions.map((c) => (
             <div key={c.id} className="rounded-xl border border-border/70 bg-background/70 p-4 flex items-center justify-between">
-              <div>
+              <div className="flex items-center gap-3">
+                {c.status === 'pending' && (
+                  <input
+                    type="checkbox"
+                    checked={selectedCommissionIds.includes(c.id)}
+                    onChange={() => toggleCommission(c.id)}
+                    className="h-4 w-4"
+                    aria-label="Seleccionar comision"
+                  />
+                )}
+                <div>
                 <p className="font-bold text-lg">${c.commission_amount.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">
                   {c.status === 'paid' && c.paid_at ? `Pagada el ${new Date(c.paid_at).toLocaleDateString()}` : 'Pendiente de pago'}
                 </p>
+                {c.payment_reference && <p className="text-xs text-muted-foreground">Ref: {c.payment_reference}</p>}
+                </div>
               </div>
               {c.status === 'pending' ? (
                 <button

@@ -15,12 +15,16 @@ const (
 
 type AffiliateOrderRequest struct {
 	ID                     string        `json:"id"`
+	OrganizationID         string        `json:"organization_id"`
 	AffiliateID            string        `json:"affiliate_id"`
 	ProductID              string        `json:"product_id,omitempty"`
 	ProductName            string        `json:"product_name"`
 	Quantity               int           `json:"quantity"`
 	SuggestedPriceSnapshot float64       `json:"suggested_price_snapshot,omitempty"`
+	MinPriceSnapshot       float64       `json:"min_price_snapshot,omitempty"`
 	FinalPrice             float64       `json:"final_price"`
+	Priority               string        `json:"priority"`
+	ReferenceImages        []string      `json:"reference_images,omitempty"`
 	CustomerName           string        `json:"customer_name"`
 	CustomerEmail          string        `json:"customer_email,omitempty"`
 	CustomerPhone          string        `json:"customer_phone,omitempty"`
@@ -59,14 +63,15 @@ func NewAffiliateOrderRequest(affiliateID, productName, customerName string, qua
 
 	now := time.Now()
 	return &AffiliateOrderRequest{
-		AffiliateID:   affiliateID,
-		ProductName:   productName,
-		Quantity:      quantity,
-		FinalPrice:    finalPrice,
-		CustomerName:  customerName,
-		Status:        RequestPending,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		AffiliateID:  affiliateID,
+		ProductName:  productName,
+		Quantity:     quantity,
+		FinalPrice:   finalPrice,
+		Priority:     "normal",
+		CustomerName: customerName,
+		Status:       RequestPending,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}, nil
 }
 

@@ -26,7 +26,7 @@ func NewUpdateAffiliateHandler(repo domain.AffiliateRepository) *UpdateAffiliate
 }
 
 func (h *UpdateAffiliateHandler) Handle(ctx context.Context, cmd UpdateAffiliateCommand) (*domain.Affiliate, error) {
-	affiliate, err := h.repo.FindAffiliateByID(cmd.AffiliateID)
+	affiliate, err := h.repo.FindAffiliateByID(cmd.AffiliateID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

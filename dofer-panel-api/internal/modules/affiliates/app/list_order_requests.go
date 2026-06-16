@@ -15,6 +15,9 @@ func NewListOrderRequestsHandler(repo domain.AffiliateRepository) *ListOrderRequ
 }
 
 func (h *ListOrderRequestsHandler) Handle(ctx context.Context, filters domain.OrderRequestFilters) ([]*domain.AffiliateOrderRequest, error) {
+	if filters.OrganizationID == "" {
+		filters.OrganizationID = organizationIDFromContext(ctx)
+	}
 	return h.repo.ListOrderRequests(filters)
 }
 
@@ -27,5 +30,5 @@ func NewGetOrderRequestHandler(repo domain.AffiliateRepository) *GetOrderRequest
 }
 
 func (h *GetOrderRequestHandler) Handle(ctx context.Context, id string) (*domain.AffiliateOrderRequest, error) {
-	return h.repo.FindOrderRequestByID(id)
+	return h.repo.FindOrderRequestByID(id, organizationIDFromContext(ctx))
 }

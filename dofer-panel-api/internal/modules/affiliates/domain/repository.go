@@ -8,7 +8,8 @@ type AuthUserProvisioner interface {
 
 // AffiliateFilters filtra el listado de afiliados (uso admin).
 type AffiliateFilters struct {
-	Status string
+	OrganizationID string
+	Status         string
 }
 
 // OrderRequestFilters filtra solicitudes; AffiliateID siempre se respeta,
@@ -16,41 +17,44 @@ type AffiliateFilters struct {
 // cuando el llamador es un afiliado (nunca confiar en un valor que venga
 // del cliente para ese caso).
 type OrderRequestFilters struct {
-	AffiliateID string
-	Status      string
+	OrganizationID string
+	AffiliateID    string
+	Status         string
+	Priority       string
 }
 
 type CommissionFilters struct {
-	AffiliateID string
-	Status      string
+	OrganizationID string
+	AffiliateID    string
+	Status         string
 }
 
 type AffiliateRepository interface {
 	// Affiliates
 	CreateAffiliate(a *Affiliate) error
-	FindAffiliateByID(id string) (*Affiliate, error)
-	FindAffiliateByUserID(userID string) (*Affiliate, error)
+	FindAffiliateByID(id string, organizationID ...string) (*Affiliate, error)
+	FindAffiliateByUserID(userID string, organizationID ...string) (*Affiliate, error)
 	ListAffiliates(filters AffiliateFilters) ([]*Affiliate, error)
 	UpdateAffiliate(a *Affiliate) error
 
 	// Provisioning: inserta la fila local en users con el rol correcto
 	// ANTES del primer login del afiliado (ver SyncUser en auth middleware).
-	CreateAffiliateUser(id, email, fullName string) error
+	CreateAffiliateUser(id, email, fullName, organizationID string) error
 
 	// Order requests
 	CreateOrderRequest(req *AffiliateOrderRequest) error
-	FindOrderRequestByID(id string) (*AffiliateOrderRequest, error)
+	FindOrderRequestByID(id string, organizationID ...string) (*AffiliateOrderRequest, error)
 	ListOrderRequests(filters OrderRequestFilters) ([]*AffiliateOrderRequest, error)
 	UpdateOrderRequest(req *AffiliateOrderRequest) error
 
 	// Commissions
 	CreateCommission(c *AffiliateCommission) error
-	FindCommissionByID(id string) (*AffiliateCommission, error)
+	FindCommissionByID(id string, organizationID ...string) (*AffiliateCommission, error)
 	ListCommissions(filters CommissionFilters) ([]*AffiliateCommission, error)
 	UpdateCommission(c *AffiliateCommission) error
 
 	// Stats
-	GetAffiliateStats(affiliateID string) (*AffiliateStats, error)
+	GetAffiliateStats(affiliateID string, organizationID ...string) (*AffiliateStats, error)
 }
 
 type AffiliateStats struct {

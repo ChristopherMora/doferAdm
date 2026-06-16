@@ -3,17 +3,21 @@ package app
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/dofer/panel-api/internal/modules/affiliates/domain"
+	"github.com/google/uuid"
 )
 
 var ErrAffiliateEmailRequired = errors.New("affiliate email is required")
 
 type CreateAffiliateCommand struct {
+	OrganizationID  string
 	DisplayName     string
 	Email           string
 	Phone           string
+	ReferralCode    string
 	CommissionType  domain.CommissionType
 	CommissionValue float64
 	Notes           string
@@ -48,6 +52,13 @@ func (h *CreateAffiliateHandler) Handle(ctx context.Context, cmd CreateAffiliate
 	if cmd.CommissionValue < 0 {
 		return nil, errors.New("commission value cannot be negative")
 	}
+	organizationID := strings.TrimSpace(cmd.OrganizationID)
+	if organizationID == "" {
+		organizationID = organizationIDFromContext(ctx)
+	}
+	if organizationID == "" {
+		return nil, errors.New("organization id is required")
+	}
 
 	// 1. Crear el usuario de auth real en Supabase con role=affiliate.
 	userID, temporaryPassword, err := h.provisioner.CreateAuthUser(email)
@@ -58,13 +69,15 @@ func (h *CreateAffiliateHandler) Handle(ctx context.Context, cmd CreateAffiliate
 	// 2. Insertar la fila local en users con ese mismo UUID y role='affiliate'
 	//    ANTES de que el afiliado inicie sesión por primera vez (ver nota en
 	//    infra.PostgresAffiliateRepository.CreateAffiliateUser).
-	if err := h.repo.CreateAffiliateUser(userID, email, cmd.DisplayName); err != nil {
+	if err := h.repo.CreateAffiliateUser(userID, email, cmd.DisplayName, organizationID); err != nil {
 		return nil, err
 	}
 
 	// 3. Crear el perfil de negocio en affiliates.
 	affiliate := &domain.Affiliate{
+		OrganizationID:  organizationID,
 		UserID:          userID,
+		ReferralCode:    normalizeReferralCode(cmd.ReferralCode, cmd.DisplayName),
 		DisplayName:     cmd.DisplayName,
 		Email:           email,
 		Phone:           cmd.Phone,
@@ -80,4 +93,21 @@ func (h *CreateAffiliateHandler) Handle(ctx context.Context, cmd CreateAffiliate
 	}
 
 	return &CreateAffiliateResult{Affiliate: affiliate, TemporaryPassword: temporaryPassword}, nil
+}
+
+func normalizeReferralCode(code, fallback string) string {
+	normalized := strings.ToLower(strings.TrimSpace(code))
+	hasExplicitCode := normalized != ""
+	if normalized == "" {
+		normalized = strings.ToLower(strings.TrimSpace(fallback))
+	}
+	normalized = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(normalized, "-")
+	normalized = strings.Trim(normalized, "-")
+	if normalized == "" {
+		normalized = "afiliado"
+	}
+	if hasExplicitCode {
+		return normalized
+	}
+	return normalized + "-" + strings.ToLower(strings.ReplaceAll(uuid.NewString()[:8], "-", ""))
 }

@@ -15,5 +15,5 @@ func NewGetAffiliateStatsHandler(repo domain.AffiliateRepository) *GetAffiliateS
 }
 
 func (h *GetAffiliateStatsHandler) Handle(ctx context.Context, affiliateID string) (*domain.AffiliateStats, error) {
-	return h.repo.GetAffiliateStats(affiliateID)
+	return h.repo.GetAffiliateStats(affiliateID, organizationIDFromContext(ctx))
 }

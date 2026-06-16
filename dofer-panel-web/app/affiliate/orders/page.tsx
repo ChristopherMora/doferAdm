@@ -21,6 +21,12 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelado',
 }
 
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: 'Urgente',
+  normal: 'Normal',
+  low: 'Baja',
+}
+
 export default function MyAffiliateOrdersPage() {
   const [requests, setRequests] = useState<AffiliateOrderRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -73,6 +79,7 @@ export default function MyAffiliateOrdersPage() {
                 <div>
                   <h3 className="font-bold">{req.product_name} × {req.quantity}</h3>
                   <p className="text-sm text-muted-foreground">Cliente: {req.customer_name}</p>
+                  <p className="text-xs text-muted-foreground">Prioridad: {PRIORITY_LABELS[req.priority] || req.priority}</p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold">${req.final_price.toFixed(2)}</p>
@@ -84,6 +91,22 @@ export default function MyAffiliateOrdersPage() {
                 <p className="mt-2 text-sm text-muted-foreground">
                   Estado de producción: <span className="font-medium">{ORDER_STATUS_LABELS[req.order_status] || req.order_status}</span>
                 </p>
+              )}
+
+              {req.reference_images && req.reference_images.length > 0 && (
+                <div className="mt-3 grid grid-cols-4 md:grid-cols-6 gap-2">
+                  {req.reference_images.map((image, index) => (
+                    <a
+                      key={`${req.id}-${index}`}
+                      href={image}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="aspect-square rounded-lg border bg-cover bg-center hover:ring-2 hover:ring-primary"
+                      style={{ backgroundImage: `url(${image})` }}
+                      aria-label={`Abrir referencia ${index + 1}`}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           ))}

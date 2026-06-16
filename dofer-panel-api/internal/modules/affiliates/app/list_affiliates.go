@@ -15,5 +15,8 @@ func NewListAffiliatesHandler(repo domain.AffiliateRepository) *ListAffiliatesHa
 }
 
 func (h *ListAffiliatesHandler) Handle(ctx context.Context, filters domain.AffiliateFilters) ([]*domain.Affiliate, error) {
+	if filters.OrganizationID == "" {
+		filters.OrganizationID = organizationIDFromContext(ctx)
+	}
 	return h.repo.ListAffiliates(filters)
 }

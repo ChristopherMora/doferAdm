@@ -91,7 +91,7 @@ export default function AffiliateDetailPage() {
       <PageHeader
         title={affiliate.display_name}
         badge="Afiliado"
-        description={affiliate.email}
+        description={`${affiliate.email} · Codigo ${affiliate.referral_code}`}
       />
 
       {apiError && (
@@ -175,7 +175,9 @@ export default function AffiliateDetailPage() {
                   <span className="font-medium">{req.product_name} × {req.quantity}</span>
                   <StatusBadge status={req.status} />
                 </div>
-                <p className="text-muted-foreground">{req.customer_name} · ${req.final_price.toFixed(2)}</p>
+                <p className="text-muted-foreground">
+                  {req.customer_name} · ${req.final_price.toFixed(2)} · {req.priority === 'urgent' ? 'Urgente' : req.priority === 'low' ? 'Baja' : 'Normal'}
+                </p>
               </div>
             ))}
             {requests.length === 0 && <p className="text-sm text-muted-foreground">Sin solicitudes todavía.</p>}

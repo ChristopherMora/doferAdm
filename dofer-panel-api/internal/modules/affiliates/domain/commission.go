@@ -11,6 +11,7 @@ const (
 
 type AffiliateCommission struct {
 	ID                      string           `json:"id"`
+	OrganizationID          string           `json:"organization_id"`
 	AffiliateID             string           `json:"affiliate_id"`
 	AffiliateOrderRequestID string           `json:"affiliate_order_request_id"`
 	OrderID                 string           `json:"order_id"`
@@ -18,6 +19,9 @@ type AffiliateCommission struct {
 	Status                  CommissionStatus `json:"status"`
 	PaidAt                  *time.Time       `json:"paid_at,omitempty"`
 	PaidBy                  string           `json:"paid_by,omitempty"`
+	PaidBatchID             string           `json:"paid_batch_id,omitempty"`
+	PaymentMethod           string           `json:"payment_method,omitempty"`
+	PaymentReference        string           `json:"payment_reference,omitempty"`
 	PaymentNotes            string           `json:"payment_notes,omitempty"`
 	CreatedAt               time.Time        `json:"created_at"`
 	UpdatedAt               time.Time        `json:"updated_at"`

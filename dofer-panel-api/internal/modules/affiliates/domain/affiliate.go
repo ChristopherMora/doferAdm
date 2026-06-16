@@ -17,7 +17,9 @@ const (
 
 type Affiliate struct {
 	ID              string          `json:"id"`
+	OrganizationID  string          `json:"organization_id"`
 	UserID          string          `json:"user_id"`
+	ReferralCode    string          `json:"referral_code"`
 	DisplayName     string          `json:"display_name"`
 	Email           string          `json:"email"`
 	Phone           string          `json:"phone,omitempty"`

@@ -15,6 +15,7 @@ interface CreateAffiliateForm {
   display_name: string
   email: string
   phone: string
+  referral_code: string
   commission_type: 'percentage' | 'fixed'
   commission_value: number
   notes: string
@@ -24,6 +25,7 @@ const initialForm: CreateAffiliateForm = {
   display_name: '',
   email: '',
   phone: '',
+  referral_code: '',
   commission_type: 'percentage',
   commission_value: 10,
   notes: '',
@@ -132,6 +134,13 @@ export default function AffiliatesPage() {
             placeholder="Teléfono"
             className="px-3 py-2 border rounded-xl bg-background"
           />
+          <input
+            type="text"
+            value={form.referral_code}
+            onChange={(e) => setForm((prev) => ({ ...prev, referral_code: e.target.value }))}
+            placeholder="Codigo referido (opcional)"
+            className="px-3 py-2 border rounded-xl bg-background"
+          />
           <select
             value={form.commission_type}
             onChange={(e) => setForm((prev) => ({ ...prev, commission_type: e.target.value as 'percentage' | 'fixed' }))}
@@ -180,6 +189,7 @@ export default function AffiliatesPage() {
                 <div>
                   <h3 className="font-bold">{affiliate.display_name}</h3>
                   <p className="text-sm text-muted-foreground">{affiliate.email}{affiliate.phone ? ` · ${affiliate.phone}` : ''}</p>
+                  <p className="text-xs text-muted-foreground">Codigo: {affiliate.referral_code}</p>
                 </div>
                 <div className="text-right text-sm">
                   <span

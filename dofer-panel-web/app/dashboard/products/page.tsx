@@ -22,6 +22,8 @@ interface Product {
   is_active: boolean
   image_url?: string
   suggested_price?: number
+  affiliate_visible?: boolean
+  affiliate_min_price?: number
   created_at: string
 }
 
@@ -36,6 +38,8 @@ interface ProductFormState {
   image_url: string
   is_active: boolean
   suggested_price: string
+  affiliate_visible: boolean
+  affiliate_min_price: string
 }
 
 const initialForm: ProductFormState = {
@@ -49,6 +53,8 @@ const initialForm: ProductFormState = {
   image_url: '',
   is_active: true,
   suggested_price: '',
+  affiliate_visible: true,
+  affiliate_min_price: '',
 }
 
 export default function ProductsPage() {
@@ -134,6 +140,8 @@ export default function ProductsPage() {
       image_url: product.image_url || '',
       is_active: product.is_active,
       suggested_price: product.suggested_price?.toString() || '',
+      affiliate_visible: product.affiliate_visible ?? true,
+      affiliate_min_price: product.affiliate_min_price?.toString() || '',
     })
   }
 
@@ -284,6 +292,10 @@ export default function ProductsPage() {
                       <p className="text-sm text-muted-foreground">
                         Precio sugerido (afiliados): {product.suggested_price ? `$${product.suggested_price.toFixed(2)}` : 'Sin definir'}
                       </p>
+                      <p className="text-sm text-muted-foreground">
+                        Catalogo afiliado: {product.affiliate_visible === false ? 'Oculto' : 'Visible'}
+                        {product.affiliate_min_price ? ` · minimo $${product.affiliate_min_price.toFixed(2)}` : ''}
+                      </p>
                       {product.description && <p className="text-sm mt-1">{product.description}</p>}
                     </div>
                     <span
@@ -422,6 +434,15 @@ function ProductForm({
         min="0"
         step="0.01"
       />
+      <input
+        type="number"
+        value={form.affiliate_min_price}
+        onChange={(e) => setForm((prev) => ({ ...prev, affiliate_min_price: e.target.value }))}
+        placeholder="Precio minimo afiliado"
+        className="px-3 py-2 border rounded-lg"
+        min="0"
+        step="0.01"
+      />
       <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm">
         <input
           type="checkbox"
@@ -429,6 +450,14 @@ function ProductForm({
           onChange={(e) => setForm((prev) => ({ ...prev, is_active: e.target.checked }))}
         />
         Activo
+      </label>
+      <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm">
+        <input
+          type="checkbox"
+          checked={form.affiliate_visible}
+          onChange={(e) => setForm((prev) => ({ ...prev, affiliate_visible: e.target.checked }))}
+        />
+        Mostrar a afiliados
       </label>
 
       <textarea
@@ -457,5 +486,7 @@ function buildPayload(form: ProductFormState) {
     image_url: form.image_url.trim() || null,
     is_active: form.is_active,
     suggested_price: form.suggested_price.trim() === '' ? null : Number(form.suggested_price),
+    affiliate_visible: form.affiliate_visible,
+    affiliate_min_price: form.affiliate_min_price.trim() === '' ? null : Number(form.affiliate_min_price),
   }
 }

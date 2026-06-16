@@ -15,6 +15,8 @@ interface NewRequestForm {
   product_name: string
   quantity: number
   final_price: string
+  priority: 'urgent' | 'normal' | 'low'
+  reference_images: string[]
   customer_name: string
   customer_email: string
   customer_phone: string
@@ -26,6 +28,8 @@ const initialForm: NewRequestForm = {
   product_name: '',
   quantity: 1,
   final_price: '',
+  priority: 'normal',
+  reference_images: [],
   customer_name: '',
   customer_email: '',
   customer_phone: '',
@@ -64,8 +68,19 @@ export default function NewAffiliateOrderPage() {
       ...prev,
       product_id: productId,
       product_name: product?.name || prev.product_name,
-      final_price: product?.suggested_price ? String(product.suggested_price) : prev.final_price,
+      final_price: product?.suggested_price
+        ? String(product.suggested_price)
+        : product?.affiliate_min_price
+          ? String(product.affiliate_min_price)
+          : prev.final_price,
     }))
+  }
+
+  const handleReferenceImages = async (files: FileList | null) => {
+    if (!files) return
+    const selectedFiles = Array.from(files).slice(0, 6)
+    const images = await Promise.all(selectedFiles.map(readFileAsDataURL))
+    setForm((prev) => ({ ...prev, reference_images: images }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,6 +94,8 @@ export default function NewAffiliateOrderPage() {
         product_name: form.product_name,
         quantity: form.quantity,
         final_price: Number(form.final_price),
+        priority: form.priority,
+        reference_images: form.reference_images,
         customer_name: form.customer_name,
         customer_email: form.customer_email || undefined,
         customer_phone: form.customer_phone || undefined,
@@ -129,6 +146,11 @@ export default function NewAffiliateOrderPage() {
                 Precio sugerido por DOFER: ${selectedProduct.suggested_price.toFixed(2)}. Puedes ajustar el precio final abajo.
               </p>
             ) : null}
+            {selectedProduct?.affiliate_min_price ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Precio minimo para este producto: ${selectedProduct.affiliate_min_price.toFixed(2)}.
+              </p>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -155,7 +177,7 @@ export default function NewAffiliateOrderPage() {
             <label className="mb-1 block text-sm font-medium">Precio final que le cobrarás a tu cliente</label>
             <input
               type="number"
-              min={0}
+              min={selectedProduct?.affiliate_min_price || 0}
               step="0.01"
               value={form.final_price}
               onChange={(e) => setForm((prev) => ({ ...prev, final_price: e.target.value }))}
@@ -164,6 +186,52 @@ export default function NewAffiliateOrderPage() {
               required
             />
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Prioridad</span>
+              <select
+                value={form.priority}
+                onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value as NewRequestForm['priority'] }))}
+                className="w-full px-3 py-2 border rounded-xl bg-background"
+              >
+                <option value="normal">Normal</option>
+                <option value="urgent">Urgente</option>
+                <option value="low">Baja</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Imagenes de referencia</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => void handleReferenceImages(e.target.files)}
+                className="w-full px-3 py-2 border rounded-xl bg-background"
+              />
+            </label>
+          </div>
+
+          {form.reference_images.length > 0 && (
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+              {form.reference_images.map((image, index) => (
+                <div
+                  key={`${image.slice(0, 24)}-${index}`}
+                  className="aspect-square rounded-lg border bg-cover bg-center"
+                  style={{ backgroundImage: `url(${image})` }}
+                  aria-label={`Referencia ${index + 1}`}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, reference_images: [] }))}
+                className="aspect-square rounded-lg border border-red-300 text-red-600 text-xs hover:bg-red-50"
+              >
+                Limpiar
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <input
@@ -209,4 +277,13 @@ export default function NewAffiliateOrderPage() {
       </PanelCard>
     </div>
   )
+}
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 }

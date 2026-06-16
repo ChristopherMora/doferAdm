@@ -14,7 +14,7 @@ import (
 const productSelectColumns = `
 	id, organization_id, sku, name, description, stl_file_path,
 	estimated_print_time_minutes, material, color, is_active, image_url,
-	suggested_price, created_at, updated_at
+	suggested_price, affiliate_visible, affiliate_min_price, created_at, updated_at
 `
 
 type Repository struct {
@@ -40,7 +40,7 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 	var product Product
 	var description, stlFilePath, material, color, imageURL sql.NullString
 	var estimatedPrintTime sql.NullInt32
-	var suggestedPrice sql.NullFloat64
+	var suggestedPrice, affiliateMinPrice sql.NullFloat64
 
 	err := row.Scan(
 		&product.ID,
@@ -55,6 +55,8 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 		&product.IsActive,
 		&imageURL,
 		&suggestedPrice,
+		&product.AffiliateVisible,
+		&affiliateMinPrice,
 		&product.CreatedAt,
 		&product.UpdatedAt,
 	)
@@ -83,6 +85,9 @@ func scanProductRow(row pgx.Row) (*Product, error) {
 	}
 	if suggestedPrice.Valid {
 		product.SuggestedPrice = &suggestedPrice.Float64
+	}
+	if affiliateMinPrice.Valid {
+		product.AffiliateMinPrice = &affiliateMinPrice.Float64
 	}
 
 	return &product, nil
@@ -162,12 +167,22 @@ func (r *Repository) Create(ctx context.Context, organizationID string, req Crea
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
+	affiliateVisible := true
+	if req.AffiliateVisible != nil {
+		affiliateVisible = *req.AffiliateVisible
+	}
+	if req.SuggestedPrice != nil && *req.SuggestedPrice < 0 {
+		return nil, fmt.Errorf("suggested_price cannot be negative")
+	}
+	if req.AffiliateMinPrice != nil && *req.AffiliateMinPrice < 0 {
+		return nil, fmt.Errorf("affiliate_min_price cannot be negative")
+	}
 
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
 			organization_id, sku, name, description, stl_file_path, estimated_print_time_minutes,
-			material, color, is_active, image_url, suggested_price
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			material, color, is_active, image_url, suggested_price, affiliate_visible, affiliate_min_price
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING `+productSelectColumns,
 		organizationID,
 		sku,
@@ -180,6 +195,8 @@ func (r *Repository) Create(ctx context.Context, organizationID string, req Crea
 		isActive,
 		sanitizeOptionalString(req.ImageURL),
 		req.SuggestedPrice,
+		affiliateVisible,
+		req.AffiliateMinPrice,
 	)
 
 	return scanProductRow(row)
@@ -253,8 +270,26 @@ func (r *Repository) Update(ctx context.Context, organizationID string, id uuid.
 	}
 
 	if req.SuggestedPrice != nil {
+		if *req.SuggestedPrice < 0 {
+			return nil, fmt.Errorf("suggested_price cannot be negative")
+		}
 		query += fmt.Sprintf(", suggested_price = $%d", argNum)
 		args = append(args, *req.SuggestedPrice)
+		argNum++
+	}
+
+	if req.AffiliateVisible != nil {
+		query += fmt.Sprintf(", affiliate_visible = $%d", argNum)
+		args = append(args, *req.AffiliateVisible)
+		argNum++
+	}
+
+	if req.AffiliateMinPrice != nil {
+		if *req.AffiliateMinPrice < 0 {
+			return nil, fmt.Errorf("affiliate_min_price cannot be negative")
+		}
+		query += fmt.Sprintf(", affiliate_min_price = $%d", argNum)
+		args = append(args, *req.AffiliateMinPrice)
 		argNum++
 	}
 

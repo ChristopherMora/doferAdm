@@ -21,7 +21,7 @@ func NewRejectOrderRequestHandler(repo domain.AffiliateRepository) *RejectOrderR
 }
 
 func (h *RejectOrderRequestHandler) Handle(ctx context.Context, cmd RejectOrderRequestCommand) (*domain.AffiliateOrderRequest, error) {
-	req, err := h.repo.FindOrderRequestByID(cmd.RequestID)
+	req, err := h.repo.FindOrderRequestByID(cmd.RequestID, organizationIDFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

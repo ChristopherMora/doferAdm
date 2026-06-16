@@ -15,7 +15,7 @@ func NewGetAffiliateHandler(repo domain.AffiliateRepository) *GetAffiliateHandle
 }
 
 func (h *GetAffiliateHandler) Handle(ctx context.Context, id string) (*domain.Affiliate, error) {
-	return h.repo.FindAffiliateByID(id)
+	return h.repo.FindAffiliateByID(id, organizationIDFromContext(ctx))
 }
 
 // GetAffiliateByUserIDHandler resuelve el afiliado a partir del user_id
@@ -29,5 +29,5 @@ func NewGetAffiliateByUserIDHandler(repo domain.AffiliateRepository) *GetAffilia
 }
 
 func (h *GetAffiliateByUserIDHandler) Handle(ctx context.Context, userID string) (*domain.Affiliate, error) {
-	return h.repo.FindAffiliateByUserID(userID)
+	return h.repo.FindAffiliateByUserID(userID, organizationIDFromContext(ctx))
 }

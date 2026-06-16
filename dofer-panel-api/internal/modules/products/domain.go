@@ -19,6 +19,8 @@ type Product struct {
 	IsActive                  bool      `json:"is_active" db:"is_active"`
 	ImageURL                  *string   `json:"image_url,omitempty" db:"image_url"`
 	SuggestedPrice            *float64  `json:"suggested_price,omitempty" db:"suggested_price"`
+	AffiliateVisible          bool      `json:"affiliate_visible" db:"affiliate_visible"`
+	AffiliateMinPrice         *float64  `json:"affiliate_min_price,omitempty" db:"affiliate_min_price"`
 	CreatedAt                 time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt                 time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -34,6 +36,8 @@ type CreateProductRequest struct {
 	ImageURL                  *string  `json:"image_url,omitempty"`
 	IsActive                  *bool    `json:"is_active,omitempty"`
 	SuggestedPrice            *float64 `json:"suggested_price,omitempty"`
+	AffiliateVisible          *bool    `json:"affiliate_visible,omitempty"`
+	AffiliateMinPrice         *float64 `json:"affiliate_min_price,omitempty"`
 }
 
 type UpdateProductRequest struct {
@@ -47,6 +51,8 @@ type UpdateProductRequest struct {
 	ImageURL                  *string  `json:"image_url,omitempty"`
 	IsActive                  *bool    `json:"is_active,omitempty"`
 	SuggestedPrice            *float64 `json:"suggested_price,omitempty"`
+	AffiliateVisible          *bool    `json:"affiliate_visible,omitempty"`
+	AffiliateMinPrice         *float64 `json:"affiliate_min_price,omitempty"`
 }
 
 type UpdateProductActiveRequest struct {

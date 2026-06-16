@@ -71,6 +71,8 @@ export interface Product {
   color?: string
   is_active: boolean
   suggested_price?: number
+  affiliate_visible?: boolean
+  affiliate_min_price?: number
   created_at: string
   updated_at: string
 }
@@ -85,7 +87,9 @@ export interface User {
 
 export interface Affiliate {
   id: string
+  organization_id: string
   user_id: string
+  referral_code: string
   display_name: string
   email: string
   phone?: string
@@ -99,12 +103,16 @@ export interface Affiliate {
 
 export interface AffiliateOrderRequest {
   id: string
+  organization_id: string
   affiliate_id: string
   product_id?: string
   product_name: string
   quantity: number
   suggested_price_snapshot?: number
+  min_price_snapshot?: number
   final_price: number
+  priority: 'urgent' | 'normal' | 'low'
+  reference_images?: string[]
   customer_name: string
   customer_email?: string
   customer_phone?: string
@@ -121,6 +129,7 @@ export interface AffiliateOrderRequest {
 
 export interface AffiliateCommission {
   id: string
+  organization_id: string
   affiliate_id: string
   affiliate_order_request_id: string
   order_id: string
@@ -128,6 +137,9 @@ export interface AffiliateCommission {
   status: 'pending' | 'paid'
   paid_at?: string
   paid_by?: string
+  paid_batch_id?: string
+  payment_method?: string
+  payment_reference?: string
   payment_notes?: string
   created_at: string
   updated_at: string
@@ -205,4 +217,3 @@ export interface OperatorStats {
   estimated_vs_actual: number
   efficiency: 'fast' | 'average' | 'slow'
 }
-

@@ -98,6 +98,7 @@ type CreateAffiliateRequest struct {
 	DisplayName     string  `json:"display_name"`
 	Email           string  `json:"email"`
 	Phone           string  `json:"phone"`
+	ReferralCode    string  `json:"referral_code"`
 	CommissionType  string  `json:"commission_type"`
 	CommissionValue float64 `json:"commission_value"`
 	Notes           string  `json:"notes"`
@@ -111,11 +112,14 @@ func (h *AffiliateHandler) CreateAffiliate(w http.ResponseWriter, r *http.Reques
 	}
 
 	createdBy, _ := middleware.UserIDFromContext(r.Context())
+	organizationID, _ := middleware.OrganizationIDFromContext(r.Context())
 
 	cmd := app.CreateAffiliateCommand{
+		OrganizationID:  organizationID,
 		DisplayName:     req.DisplayName,
 		Email:           req.Email,
 		Phone:           req.Phone,
+		ReferralCode:    req.ReferralCode,
 		CommissionType:  domain.CommissionType(req.CommissionType),
 		CommissionValue: req.CommissionValue,
 		Notes:           req.Notes,
@@ -239,6 +243,7 @@ func (h *AffiliateHandler) ListAllOrderRequests(w http.ResponseWriter, r *http.R
 	filters := domain.OrderRequestFilters{
 		AffiliateID: r.URL.Query().Get("affiliate_id"),
 		Status:      r.URL.Query().Get("status"),
+		Priority:    r.URL.Query().Get("priority"),
 	}
 
 	requests, err := h.listOrderRequestsHandler.Handle(r.Context(), filters)
@@ -334,7 +339,9 @@ func (h *AffiliateHandler) ListAllCommissions(w http.ResponseWriter, r *http.Req
 }
 
 type PayCommissionRequest struct {
-	PaymentNotes string `json:"payment_notes"`
+	PaymentMethod    string `json:"payment_method"`
+	PaymentReference string `json:"payment_reference"`
+	PaymentNotes     string `json:"payment_notes"`
 }
 
 func (h *AffiliateHandler) PayCommission(w http.ResponseWriter, r *http.Request) {
@@ -346,9 +353,11 @@ func (h *AffiliateHandler) PayCommission(w http.ResponseWriter, r *http.Request)
 	paidBy, _ := middleware.UserIDFromContext(r.Context())
 
 	commission, err := h.markCommissionPaidHandler.Handle(r.Context(), app.MarkCommissionPaidCommand{
-		CommissionID: id,
-		PaidBy:       paidBy,
-		PaymentNotes: req.PaymentNotes,
+		CommissionID:     id,
+		PaidBy:           paidBy,
+		PaymentMethod:    req.PaymentMethod,
+		PaymentReference: req.PaymentReference,
+		PaymentNotes:     req.PaymentNotes,
 	})
 	if err != nil {
 		if err == app.ErrCommissionAlreadyPaid {
@@ -360,6 +369,44 @@ func (h *AffiliateHandler) PayCommission(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"commission": commission, "message": "Comisión marcada como pagada"})
+}
+
+type PayCommissionsBatchRequest struct {
+	CommissionIDs    []string `json:"commission_ids"`
+	PaymentMethod    string   `json:"payment_method"`
+	PaymentReference string   `json:"payment_reference"`
+	PaymentNotes     string   `json:"payment_notes"`
+}
+
+func (h *AffiliateHandler) PayCommissionsBatch(w http.ResponseWriter, r *http.Request) {
+	var req PayCommissionsBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	paidBy, _ := middleware.UserIDFromContext(r.Context())
+	commissions, err := h.markCommissionPaidHandler.HandleBatch(r.Context(), app.MarkCommissionsPaidBatchCommand{
+		CommissionIDs:    req.CommissionIDs,
+		PaidBy:           paidBy,
+		PaymentMethod:    req.PaymentMethod,
+		PaymentReference: req.PaymentReference,
+		PaymentNotes:     req.PaymentNotes,
+	})
+	if err != nil {
+		if err == app.ErrCommissionAlreadyPaid {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"commissions": commissions,
+		"total":       len(commissions),
+		"message":     "Comisiones marcadas como pagadas",
+	})
 }
 
 // ---- Auto-servicio del afiliado (/affiliates/me/*) ----
@@ -388,14 +435,16 @@ func (h *AffiliateHandler) ListMyAvailableProducts(w http.ResponseWriter, r *htt
 }
 
 type CreateMyOrderRequestRequest struct {
-	ProductID     string  `json:"product_id"`
-	ProductName   string  `json:"product_name"`
-	Quantity      int     `json:"quantity"`
-	FinalPrice    float64 `json:"final_price"`
-	CustomerName  string  `json:"customer_name"`
-	CustomerEmail string  `json:"customer_email"`
-	CustomerPhone string  `json:"customer_phone"`
-	CustomerNotes string  `json:"customer_notes"`
+	ProductID       string   `json:"product_id"`
+	ProductName     string   `json:"product_name"`
+	Quantity        int      `json:"quantity"`
+	FinalPrice      float64  `json:"final_price"`
+	Priority        string   `json:"priority"`
+	ReferenceImages []string `json:"reference_images"`
+	CustomerName    string   `json:"customer_name"`
+	CustomerEmail   string   `json:"customer_email"`
+	CustomerPhone   string   `json:"customer_phone"`
+	CustomerNotes   string   `json:"customer_notes"`
 }
 
 func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.Request) {
@@ -412,15 +461,18 @@ func (h *AffiliateHandler) CreateMyOrderRequest(w http.ResponseWriter, r *http.R
 	}
 
 	created, err := h.createOrderRequestHandler.Handle(r.Context(), app.CreateOrderRequestCommand{
-		AffiliateID:   affiliate.ID,
-		ProductID:     req.ProductID,
-		ProductName:   req.ProductName,
-		Quantity:      req.Quantity,
-		FinalPrice:    req.FinalPrice,
-		CustomerName:  req.CustomerName,
-		CustomerEmail: req.CustomerEmail,
-		CustomerPhone: req.CustomerPhone,
-		CustomerNotes: req.CustomerNotes,
+		OrganizationID:  affiliate.OrganizationID,
+		AffiliateID:     affiliate.ID,
+		ProductID:       req.ProductID,
+		ProductName:     req.ProductName,
+		Quantity:        req.Quantity,
+		FinalPrice:      req.FinalPrice,
+		Priority:        req.Priority,
+		ReferenceImages: req.ReferenceImages,
+		CustomerName:    req.CustomerName,
+		CustomerEmail:   req.CustomerEmail,
+		CustomerPhone:   req.CustomerPhone,
+		CustomerNotes:   req.CustomerNotes,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -471,9 +523,9 @@ func (h *AffiliateHandler) ListMyCommissions(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"commissions":        commissions,
-		"total":              len(commissions),
-		"total_pending":      pending,
-		"total_paid":         paid,
+		"commissions":   commissions,
+		"total":         len(commissions),
+		"total_pending": pending,
+		"total_paid":    paid,
 	})
 }

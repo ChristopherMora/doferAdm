@@ -15,5 +15,8 @@ func NewListCommissionsHandler(repo domain.AffiliateRepository) *ListCommissions
 }
 
 func (h *ListCommissionsHandler) Handle(ctx context.Context, filters domain.CommissionFilters) ([]*domain.AffiliateCommission, error) {
+	if filters.OrganizationID == "" {
+		filters.OrganizationID = organizationIDFromContext(ctx)
+	}
 	return h.repo.ListCommissions(filters)
 }

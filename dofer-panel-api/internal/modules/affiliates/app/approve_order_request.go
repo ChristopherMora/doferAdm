@@ -33,7 +33,8 @@ func NewApproveOrderRequestHandler(repo domain.AffiliateRepository, orderRepo or
 }
 
 func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrderRequestCommand) (*ApproveOrderRequestResult, error) {
-	req, err := h.repo.FindOrderRequestByID(cmd.RequestID)
+	organizationID := organizationIDFromContext(ctx)
+	req, err := h.repo.FindOrderRequestByID(cmd.RequestID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 		return nil, domain.ErrRequestNotPending
 	}
 
-	affiliate, err := h.repo.FindAffiliateByID(req.AffiliateID)
+	affiliate, err := h.repo.FindAffiliateByID(req.AffiliateID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,13 +63,22 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 
 	order.CustomerEmail = req.CustomerEmail
 	order.CustomerPhone = req.CustomerPhone
-	order.OrganizationID = organizationIDFromContext(ctx)
+	order.OrganizationID = organizationID
 	order.AffiliateID = affiliate.ID
+	order.Priority = ordersDomain.OrderPriority(req.Priority)
 	order.Amount = req.FinalPrice
 	order.Balance = req.FinalPrice
 	order.Notes = fmt.Sprintf("🤝 Pedido registrado por el afiliado %s", affiliate.DisplayName)
 	if req.CustomerNotes != "" {
 		order.Notes += fmt.Sprintf("\n📝 %s", req.CustomerNotes)
+	}
+	if len(req.ReferenceImages) > 0 {
+		order.ProductImage = req.ReferenceImages[0]
+		order.Metadata = map[string]interface{}{
+			"affiliate_order_request_id": req.ID,
+			"affiliate_reference_images": req.ReferenceImages,
+			"affiliate_referral_code":    affiliate.ReferralCode,
+		}
 	}
 
 	if err := h.orderRepo.Create(order); err != nil {
@@ -79,6 +89,7 @@ func (h *ApproveOrderRequestHandler) Handle(ctx context.Context, cmd ApproveOrde
 	//    recalcula si la comisión del afiliado cambia después).
 	commissionAmount := affiliate.CalculateCommission(req.FinalPrice)
 	commission := domain.NewAffiliateCommission(affiliate.ID, req.ID, order.ID, commissionAmount)
+	commission.OrganizationID = organizationID
 	if err := h.repo.CreateCommission(commission); err != nil {
 		return nil, err
 	}

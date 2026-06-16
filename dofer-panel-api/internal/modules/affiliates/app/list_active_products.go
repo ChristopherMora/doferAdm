@@ -19,5 +19,17 @@ func NewListActiveProductsForAffiliateHandler(productRepo *products.Repository) 
 
 func (h *ListActiveProductsForAffiliateHandler) Handle(ctx context.Context) ([]products.Product, error) {
 	active := true
-	return h.productRepo.List(ctx, organizationIDFromContext(ctx), "", &active, 200, 0)
+	allProducts, err := h.productRepo.List(ctx, organizationIDFromContext(ctx), "", &active, 200, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	visibleProducts := make([]products.Product, 0, len(allProducts))
+	for _, product := range allProducts {
+		if product.AffiliateVisible {
+			visibleProducts = append(visibleProducts, product)
+		}
+	}
+
+	return visibleProducts, nil
 }
