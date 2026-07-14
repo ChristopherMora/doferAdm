@@ -636,58 +636,113 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 	}
 
 	var summary FinanceSummary
+	var resetAt sql.NullTime
+	var resetReason sql.NullString
 	err := r.db.QueryRow(ctx, `
-		WITH order_totals AS (
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		),
+		order_totals AS (
 			SELECT
 				COUNT(*) AS total_orders,
 				COALESCE(SUM(amount), 0) AS order_value,
-				COALESCE(SUM(amount_paid), 0) AS order_collected,
 				COALESCE(SUM(GREATEST(balance, 0)), 0) AS order_pending,
 				COALESCE(SUM(CASE WHEN delivery_deadline < NOW() AND balance > 0 THEN balance ELSE 0 END), 0) AS order_overdue
-			FROM orders
+			FROM orders, scope
 			WHERE organization_id = $1
+			  AND created_at >= scope.reset_at
 		),
 		quote_totals AS (
 			SELECT
 				COUNT(*) AS total_quotes,
 				COALESCE(SUM(total), 0) AS quote_value,
-				COALESCE(SUM(amount_paid), 0) AS quote_collected,
 				COALESCE(SUM(GREATEST(balance, 0)), 0) AS quote_pending,
 				COALESCE(SUM(CASE WHEN valid_until < NOW() AND balance > 0 THEN balance ELSE 0 END), 0) AS quote_overdue
-			FROM quotes
+			FROM quotes, scope
 			WHERE organization_id = $1
+			  AND created_at >= scope.reset_at
 		),
-		payment_counts AS (
+		payment_totals AS (
 			SELECT
-				(SELECT COUNT(*) FROM order_payments WHERE organization_id = $1) AS order_payments_count,
-				(SELECT COUNT(*) FROM quote_payments WHERE organization_id = $1) AS quote_payments_count
+				COALESCE(SUM(amount) FILTER (WHERE source_type = 'order'), 0) AS order_collected,
+				COALESCE(SUM(amount) FILTER (WHERE source_type = 'quote'), 0) AS quote_collected,
+				COUNT(*) FILTER (WHERE source_type = 'order') AS order_payments_count,
+				COUNT(*) FILTER (WHERE source_type = 'quote') AS quote_payments_count
+			FROM (
+				SELECT amount, 'order' AS source_type
+				FROM order_payments, scope
+				WHERE organization_id = $1
+				  AND payment_date >= scope.reset_at
+				UNION ALL
+				SELECT amount, 'quote' AS source_type
+				FROM quote_payments, scope
+				WHERE organization_id = $1
+				  AND payment_date >= scope.reset_at
+			) payments
+		),
+		expense_totals AS (
+			SELECT
+				COALESCE(SUM(amount), 0) AS expenses,
+				COUNT(*) AS expense_count
+			FROM finance_expenses, scope
+			WHERE organization_id = $1
+			  AND expense_date >= scope.reset_at
+		),
+		settings AS (
+			SELECT reset_at, reset_reason
+			FROM finance_settings
+			WHERE organization_id = $1
 		)
 		SELECT
 			ot.total_orders,
 			qt.total_quotes,
 			ot.order_value,
 			qt.quote_value,
-			ot.order_collected + qt.quote_collected AS collected,
+			pt.order_collected + pt.quote_collected AS collected,
+			et.expenses,
 			ot.order_pending + qt.quote_pending AS pending,
 			ot.order_overdue + qt.quote_overdue AS overdue,
-			pc.order_payments_count + pc.quote_payments_count AS payments_count,
-			pc.order_payments_count,
-			pc.quote_payments_count
-		FROM order_totals ot, quote_totals qt, payment_counts pc
+			pt.order_payments_count + pt.quote_payments_count AS payments_count,
+			pt.order_payments_count,
+			pt.quote_payments_count,
+			et.expense_count,
+			s.reset_at,
+			COALESCE(s.reset_reason, '')
+		FROM order_totals ot
+		CROSS JOIN quote_totals qt
+		CROSS JOIN payment_totals pt
+		CROSS JOIN expense_totals et
+		LEFT JOIN settings s ON true
 	`, organizationID).Scan(
 		&summary.TotalOrders,
 		&summary.TotalQuotes,
 		&summary.OrderValue,
 		&summary.QuoteValue,
 		&summary.Collected,
+		&summary.Expenses,
 		&summary.Pending,
 		&summary.Overdue,
 		&summary.PaymentsCount,
 		&summary.OrderPaymentsCount,
 		&summary.QuotePaymentsCount,
+		&summary.ExpenseCount,
+		&resetAt,
+		&resetReason,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	summary.NetProfit = summary.Collected - summary.Expenses
+	if resetAt.Valid {
+		value := resetAt.Time
+		summary.ResetAt = &value
+	}
+	if resetReason.Valid {
+		summary.ResetReason = resetReason.String
 	}
 
 	totalValue := summary.OrderValue + summary.QuoteValue
@@ -708,6 +763,12 @@ func (r *Repository) ListFinancePayments(ctx context.Context, organizationID str
 	}
 
 	rows, err := r.db.Query(ctx, `
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		)
 		SELECT *
 		FROM (
 			SELECT
@@ -724,7 +785,9 @@ func (r *Repository) ListFinancePayments(ctx context.Context, organizationID str
 				op.created_at
 			FROM order_payments op
 			INNER JOIN orders o ON o.id = op.order_id AND o.organization_id = op.organization_id
+			CROSS JOIN scope
 			WHERE op.organization_id = $1
+			  AND op.payment_date >= scope.reset_at
 			UNION ALL
 			SELECT
 				qp.id::text,
@@ -740,7 +803,9 @@ func (r *Repository) ListFinancePayments(ctx context.Context, organizationID str
 				qp.created_at
 			FROM quote_payments qp
 			INNER JOIN quotes q ON q.id = qp.quote_id AND q.organization_id = qp.organization_id
+			CROSS JOIN scope
 			WHERE qp.organization_id = $1
+			  AND qp.payment_date >= scope.reset_at
 		) payments
 		ORDER BY payment_date DESC, created_at DESC
 		LIMIT $2
@@ -795,7 +860,13 @@ func (r *Repository) ListReceivables(ctx context.Context, organizationID, status
 	}
 
 	rows, err := r.db.Query(ctx, `
-		WITH receivables AS (
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		),
+		receivables AS (
 			SELECT
 				id::text,
 				'order' AS type,
@@ -811,8 +882,10 @@ func (r *Repository) ListReceivables(ctx context.Context, organizationID, status
 					WHEN amount_paid > 0 THEN 'partial'
 					ELSE 'pending'
 				END AS status
-			FROM orders
-			WHERE organization_id = $1 AND balance > 0
+			FROM orders, scope
+			WHERE organization_id = $1
+			  AND balance > 0
+			  AND created_at >= scope.reset_at
 			UNION ALL
 			SELECT
 				id::text,
@@ -829,8 +902,10 @@ func (r *Repository) ListReceivables(ctx context.Context, organizationID, status
 					WHEN amount_paid > 0 THEN 'partial'
 					ELSE 'pending'
 				END AS status
-			FROM quotes
-			WHERE organization_id = $1 AND balance > 0
+			FROM quotes, scope
+			WHERE organization_id = $1
+			  AND balance > 0
+			  AND created_at >= scope.reset_at
 		)
 		SELECT
 			id,
@@ -903,14 +978,22 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 	}
 
 	rows, err := r.db.Query(ctx, `
-		WITH payments AS (
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		),
+		payments AS (
 			SELECT payment_date, amount, 'order' AS source_type
-			FROM order_payments
+			FROM order_payments, scope
 			WHERE organization_id = $1
+			  AND payment_date >= scope.reset_at
 			UNION ALL
 			SELECT payment_date, amount, 'quote' AS source_type
-			FROM quote_payments
+			FROM quote_payments, scope
 			WHERE organization_id = $1
+			  AND payment_date >= scope.reset_at
 		)
 		SELECT
 			date_trunc($2, payment_date)::timestamptz AS period_start,
@@ -947,10 +1030,255 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 	return cuts, rows.Err()
 }
 
+func (r *Repository) ListFinanceExpenses(ctx context.Context, organizationID string, limit int) ([]FinanceExpense, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	rows, err := r.db.Query(ctx, `
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		)
+		SELECT
+			id::text,
+			description,
+			category,
+			amount,
+			expense_date,
+			vendor,
+			payment_method,
+			notes,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+		FROM finance_expenses, scope
+		WHERE organization_id = $1
+		  AND expense_date >= scope.reset_at
+		ORDER BY expense_date DESC, created_at DESC
+		LIMIT $2
+	`, organizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	expenses := make([]FinanceExpense, 0)
+	for rows.Next() {
+		var expense FinanceExpense
+		if err := rows.Scan(
+			&expense.ID,
+			&expense.Description,
+			&expense.Category,
+			&expense.Amount,
+			&expense.ExpenseDate,
+			&expense.Vendor,
+			&expense.PaymentMethod,
+			&expense.Notes,
+			&expense.CreatedBy,
+			&expense.CreatedAt,
+			&expense.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		expenses = append(expenses, expense)
+	}
+
+	return expenses, rows.Err()
+}
+
+func (r *Repository) CreateFinanceExpense(ctx context.Context, organizationID, actorUserID string, request CreateFinanceExpenseRequest, expenseDate time.Time) (*FinanceExpense, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	actorUserID = strings.TrimSpace(actorUserID)
+	description := strings.TrimSpace(request.Description)
+	category := normalizeFinanceCategory(request.Category)
+	vendor := strings.TrimSpace(request.Vendor)
+	paymentMethod := strings.TrimSpace(request.PaymentMethod)
+	notes := strings.TrimSpace(request.Notes)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if description == "" {
+		return nil, errors.New("expense description is required")
+	}
+	if request.Amount <= 0 {
+		return nil, errors.New("expense amount must be greater than zero")
+	}
+	if expenseDate.IsZero() {
+		expenseDate = time.Now()
+	}
+
+	var actor interface{}
+	if isUUID(actorUserID) {
+		actor = actorUserID
+	}
+
+	var expense FinanceExpense
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO finance_expenses (
+			organization_id,
+			description,
+			category,
+			amount,
+			expense_date,
+			vendor,
+			payment_method,
+			notes,
+			created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING
+			id::text,
+			description,
+			category,
+			amount,
+			expense_date,
+			vendor,
+			payment_method,
+			notes,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+	`, organizationID, description, category, request.Amount, expenseDate, vendor, paymentMethod, notes, actor).Scan(
+		&expense.ID,
+		&expense.Description,
+		&expense.Category,
+		&expense.Amount,
+		&expense.ExpenseDate,
+		&expense.Vendor,
+		&expense.PaymentMethod,
+		&expense.Notes,
+		&expense.CreatedBy,
+		&expense.CreatedAt,
+		&expense.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &expense, nil
+}
+
+func (r *Repository) DeleteFinanceExpense(ctx context.Context, organizationID, expenseID string) (*FinanceExpense, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	expenseID = strings.TrimSpace(expenseID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if expenseID == "" {
+		return nil, errors.New("expense ID is required")
+	}
+
+	var expense FinanceExpense
+	err := r.db.QueryRow(ctx, `
+		DELETE FROM finance_expenses
+		WHERE organization_id = $1
+		  AND id = $2
+		RETURNING
+			id::text,
+			description,
+			category,
+			amount,
+			expense_date,
+			vendor,
+			payment_method,
+			notes,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+	`, organizationID, expenseID).Scan(
+		&expense.ID,
+		&expense.Description,
+		&expense.Category,
+		&expense.Amount,
+		&expense.ExpenseDate,
+		&expense.Vendor,
+		&expense.PaymentMethod,
+		&expense.Notes,
+		&expense.CreatedBy,
+		&expense.CreatedAt,
+		&expense.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("expense not found")
+		}
+		return nil, err
+	}
+
+	return &expense, nil
+}
+
+func (r *Repository) SetFinanceReset(ctx context.Context, organizationID, actorUserID, reason string) (*FinanceSettings, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	actorUserID = strings.TrimSpace(actorUserID)
+	reason = strings.TrimSpace(reason)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+
+	var actor interface{}
+	if isUUID(actorUserID) {
+		actor = actorUserID
+	}
+
+	var settings FinanceSettings
+	var resetAt sql.NullTime
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO finance_settings (
+			organization_id,
+			reset_at,
+			reset_by,
+			reset_reason
+		) VALUES ($1, NOW(), $2, $3)
+		ON CONFLICT (organization_id) DO UPDATE
+		SET reset_at = EXCLUDED.reset_at,
+		    reset_by = EXCLUDED.reset_by,
+		    reset_reason = EXCLUDED.reset_reason,
+		    updated_at = NOW()
+		RETURNING
+			organization_id::text,
+			reset_at,
+			COALESCE(reset_by::text, '') AS reset_by,
+			reset_reason,
+			updated_at
+	`, organizationID, actor, reason).Scan(
+		&settings.OrganizationID,
+		&resetAt,
+		&settings.ResetBy,
+		&settings.ResetReason,
+		&settings.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if resetAt.Valid {
+		value := resetAt.Time
+		settings.ResetAt = &value
+	}
+
+	return &settings, nil
+}
+
 func normalizeSlug(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "-")
 	value = strings.Trim(value, "-")
+	return value
+}
+
+func normalizeFinanceCategory(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "_")
+	value = strings.Trim(value, "_")
+	if value == "" {
+		return "operacion"
+	}
 	return value
 }
 

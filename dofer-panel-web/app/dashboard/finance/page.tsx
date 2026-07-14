@@ -1,8 +1,21 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CalendarDays, CreditCard, DollarSign, RefreshCw, TrendingUp, WalletCards } from 'lucide-react'
+import {
+  AlertCircle,
+  CalendarDays,
+  CreditCard,
+  DollarSign,
+  Eraser,
+  Plus,
+  ReceiptText,
+  RefreshCw,
+  ShieldAlert,
+  Trash2,
+  TrendingUp,
+  WalletCards,
+} from 'lucide-react'
 
 import EmptyState from '@/components/dashboard/EmptyState'
 import LoadingState from '@/components/dashboard/LoadingState'
@@ -20,12 +33,17 @@ interface FinanceSummary {
   order_value: number
   quote_value: number
   collected: number
+  expenses: number
+  net_profit: number
   pending: number
   overdue: number
   collection_rate: number
   payments_count: number
   order_payments_count: number
   quote_payments_count: number
+  expense_count: number
+  reset_at?: string
+  reset_reason: string
 }
 
 interface FinancePayment {
@@ -64,6 +82,30 @@ interface FinanceCut {
   payments_count: number
 }
 
+interface FinanceExpense {
+  id: string
+  description: string
+  category: string
+  amount: number
+  expense_date: string
+  vendor: string
+  payment_method: string
+  notes: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+interface ExpenseFormState {
+  description: string
+  category: string
+  amount: string
+  expense_date: string
+  vendor: string
+  payment_method: string
+  notes: string
+}
+
 type ReceivableFilter = 'all' | 'pending' | 'partial' | 'overdue'
 type CutPeriod = 'day' | 'week' | 'month'
 
@@ -85,6 +127,30 @@ const cutPeriods: Array<{ value: CutPeriod; label: string }> = [
   { value: 'month', label: 'Mensual' },
 ]
 
+const expenseCategories: Array<{ value: string; label: string }> = [
+  { value: 'materiales', label: 'Materiales' },
+  { value: 'envios', label: 'Envios' },
+  { value: 'nomina', label: 'Nomina' },
+  { value: 'renta', label: 'Renta' },
+  { value: 'software', label: 'Software' },
+  { value: 'mantenimiento', label: 'Mantenimiento' },
+  { value: 'operacion', label: 'Operacion' },
+  { value: 'otros', label: 'Otros' },
+]
+
+const defaultExpenseForm = (): ExpenseFormState => ({
+  description: '',
+  category: 'materiales',
+  amount: '',
+  expense_date: toDateInputValue(new Date()),
+  vendor: '',
+  payment_method: '',
+  notes: '',
+})
+
+const fieldClass =
+  'w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60'
+
 const statusLabels: Record<string, string> = {
   overdue: 'Vencido',
   partial: 'Parcial',
@@ -97,11 +163,20 @@ export default function FinancePage() {
   const [payments, setPayments] = useState<FinancePayment[]>([])
   const [receivables, setReceivables] = useState<Receivable[]>([])
   const [cuts, setCuts] = useState<FinanceCut[]>([])
+  const [expenses, setExpenses] = useState<FinanceExpense[]>([])
+  const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(() => defaultExpenseForm())
   const [receivableFilter, setReceivableFilter] = useState<ReceivableFilter>('all')
   const [cutPeriod, setCutPeriod] = useState<CutPeriod>('week')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [expenseSaving, setExpenseSaving] = useState(false)
+  const [deletingExpenseID, setDeletingExpenseID] = useState<string | null>(null)
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  const [clearPassword, setClearPassword] = useState('')
+  const [clearReason, setClearReason] = useState('')
+  const [clearing, setClearing] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const totalValue = useMemo(() => (summary ? summary.order_value + summary.quote_value : 0), [summary])
 
@@ -110,7 +185,7 @@ export default function FinancePage() {
     setApiError(null)
 
     try {
-      const [summaryData, paymentsData, receivablesData, cutsData] = await Promise.all([
+      const [summaryData, paymentsData, receivablesData, cutsData, expensesData] = await Promise.all([
         apiClient.get<FinanceSummary>('/admin/finance/summary'),
         apiClient.get<{ payments: FinancePayment[] }>('/admin/finance/payments', { params: { limit: 100 } }),
         apiClient.get<{ receivables: Receivable[] }>('/admin/finance/receivables', {
@@ -125,11 +200,13 @@ export default function FinancePage() {
             limit: 18,
           },
         }),
+        apiClient.get<{ expenses: FinanceExpense[] }>('/admin/finance/expenses', { params: { limit: 100 } }),
       ])
       setSummary(summaryData)
       setPayments(paymentsData.payments || [])
       setReceivables(receivablesData.receivables || [])
       setCuts(cutsData.cuts || [])
+      setExpenses(expensesData.expenses || [])
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'No se pudo cargar finanzas'))
     } finally {
@@ -142,6 +219,81 @@ export default function FinancePage() {
     void loadFinance()
   }, [loadFinance])
 
+  const handleCreateExpense = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setApiError(null)
+    setSuccessMessage(null)
+
+    const amount = Number(expenseForm.amount)
+    if (!expenseForm.description.trim()) {
+      setApiError('Describe el gasto antes de guardarlo.')
+      return
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setApiError('El monto del gasto debe ser mayor a cero.')
+      return
+    }
+
+    setExpenseSaving(true)
+    try {
+      await apiClient.post<FinanceExpense>('/admin/finance/expenses', {
+        ...expenseForm,
+        amount,
+      })
+      setExpenseForm(defaultExpenseForm())
+      setSuccessMessage('Gasto registrado.')
+      await loadFinance(true)
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo registrar el gasto'))
+    } finally {
+      setExpenseSaving(false)
+    }
+  }
+
+  const handleDeleteExpense = async (expenseID: string) => {
+    setApiError(null)
+    setSuccessMessage(null)
+    setDeletingExpenseID(expenseID)
+
+    try {
+      await apiClient.delete(`/admin/finance/expenses/${expenseID}`)
+      setSuccessMessage('Gasto eliminado.')
+      await loadFinance(true)
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo eliminar el gasto'))
+    } finally {
+      setDeletingExpenseID(null)
+    }
+  }
+
+  const handleClearFinance = async () => {
+    setApiError(null)
+    setSuccessMessage(null)
+
+    if (!clearPassword.trim()) {
+      setApiError('Ingresa tu contrasena para limpiar finanzas.')
+      return
+    }
+
+    setClearing(true)
+    try {
+      await apiClient.post('/admin/finance/clear', {
+        password: clearPassword,
+        reason: clearReason,
+      })
+      setClearDialogOpen(false)
+      setClearPassword('')
+      setClearReason('')
+      setExpenseForm(defaultExpenseForm())
+      setSuccessMessage('Finanzas limpiadas. El nuevo periodo inicia desde este momento.')
+      await loadFinance(true)
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo limpiar finanzas'))
+    } finally {
+      setClearing(false)
+    }
+  }
+
   if (loading) {
     return <LoadingState label="Cargando finanzas..." />
   }
@@ -153,22 +305,50 @@ export default function FinancePage() {
         badge="Cobranza"
         description="Resumen de pagos, saldos por cobrar, alertas vencidas y cortes operativos."
         actions={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void loadFinance(true)}
-            disabled={refreshing}
-            className="bg-white/15 text-white hover:bg-white/25"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setClearDialogOpen(true)}
+              disabled={clearing}
+              className="bg-red-500/90 text-white hover:bg-red-500"
+            >
+              <Eraser className="h-4 w-4" />
+              Limpiar
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void loadFinance(true)}
+              disabled={refreshing}
+              className="bg-white/15 text-white hover:bg-white/25"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
+          </>
         }
       />
 
       {apiError && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           {apiError}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+          {successMessage}
+        </div>
+      )}
+
+      {summary?.reset_at && (
+        <div className="flex flex-col gap-2 rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-900 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2 font-medium">
+            <ShieldAlert className="h-4 w-4" />
+            Periodo financiero iniciado el {formatDateTime(summary.reset_at)}
+          </div>
+          {summary.reset_reason && <span className="text-cyan-800">{summary.reset_reason}</span>}
         </div>
       )}
 
@@ -184,14 +364,16 @@ export default function FinancePage() {
 
       {summary && (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
             <FinanceMetric label="Valor total" value={currency.format(totalValue)} icon={<DollarSign className="h-4 w-4" />} />
             <FinanceMetric label="Cobrado" value={currency.format(summary.collected)} icon={<WalletCards className="h-4 w-4" />} accent="text-emerald-600" />
+            <FinanceMetric label="Gastos" value={currency.format(summary.expenses)} icon={<ReceiptText className="h-4 w-4" />} accent="text-red-600" />
+            <FinanceMetric label="Utilidad" value={currency.format(summary.net_profit)} icon={<TrendingUp className="h-4 w-4" />} accent={summary.net_profit >= 0 ? 'text-cyan-700' : 'text-red-600'} />
             <FinanceMetric label="Por cobrar" value={currency.format(summary.pending)} icon={<CreditCard className="h-4 w-4" />} accent="text-amber-600" />
             <FinanceMetric label="Vencido" value={currency.format(summary.overdue)} icon={<TrendingUp className="h-4 w-4" />} accent="text-red-600" />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <PanelCard>
               <p className="text-sm text-muted-foreground">Tasa de cobranza</p>
               <p className="mt-2 text-3xl font-semibold">{summary.collection_rate.toFixed(1)}%</p>
@@ -201,12 +383,165 @@ export default function FinancePage() {
               <p className="mt-2 text-3xl font-semibold">{summary.payments_count}</p>
             </PanelCard>
             <PanelCard>
+              <p className="text-sm text-muted-foreground">Gastos registrados</p>
+              <p className="mt-2 text-3xl font-semibold">{summary.expense_count}</p>
+            </PanelCard>
+            <PanelCard>
               <p className="text-sm text-muted-foreground">Documentos con valor</p>
               <p className="mt-2 text-3xl font-semibold">{summary.total_orders + summary.total_quotes}</p>
             </PanelCard>
           </div>
         </>
       )}
+
+      <section className="space-y-3">
+        <SectionTitle icon={<ReceiptText className="h-5 w-5" />} title="Gastos de Dofer" />
+
+        <PanelCard>
+          <form onSubmit={handleCreateExpense} className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+            <label className="space-y-1 lg:col-span-4">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Descripcion</span>
+              <input
+                className={fieldClass}
+                value={expenseForm.description}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, description: event.target.value }))}
+                placeholder="Filamento PLA, renta, envio..."
+                disabled={expenseSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Categoria</span>
+              <select
+                className={fieldClass}
+                value={expenseForm.category}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, category: event.target.value }))}
+                disabled={expenseSaving}
+              >
+                {expenseCategories.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Monto</span>
+              <input
+                className={fieldClass}
+                type="number"
+                min="0"
+                step="0.01"
+                value={expenseForm.amount}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, amount: event.target.value }))}
+                disabled={expenseSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</span>
+              <input
+                className={fieldClass}
+                type="date"
+                value={expenseForm.expense_date}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, expense_date: event.target.value }))}
+                disabled={expenseSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Proveedor</span>
+              <input
+                className={fieldClass}
+                value={expenseForm.vendor}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, vendor: event.target.value }))}
+                disabled={expenseSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metodo</span>
+              <input
+                className={fieldClass}
+                value={expenseForm.payment_method}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, payment_method: event.target.value }))}
+                placeholder="Efectivo, transferencia, tarjeta..."
+                disabled={expenseSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-7">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notas</span>
+              <input
+                className={fieldClass}
+                value={expenseForm.notes}
+                onChange={(event) => setExpenseForm((prev) => ({ ...prev, notes: event.target.value }))}
+                disabled={expenseSaving}
+              />
+            </label>
+
+            <div className="flex items-end lg:col-span-2">
+              <Button type="submit" className="w-full" disabled={expenseSaving}>
+                <Plus className="h-4 w-4" />
+                {expenseSaving ? 'Guardando...' : 'Agregar'}
+              </Button>
+            </div>
+          </form>
+        </PanelCard>
+
+        {expenses.length === 0 ? (
+          <EmptyState
+            title="Sin gastos registrados"
+            description="Los gastos operativos capturados apareceran aqui."
+            icon={<ReceiptText className="h-5 w-5" />}
+          />
+        ) : (
+          <TableShell>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/35">
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Gasto</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Categoria</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Proveedor</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Monto</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Accion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((expense) => (
+                  <tr key={expense.id} className="border-b last:border-0">
+                    <td className="px-4 py-4">
+                      <div className="font-medium">{expense.description}</div>
+                      {expense.notes && <div className="mt-1 text-xs text-muted-foreground">{expense.notes}</div>}
+                    </td>
+                    <td className="px-4 py-4">
+                      <Badge variant="outline">{expenseCategoryLabel(expense.category)}</Badge>
+                    </td>
+                    <td className="px-4 py-4 text-muted-foreground">{expense.vendor || expense.payment_method || 'Sin detalle'}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{formatDate(expense.expense_date)}</td>
+                    <td className="px-4 py-4 text-right font-semibold text-red-600">{currency.format(expense.amount)}</td>
+                    <td className="px-4 py-4 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Eliminar gasto"
+                        onClick={() => void handleDeleteExpense(expense.id)}
+                        disabled={deletingExpenseID === expense.id}
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        )}
+      </section>
 
       <section className="space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -366,6 +701,73 @@ export default function FinancePage() {
           </TableShell>
         )}
       </section>
+
+      {clearDialogOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="rounded-full bg-red-50 p-2 text-red-600">
+                <ShieldAlert className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold">Limpiar finanzas</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Se ocultaran pagos, gastos y cortes anteriores a este momento. Los pedidos y cotizaciones no se borran.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <label className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Contrasena</span>
+                <input
+                  className={fieldClass}
+                  type="password"
+                  value={clearPassword}
+                  onChange={(event) => setClearPassword(event.target.value)}
+                  disabled={clearing}
+                  autoFocus
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Motivo</span>
+                <input
+                  className={fieldClass}
+                  value={clearReason}
+                  onChange={(event) => setClearReason(event.target.value)}
+                  disabled={clearing}
+                  placeholder="Cierre de mes, reinicio operativo..."
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setClearDialogOpen(false)
+                  setClearPassword('')
+                  setClearReason('')
+                }}
+                disabled={clearing}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void handleClearFinance()}
+                disabled={clearing || !clearPassword.trim()}
+              >
+                <Eraser className="h-4 w-4" />
+                {clearing ? 'Limpiando...' : 'Limpiar'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -422,6 +824,27 @@ function formatDate(value: string) {
     month: 'short',
     year: 'numeric',
   })
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function toDateInputValue(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function expenseCategoryLabel(value: string) {
+  return expenseCategories.find((category) => category.value === value)?.label || value || 'Operacion'
 }
 
 function formatPeriod(value: string, period: CutPeriod) {

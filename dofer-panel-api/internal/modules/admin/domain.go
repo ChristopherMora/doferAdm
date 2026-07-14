@@ -90,17 +90,22 @@ type OrganizationBreakdown struct {
 }
 
 type FinanceSummary struct {
-	TotalOrders        int     `json:"total_orders"`
-	TotalQuotes        int     `json:"total_quotes"`
-	OrderValue         float64 `json:"order_value"`
-	QuoteValue         float64 `json:"quote_value"`
-	Collected          float64 `json:"collected"`
-	Pending            float64 `json:"pending"`
-	Overdue            float64 `json:"overdue"`
-	CollectionRate     float64 `json:"collection_rate"`
-	PaymentsCount      int     `json:"payments_count"`
-	OrderPaymentsCount int     `json:"order_payments_count"`
-	QuotePaymentsCount int     `json:"quote_payments_count"`
+	TotalOrders        int        `json:"total_orders"`
+	TotalQuotes        int        `json:"total_quotes"`
+	OrderValue         float64    `json:"order_value"`
+	QuoteValue         float64    `json:"quote_value"`
+	Collected          float64    `json:"collected"`
+	Expenses           float64    `json:"expenses"`
+	NetProfit          float64    `json:"net_profit"`
+	Pending            float64    `json:"pending"`
+	Overdue            float64    `json:"overdue"`
+	CollectionRate     float64    `json:"collection_rate"`
+	PaymentsCount      int        `json:"payments_count"`
+	OrderPaymentsCount int        `json:"order_payments_count"`
+	QuotePaymentsCount int        `json:"quote_payments_count"`
+	ExpenseCount       int        `json:"expense_count"`
+	ResetAt            *time.Time `json:"reset_at,omitempty"`
+	ResetReason        string     `json:"reset_reason"`
 }
 
 type FinancePayment struct {
@@ -160,4 +165,41 @@ type FinanceCut struct {
 	QuotePayments  float64   `json:"quote_payments"`
 	TotalCollected float64   `json:"total_collected"`
 	PaymentsCount  int       `json:"payments_count"`
+}
+
+type FinanceExpense struct {
+	ID            string    `json:"id"`
+	Description   string    `json:"description"`
+	Category      string    `json:"category"`
+	Amount        float64   `json:"amount"`
+	ExpenseDate   time.Time `json:"expense_date"`
+	Vendor        string    `json:"vendor"`
+	PaymentMethod string    `json:"payment_method"`
+	Notes         string    `json:"notes"`
+	CreatedBy     string    `json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type CreateFinanceExpenseRequest struct {
+	Description   string  `json:"description"`
+	Category      string  `json:"category"`
+	Amount        float64 `json:"amount"`
+	ExpenseDate   string  `json:"expense_date"`
+	Vendor        string  `json:"vendor"`
+	PaymentMethod string  `json:"payment_method"`
+	Notes         string  `json:"notes"`
+}
+
+type ClearFinanceRequest struct {
+	Password string `json:"password"`
+	Reason   string `json:"reason"`
+}
+
+type FinanceSettings struct {
+	OrganizationID string     `json:"organization_id"`
+	ResetAt        *time.Time `json:"reset_at,omitempty"`
+	ResetBy        string     `json:"reset_by"`
+	ResetReason    string     `json:"reset_reason"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }

@@ -244,7 +244,11 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 
 	// Setup admin handler
 	adminRepo := admin.NewRepository(db)
-	adminHandler := admin.NewHandler(adminRepo)
+	passwordVerificationKey := cfg.SupabaseAnonKey
+	if passwordVerificationKey == "" {
+		passwordVerificationKey = cfg.SupabaseServiceRoleKey
+	}
+	adminHandler := admin.NewHandler(adminRepo, admin.NewSupabasePasswordVerifier(cfg.SupabaseURL, passwordVerificationKey))
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
