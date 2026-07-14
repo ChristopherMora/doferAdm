@@ -200,6 +200,9 @@ const actionLabels: Record<string, string> = {
   'finance_external_incomes.deleted': 'Ingreso externo eliminado',
   'finance_expenses.created': 'Gasto financiero creado',
   'finance_expenses.deleted': 'Gasto financiero eliminado',
+  'finance_withdrawals.created': 'Retiro personal creado',
+  'finance_withdrawals.deleted': 'Retiro personal eliminado',
+  'finance.monthly_goal_updated': 'Meta mensual actualizada',
   'finance.cleared': 'Finanzas limpiadas',
 }
 

@@ -90,25 +90,32 @@ type OrganizationBreakdown struct {
 }
 
 type FinanceSummary struct {
-	TotalOrders        int        `json:"total_orders"`
-	TotalQuotes        int        `json:"total_quotes"`
-	OrderValue         float64    `json:"order_value"`
-	QuoteValue         float64    `json:"quote_value"`
-	Collected          float64    `json:"collected"`
-	ExternalIncome     float64    `json:"external_income"`
-	TotalIncome        float64    `json:"total_income"`
-	Expenses           float64    `json:"expenses"`
-	NetProfit          float64    `json:"net_profit"`
-	Pending            float64    `json:"pending"`
-	Overdue            float64    `json:"overdue"`
-	CollectionRate     float64    `json:"collection_rate"`
-	PaymentsCount      int        `json:"payments_count"`
-	OrderPaymentsCount int        `json:"order_payments_count"`
-	QuotePaymentsCount int        `json:"quote_payments_count"`
-	IncomeCount        int        `json:"income_count"`
-	ExpenseCount       int        `json:"expense_count"`
-	ResetAt            *time.Time `json:"reset_at,omitempty"`
-	ResetReason        string     `json:"reset_reason"`
+	TotalOrders          int        `json:"total_orders"`
+	TotalQuotes          int        `json:"total_quotes"`
+	OrderValue           float64    `json:"order_value"`
+	QuoteValue           float64    `json:"quote_value"`
+	Collected            float64    `json:"collected"`
+	ExternalIncome       float64    `json:"external_income"`
+	TotalIncome          float64    `json:"total_income"`
+	Expenses             float64    `json:"expenses"`
+	NetProfit            float64    `json:"net_profit"`
+	PersonalWithdrawals  float64    `json:"personal_withdrawals"`
+	AvailableCash        float64    `json:"available_cash"`
+	MonthlyIncome        float64    `json:"monthly_income"`
+	MonthlyGoal          float64    `json:"monthly_goal"`
+	MonthlyGoalProgress  float64    `json:"monthly_goal_progress"`
+	MonthlyGoalRemaining float64    `json:"monthly_goal_remaining"`
+	Pending              float64    `json:"pending"`
+	Overdue              float64    `json:"overdue"`
+	CollectionRate       float64    `json:"collection_rate"`
+	PaymentsCount        int        `json:"payments_count"`
+	OrderPaymentsCount   int        `json:"order_payments_count"`
+	QuotePaymentsCount   int        `json:"quote_payments_count"`
+	IncomeCount          int        `json:"income_count"`
+	ExpenseCount         int        `json:"expense_count"`
+	WithdrawalCount      int        `json:"withdrawal_count"`
+	ResetAt              *time.Time `json:"reset_at,omitempty"`
+	ResetReason          string     `json:"reset_reason"`
 }
 
 type FinancePayment struct {
@@ -219,6 +226,37 @@ type CreateFinanceExpenseRequest struct {
 	Notes         string  `json:"notes"`
 }
 
+type FinanceWithdrawal struct {
+	ID             string    `json:"id"`
+	Amount         float64   `json:"amount"`
+	WithdrawalDate time.Time `json:"withdrawal_date"`
+	Reason         string    `json:"reason"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type CreateFinanceWithdrawalRequest struct {
+	Amount         float64 `json:"amount"`
+	WithdrawalDate string  `json:"withdrawal_date"`
+	Reason         string  `json:"reason"`
+}
+
+type FinanceHistoryEntry struct {
+	ID               string    `json:"id"`
+	Type             string    `json:"type"`
+	Category         string    `json:"category"`
+	Description      string    `json:"description"`
+	Amount           float64   `json:"amount"`
+	SignedAmount     float64   `json:"signed_amount"`
+	MovementDate     time.Time `json:"movement_date"`
+	BalanceRemaining float64   `json:"balance_remaining"`
+}
+
+type UpdateFinanceMonthlyGoalRequest struct {
+	Amount float64 `json:"amount"`
+}
+
 type ClearFinanceRequest struct {
 	Password string `json:"password"`
 	Reason   string `json:"reason"`
@@ -229,5 +267,6 @@ type FinanceSettings struct {
 	ResetAt        *time.Time `json:"reset_at,omitempty"`
 	ResetBy        string     `json:"reset_by"`
 	ResetReason    string     `json:"reset_reason"`
+	MonthlyGoal    float64    `json:"monthly_goal"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }

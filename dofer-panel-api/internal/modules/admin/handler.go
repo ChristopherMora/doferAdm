@@ -37,12 +37,17 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Get("/finance/payments", h.ListFinancePayments)
 		r.Get("/finance/receivables", h.ListReceivables)
 		r.Get("/finance/cuts", h.ListFinanceCuts)
+		r.Get("/finance/history", h.ListFinanceHistory)
+		r.Patch("/finance/monthly-goal", h.UpdateFinanceMonthlyGoal)
 		r.Get("/finance/incomes", h.ListFinanceIncomes)
 		r.Post("/finance/incomes", h.CreateFinanceIncome)
 		r.Delete("/finance/incomes/{incomeID}", h.DeleteFinanceIncome)
 		r.Get("/finance/expenses", h.ListFinanceExpenses)
 		r.Post("/finance/expenses", h.CreateFinanceExpense)
 		r.Delete("/finance/expenses/{expenseID}", h.DeleteFinanceExpense)
+		r.Get("/finance/withdrawals", h.ListFinanceWithdrawals)
+		r.Post("/finance/withdrawals", h.CreateFinanceWithdrawal)
+		r.Delete("/finance/withdrawals/{withdrawalID}", h.DeleteFinanceWithdrawal)
 		r.Post("/finance/clear", h.ClearFinance)
 	})
 }
@@ -291,6 +296,60 @@ func (h *Handler) ListFinanceCuts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ListFinanceHistory(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	history, err := h.repo.ListFinanceHistory(r.Context(), organizationID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"history": history,
+		"total":   len(history),
+	})
+}
+
+func (h *Handler) UpdateFinanceMonthlyGoal(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	var request UpdateFinanceMonthlyGoalRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if request.Amount < 0 {
+		http.Error(w, "monthly goal must be zero or greater", http.StatusBadRequest)
+		return
+	}
+
+	settings, err := h.repo.UpdateFinanceMonthlyGoal(r.Context(), organizationID, request.Amount)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "finance.monthly_goal_updated", "finance_settings", organizationID, map[string]interface{}{
+			"monthly_goal": settings.MonthlyGoal,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(settings)
+}
+
 func (h *Handler) ListFinanceExpenses(w http.ResponseWriter, r *http.Request) {
 	organizationID, ok := organizationIDFromRequest(r)
 	if !ok {
@@ -309,6 +368,27 @@ func (h *Handler) ListFinanceExpenses(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"expenses": expenses,
 		"total":    len(expenses),
+	})
+}
+
+func (h *Handler) ListFinanceWithdrawals(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	withdrawals, err := h.repo.ListFinanceWithdrawals(r.Context(), organizationID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"withdrawals": withdrawals,
+		"total":       len(withdrawals),
 	})
 }
 
@@ -370,6 +450,73 @@ func (h *Handler) CreateFinanceIncome(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(income)
+}
+
+func (h *Handler) CreateFinanceWithdrawal(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	var request CreateFinanceWithdrawalRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	withdrawalDate, err := parseFinanceMovementDate(request.WithdrawalDate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	actorUserID, _ := middleware.UserIDFromContext(r.Context())
+	withdrawal, err := h.repo.CreateFinanceWithdrawal(r.Context(), organizationID, actorUserID, request, withdrawalDate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if actorUserID != "" {
+		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "finance_withdrawals.created", "finance_withdrawal", withdrawal.ID, map[string]interface{}{
+			"amount":          withdrawal.Amount,
+			"reason":          withdrawal.Reason,
+			"withdrawal_date": withdrawal.WithdrawalDate,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(withdrawal)
+}
+
+func (h *Handler) DeleteFinanceWithdrawal(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	withdrawalID := strings.TrimSpace(chi.URLParam(r, "withdrawalID"))
+	withdrawal, err := h.repo.DeleteFinanceWithdrawal(r.Context(), organizationID, withdrawalID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "finance_withdrawals.deleted", "finance_withdrawal", withdrawal.ID, map[string]interface{}{
+			"amount":          withdrawal.Amount,
+			"reason":          withdrawal.Reason,
+			"withdrawal_date": withdrawal.WithdrawalDate,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"message":    "Withdrawal deleted successfully",
+		"withdrawal": withdrawal,
+	})
 }
 
 func (h *Handler) DeleteFinanceIncome(w http.ResponseWriter, r *http.Request) {

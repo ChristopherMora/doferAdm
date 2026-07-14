@@ -639,16 +639,41 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 	var resetAt sql.NullTime
 	var resetReason sql.NullString
 	err := r.db.QueryRow(ctx, `
-		WITH scope AS (
-			SELECT COALESCE(
-				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
-				'-infinity'::timestamptz
-			) AS reset_at
-		),
-		order_totals AS (
-			SELECT
-				COUNT(*) AS total_orders,
-				COALESCE(SUM(amount), 0) AS order_value,
+			WITH scope AS (
+				SELECT COALESCE(
+					(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+					'-infinity'::timestamptz
+				) AS reset_at
+			),
+			income_movements AS (
+				SELECT
+					amount,
+					'order' AS source_type,
+					CASE WHEN payment_date >= scope.reset_at THEN payment_date ELSE created_at END AS movement_date
+				FROM order_payments, scope
+				WHERE organization_id = $1
+				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
+				UNION ALL
+				SELECT
+					amount,
+					'quote' AS source_type,
+					CASE WHEN payment_date >= scope.reset_at THEN payment_date ELSE created_at END AS movement_date
+				FROM quote_payments, scope
+				WHERE organization_id = $1
+				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
+				UNION ALL
+				SELECT
+					amount,
+					'external' AS source_type,
+					CASE WHEN income_date >= scope.reset_at THEN income_date ELSE created_at END AS movement_date
+				FROM finance_external_incomes, scope
+				WHERE organization_id = $1
+				  AND (income_date >= scope.reset_at OR created_at >= scope.reset_at)
+			),
+			order_totals AS (
+				SELECT
+					COUNT(*) AS total_orders,
+					COALESCE(SUM(amount), 0) AS order_value,
 				COALESCE(SUM(GREATEST(balance, 0)), 0) AS order_pending,
 				COALESCE(SUM(CASE WHEN delivery_deadline < NOW() AND balance > 0 THEN balance ELSE 0 END), 0) AS order_overdue
 			FROM orders, scope
@@ -663,78 +688,81 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 				COALESCE(SUM(CASE WHEN valid_until < NOW() AND balance > 0 THEN balance ELSE 0 END), 0) AS quote_overdue
 			FROM quotes, scope
 			WHERE organization_id = $1
-			  AND created_at >= scope.reset_at
-		),
-		payment_totals AS (
-			SELECT
-				COALESCE(SUM(amount) FILTER (WHERE source_type = 'order'), 0) AS order_collected,
-				COALESCE(SUM(amount) FILTER (WHERE source_type = 'quote'), 0) AS quote_collected,
-				COUNT(*) FILTER (WHERE source_type = 'order') AS order_payments_count,
-				COUNT(*) FILTER (WHERE source_type = 'quote') AS quote_payments_count
-			FROM (
-				SELECT amount, 'order' AS source_type
-				FROM order_payments, scope
-				WHERE organization_id = $1
-				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
-				UNION ALL
-				SELECT amount, 'quote' AS source_type
-				FROM quote_payments, scope
-				WHERE organization_id = $1
-				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
-			) payments
-		),
-		external_income_totals AS (
-			SELECT
-				COALESCE(SUM(amount), 0) AS external_income,
-				COUNT(*) AS income_count
-			FROM finance_external_incomes, scope
-			WHERE organization_id = $1
-			  AND (income_date >= scope.reset_at OR created_at >= scope.reset_at)
-		),
-		expense_totals AS (
-			SELECT
-				COALESCE(SUM(amount), 0) AS expenses,
+				  AND created_at >= scope.reset_at
+			),
+			payment_totals AS (
+				SELECT
+					COALESCE(SUM(amount) FILTER (WHERE source_type IN ('order', 'quote')), 0) AS collected,
+					COALESCE(SUM(amount) FILTER (WHERE source_type = 'external'), 0) AS external_income,
+					COALESCE(SUM(amount), 0) AS total_income,
+					COALESCE(SUM(amount) FILTER (WHERE movement_date >= date_trunc('month', NOW())), 0) AS monthly_income,
+					COUNT(*) FILTER (WHERE source_type = 'order') AS order_payments_count,
+					COUNT(*) FILTER (WHERE source_type = 'quote') AS quote_payments_count,
+					COUNT(*) FILTER (WHERE source_type = 'external') AS external_income_count,
+					COUNT(*) AS income_count
+				FROM income_movements
+			),
+			expense_totals AS (
+				SELECT
+					COALESCE(SUM(amount), 0) AS expenses,
 				COUNT(*) AS expense_count
 			FROM finance_expenses, scope
-			WHERE organization_id = $1
-			  AND (expense_date >= scope.reset_at OR created_at >= scope.reset_at)
-		),
-		settings AS (
-			SELECT reset_at, reset_reason
-			FROM finance_settings
-			WHERE organization_id = $1
-		)
-		SELECT
-			ot.total_orders,
-			qt.total_quotes,
-			ot.order_value,
-			qt.quote_value,
-			pt.order_collected + pt.quote_collected AS collected,
-			it.external_income,
-			et.expenses,
-			ot.order_pending + qt.quote_pending AS pending,
-			ot.order_overdue + qt.quote_overdue AS overdue,
-			pt.order_payments_count + pt.quote_payments_count AS payments_count,
-			pt.order_payments_count,
-			pt.quote_payments_count,
-			it.income_count,
-			et.expense_count,
-			s.reset_at,
-			COALESCE(s.reset_reason, '')
-		FROM order_totals ot
-		CROSS JOIN quote_totals qt
-		CROSS JOIN payment_totals pt
-		CROSS JOIN external_income_totals it
-		CROSS JOIN expense_totals et
-		LEFT JOIN settings s ON true
-	`, organizationID).Scan(
+				WHERE organization_id = $1
+				  AND (expense_date >= scope.reset_at OR created_at >= scope.reset_at)
+			),
+			withdrawal_totals AS (
+				SELECT
+					COALESCE(SUM(amount), 0) AS personal_withdrawals,
+					COUNT(*) AS withdrawal_count
+				FROM finance_withdrawals, scope
+				WHERE organization_id = $1
+				  AND (withdrawal_date >= scope.reset_at OR created_at >= scope.reset_at)
+			),
+			settings AS (
+				SELECT reset_at, reset_reason, monthly_goal_amount
+				FROM finance_settings
+				WHERE organization_id = $1
+			)
+			SELECT
+				ot.total_orders,
+				qt.total_quotes,
+				ot.order_value,
+				qt.quote_value,
+				pt.collected,
+				pt.external_income,
+				pt.total_income,
+				et.expenses,
+				wt.personal_withdrawals,
+				pt.monthly_income,
+				COALESCE(s.monthly_goal_amount, 30000),
+				ot.order_pending + qt.quote_pending AS pending,
+				ot.order_overdue + qt.quote_overdue AS overdue,
+				pt.order_payments_count + pt.quote_payments_count AS payments_count,
+				pt.order_payments_count,
+				pt.quote_payments_count,
+				pt.income_count,
+				et.expense_count,
+				wt.withdrawal_count,
+				s.reset_at,
+				COALESCE(s.reset_reason, '')
+			FROM order_totals ot
+			CROSS JOIN quote_totals qt
+			CROSS JOIN payment_totals pt
+			CROSS JOIN expense_totals et
+			CROSS JOIN withdrawal_totals wt
+			LEFT JOIN settings s ON true
+		`, organizationID).Scan(
 		&summary.TotalOrders,
 		&summary.TotalQuotes,
 		&summary.OrderValue,
 		&summary.QuoteValue,
 		&summary.Collected,
 		&summary.ExternalIncome,
+		&summary.TotalIncome,
 		&summary.Expenses,
+		&summary.PersonalWithdrawals,
+		&summary.MonthlyIncome,
+		&summary.MonthlyGoal,
 		&summary.Pending,
 		&summary.Overdue,
 		&summary.PaymentsCount,
@@ -742,6 +770,7 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 		&summary.QuotePaymentsCount,
 		&summary.IncomeCount,
 		&summary.ExpenseCount,
+		&summary.WithdrawalCount,
 		&resetAt,
 		&resetReason,
 	)
@@ -749,8 +778,15 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 		return nil, err
 	}
 
-	summary.TotalIncome = summary.Collected + summary.ExternalIncome
 	summary.NetProfit = summary.TotalIncome - summary.Expenses
+	summary.AvailableCash = summary.NetProfit - summary.PersonalWithdrawals
+	summary.MonthlyGoalRemaining = summary.MonthlyGoal - summary.MonthlyIncome
+	if summary.MonthlyGoalRemaining < 0 {
+		summary.MonthlyGoalRemaining = 0
+	}
+	if summary.MonthlyGoal > 0 {
+		summary.MonthlyGoalProgress = (summary.MonthlyIncome / summary.MonthlyGoal) * 100
+	}
 	if resetAt.Valid {
 		value := resetAt.Time
 		summary.ResetAt = &value
@@ -1060,6 +1096,147 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 	}
 
 	return cuts, rows.Err()
+}
+
+func (r *Repository) ListFinanceHistory(ctx context.Context, organizationID string, limit int) ([]FinanceHistoryEntry, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+
+	rows, err := r.db.Query(ctx, `
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		),
+		movements AS (
+			SELECT
+				op.id::text AS id,
+				'income' AS type,
+				'pedidos' AS category,
+				CONCAT(o.order_number, ' - ', o.customer_name) AS description,
+				op.amount,
+				op.amount AS signed_amount,
+				CASE WHEN op.payment_date >= scope.reset_at THEN op.payment_date ELSE op.created_at END AS movement_date,
+				op.created_at
+			FROM order_payments op
+			INNER JOIN orders o ON o.id = op.order_id AND o.organization_id = op.organization_id
+			CROSS JOIN scope
+			WHERE op.organization_id = $1
+			  AND (op.payment_date >= scope.reset_at OR op.created_at >= scope.reset_at)
+			UNION ALL
+			SELECT
+				qp.id::text AS id,
+				'income' AS type,
+				'cotizaciones' AS category,
+				CONCAT(q.quote_number, ' - ', q.customer_name) AS description,
+				qp.amount,
+				qp.amount AS signed_amount,
+				CASE WHEN qp.payment_date >= scope.reset_at THEN qp.payment_date ELSE qp.created_at END AS movement_date,
+				qp.created_at
+			FROM quote_payments qp
+			INNER JOIN quotes q ON q.id = qp.quote_id AND q.organization_id = qp.organization_id
+			CROSS JOIN scope
+			WHERE qp.organization_id = $1
+			  AND (qp.payment_date >= scope.reset_at OR qp.created_at >= scope.reset_at)
+			UNION ALL
+			SELECT
+				id::text AS id,
+				'income' AS type,
+				source AS category,
+				description,
+				amount,
+				amount AS signed_amount,
+				CASE WHEN income_date >= scope.reset_at THEN income_date ELSE created_at END AS movement_date,
+				created_at
+			FROM finance_external_incomes, scope
+			WHERE organization_id = $1
+			  AND (income_date >= scope.reset_at OR created_at >= scope.reset_at)
+			UNION ALL
+			SELECT
+				id::text AS id,
+				'expense' AS type,
+				category,
+				description,
+				amount,
+				-amount AS signed_amount,
+				CASE WHEN expense_date >= scope.reset_at THEN expense_date ELSE created_at END AS movement_date,
+				created_at
+			FROM finance_expenses, scope
+			WHERE organization_id = $1
+			  AND (expense_date >= scope.reset_at OR created_at >= scope.reset_at)
+			UNION ALL
+			SELECT
+				id::text AS id,
+				'withdrawal' AS type,
+				'retiro_personal' AS category,
+				reason AS description,
+				amount,
+				-amount AS signed_amount,
+				CASE WHEN withdrawal_date >= scope.reset_at THEN withdrawal_date ELSE created_at END AS movement_date,
+				created_at
+			FROM finance_withdrawals, scope
+			WHERE organization_id = $1
+			  AND (withdrawal_date >= scope.reset_at OR created_at >= scope.reset_at)
+		),
+		ledger AS (
+			SELECT
+				id,
+				type,
+				category,
+				description,
+				amount,
+				signed_amount,
+				movement_date,
+				created_at,
+				SUM(signed_amount) OVER (
+					ORDER BY movement_date ASC, created_at ASC, id ASC
+					ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+				) AS balance_remaining
+			FROM movements
+		)
+		SELECT
+			id,
+			type,
+			category,
+			description,
+			amount,
+			signed_amount,
+			movement_date,
+			balance_remaining
+		FROM ledger
+		ORDER BY movement_date DESC, created_at DESC, id DESC
+		LIMIT $2
+	`, organizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	history := make([]FinanceHistoryEntry, 0)
+	for rows.Next() {
+		var entry FinanceHistoryEntry
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.Type,
+			&entry.Category,
+			&entry.Description,
+			&entry.Amount,
+			&entry.SignedAmount,
+			&entry.MovementDate,
+			&entry.BalanceRemaining,
+		); err != nil {
+			return nil, err
+		}
+		history = append(history, entry)
+	}
+
+	return history, rows.Err()
 }
 
 func (r *Repository) ListFinanceIncomes(ctx context.Context, organizationID string, limit int) ([]FinanceIncome, error) {
@@ -1434,6 +1611,205 @@ func (r *Repository) DeleteFinanceExpense(ctx context.Context, organizationID, e
 	return &expense, nil
 }
 
+func (r *Repository) ListFinanceWithdrawals(ctx context.Context, organizationID string, limit int) ([]FinanceWithdrawal, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	rows, err := r.db.Query(ctx, `
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		)
+		SELECT
+			id::text,
+			amount,
+			withdrawal_date,
+			reason,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+		FROM finance_withdrawals, scope
+		WHERE organization_id = $1
+		  AND (withdrawal_date >= scope.reset_at OR created_at >= scope.reset_at)
+		ORDER BY
+			CASE WHEN withdrawal_date >= scope.reset_at THEN withdrawal_date ELSE created_at END DESC,
+			created_at DESC
+		LIMIT $2
+	`, organizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	withdrawals := make([]FinanceWithdrawal, 0)
+	for rows.Next() {
+		var withdrawal FinanceWithdrawal
+		if err := rows.Scan(
+			&withdrawal.ID,
+			&withdrawal.Amount,
+			&withdrawal.WithdrawalDate,
+			&withdrawal.Reason,
+			&withdrawal.CreatedBy,
+			&withdrawal.CreatedAt,
+			&withdrawal.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		withdrawals = append(withdrawals, withdrawal)
+	}
+
+	return withdrawals, rows.Err()
+}
+
+func (r *Repository) CreateFinanceWithdrawal(ctx context.Context, organizationID, actorUserID string, request CreateFinanceWithdrawalRequest, withdrawalDate time.Time) (*FinanceWithdrawal, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	actorUserID = strings.TrimSpace(actorUserID)
+	reason := strings.TrimSpace(request.Reason)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if request.Amount <= 0 {
+		return nil, errors.New("withdrawal amount must be greater than zero")
+	}
+	if reason == "" {
+		return nil, errors.New("withdrawal reason is required")
+	}
+	if withdrawalDate.IsZero() {
+		withdrawalDate = time.Now()
+	}
+
+	var actor interface{}
+	if isUUID(actorUserID) {
+		actor = actorUserID
+	}
+
+	var withdrawal FinanceWithdrawal
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO finance_withdrawals (
+			organization_id,
+			amount,
+			withdrawal_date,
+			reason,
+			created_by
+		) VALUES ($1, $2, $3, $4, $5)
+		RETURNING
+			id::text,
+			amount,
+			withdrawal_date,
+			reason,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+	`, organizationID, request.Amount, withdrawalDate, reason, actor).Scan(
+		&withdrawal.ID,
+		&withdrawal.Amount,
+		&withdrawal.WithdrawalDate,
+		&withdrawal.Reason,
+		&withdrawal.CreatedBy,
+		&withdrawal.CreatedAt,
+		&withdrawal.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &withdrawal, nil
+}
+
+func (r *Repository) DeleteFinanceWithdrawal(ctx context.Context, organizationID, withdrawalID string) (*FinanceWithdrawal, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	withdrawalID = strings.TrimSpace(withdrawalID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if withdrawalID == "" {
+		return nil, errors.New("withdrawal ID is required")
+	}
+
+	var withdrawal FinanceWithdrawal
+	err := r.db.QueryRow(ctx, `
+		DELETE FROM finance_withdrawals
+		WHERE organization_id = $1
+		  AND id = $2
+		RETURNING
+			id::text,
+			amount,
+			withdrawal_date,
+			reason,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+	`, organizationID, withdrawalID).Scan(
+		&withdrawal.ID,
+		&withdrawal.Amount,
+		&withdrawal.WithdrawalDate,
+		&withdrawal.Reason,
+		&withdrawal.CreatedBy,
+		&withdrawal.CreatedAt,
+		&withdrawal.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("withdrawal not found")
+		}
+		return nil, err
+	}
+
+	return &withdrawal, nil
+}
+
+func (r *Repository) UpdateFinanceMonthlyGoal(ctx context.Context, organizationID string, amount float64) (*FinanceSettings, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if amount < 0 {
+		return nil, errors.New("monthly goal must be zero or greater")
+	}
+
+	var settings FinanceSettings
+	var resetAt sql.NullTime
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO finance_settings (
+			organization_id,
+			monthly_goal_amount
+		) VALUES ($1, $2)
+		ON CONFLICT (organization_id) DO UPDATE
+		SET monthly_goal_amount = EXCLUDED.monthly_goal_amount,
+		    updated_at = NOW()
+		RETURNING
+			organization_id::text,
+			reset_at,
+			COALESCE(reset_by::text, '') AS reset_by,
+			reset_reason,
+			monthly_goal_amount,
+			updated_at
+	`, organizationID, amount).Scan(
+		&settings.OrganizationID,
+		&resetAt,
+		&settings.ResetBy,
+		&settings.ResetReason,
+		&settings.MonthlyGoal,
+		&settings.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if resetAt.Valid {
+		value := resetAt.Time
+		settings.ResetAt = &value
+	}
+
+	return &settings, nil
+}
+
 func (r *Repository) SetFinanceReset(ctx context.Context, organizationID, actorUserID, reason string) (*FinanceSettings, error) {
 	organizationID = strings.TrimSpace(organizationID)
 	actorUserID = strings.TrimSpace(actorUserID)
@@ -1461,17 +1837,19 @@ func (r *Repository) SetFinanceReset(ctx context.Context, organizationID, actorU
 		    reset_by = EXCLUDED.reset_by,
 		    reset_reason = EXCLUDED.reset_reason,
 		    updated_at = NOW()
-		RETURNING
-			organization_id::text,
-			reset_at,
-			COALESCE(reset_by::text, '') AS reset_by,
-			reset_reason,
-			updated_at
-	`, organizationID, actor, reason).Scan(
+			RETURNING
+				organization_id::text,
+				reset_at,
+				COALESCE(reset_by::text, '') AS reset_by,
+				reset_reason,
+				monthly_goal_amount,
+				updated_at
+		`, organizationID, actor, reason).Scan(
 		&settings.OrganizationID,
 		&resetAt,
 		&settings.ResetBy,
 		&settings.ResetReason,
+		&settings.MonthlyGoal,
 		&settings.UpdatedAt,
 	)
 	if err != nil {
@@ -1496,20 +1874,36 @@ func normalizeFinanceCategory(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "_")
 	value = strings.Trim(value, "_")
-	if value == "" {
-		return "operacion"
+	switch value {
+	case "filamento", "empaque", "envios", "comision_afiliado", "herramientas", "publicidad", "renta", "luz", "internet", "otros":
+		return value
+	case "materiales":
+		return "filamento"
+	case "envio":
+		return "envios"
+	case "comision", "afiliado", "comisiones_afiliados":
+		return "comision_afiliado"
 	}
-	return value
+	return "otros"
 }
 
 func normalizeFinanceSource(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "_")
 	value = strings.Trim(value, "_")
-	if value == "" {
-		return "otros"
+	switch value {
+	case "pedidos", "tiktok_shop", "mercado_libre", "shopify", "woocommerce", "ventas_locales", "otros":
+		return value
+	case "pedido", "orden", "ordenes":
+		return "pedidos"
+	case "mercadolibre", "mercado":
+		return "mercado_libre"
+	case "venta_efectivo", "venta_local", "afiliados_externo":
+		return "ventas_locales"
+	case "marketplace":
+		return "mercado_libre"
 	}
-	return value
+	return "otros"
 }
 
 func applyNullableOrganizationTimes(summary *OrganizationSummary, startsAt, endsAt, graceEndsAt, suspendedAt sql.NullTime) {
