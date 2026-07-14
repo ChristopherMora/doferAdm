@@ -33,6 +33,8 @@ interface FinanceSummary {
   order_value: number
   quote_value: number
   collected: number
+  external_income: number
+  total_income: number
   expenses: number
   net_profit: number
   pending: number
@@ -41,6 +43,7 @@ interface FinanceSummary {
   payments_count: number
   order_payments_count: number
   quote_payments_count: number
+  income_count: number
   expense_count: number
   reset_at?: string
   reset_reason: string
@@ -78,8 +81,23 @@ interface FinanceCut {
   period_start: string
   order_payments: number
   quote_payments: number
+  external_income: number
   total_collected: number
   payments_count: number
+}
+
+interface FinanceIncome {
+  id: string
+  source: string
+  description: string
+  amount: number
+  income_date: string
+  payer: string
+  payment_method: string
+  notes: string
+  created_by: string
+  created_at: string
+  updated_at: string
 }
 
 interface FinanceExpense {
@@ -102,6 +120,16 @@ interface ExpenseFormState {
   amount: string
   expense_date: string
   vendor: string
+  payment_method: string
+  notes: string
+}
+
+interface IncomeFormState {
+  source: string
+  description: string
+  amount: string
+  income_date: string
+  payer: string
   payment_method: string
   notes: string
 }
@@ -138,12 +166,32 @@ const expenseCategories: Array<{ value: string; label: string }> = [
   { value: 'otros', label: 'Otros' },
 ]
 
+const incomeSources: Array<{ value: string; label: string }> = [
+  { value: 'tiktok_shop', label: 'TikTok Shop' },
+  { value: 'afiliados_externo', label: 'Afiliados externo' },
+  { value: 'venta_efectivo', label: 'Venta en efectivo' },
+  { value: 'marketplace', label: 'Marketplace' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'ajuste', label: 'Ajuste' },
+  { value: 'otros', label: 'Otros' },
+]
+
 const defaultExpenseForm = (): ExpenseFormState => ({
   description: '',
   category: 'materiales',
   amount: '',
   expense_date: toDateInputValue(new Date()),
   vendor: '',
+  payment_method: '',
+  notes: '',
+})
+
+const defaultIncomeForm = (): IncomeFormState => ({
+  source: 'tiktok_shop',
+  description: '',
+  amount: '',
+  income_date: toDateInputValue(new Date()),
+  payer: '',
   payment_method: '',
   notes: '',
 })
@@ -163,13 +211,17 @@ export default function FinancePage() {
   const [payments, setPayments] = useState<FinancePayment[]>([])
   const [receivables, setReceivables] = useState<Receivable[]>([])
   const [cuts, setCuts] = useState<FinanceCut[]>([])
+  const [incomes, setIncomes] = useState<FinanceIncome[]>([])
+  const [incomeForm, setIncomeForm] = useState<IncomeFormState>(() => defaultIncomeForm())
   const [expenses, setExpenses] = useState<FinanceExpense[]>([])
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(() => defaultExpenseForm())
   const [receivableFilter, setReceivableFilter] = useState<ReceivableFilter>('all')
   const [cutPeriod, setCutPeriod] = useState<CutPeriod>('week')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [incomeSaving, setIncomeSaving] = useState(false)
   const [expenseSaving, setExpenseSaving] = useState(false)
+  const [deletingIncomeID, setDeletingIncomeID] = useState<string | null>(null)
   const [deletingExpenseID, setDeletingExpenseID] = useState<string | null>(null)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [clearPassword, setClearPassword] = useState('')
@@ -185,7 +237,7 @@ export default function FinancePage() {
     setApiError(null)
 
     try {
-      const [summaryData, paymentsData, receivablesData, cutsData, expensesData] = await Promise.all([
+      const [summaryData, paymentsData, receivablesData, cutsData, incomesData, expensesData] = await Promise.all([
         apiClient.get<FinanceSummary>('/admin/finance/summary'),
         apiClient.get<{ payments: FinancePayment[] }>('/admin/finance/payments', { params: { limit: 100 } }),
         apiClient.get<{ receivables: Receivable[] }>('/admin/finance/receivables', {
@@ -200,12 +252,14 @@ export default function FinancePage() {
             limit: 18,
           },
         }),
+        apiClient.get<{ incomes: FinanceIncome[] }>('/admin/finance/incomes', { params: { limit: 100 } }),
         apiClient.get<{ expenses: FinanceExpense[] }>('/admin/finance/expenses', { params: { limit: 100 } }),
       ])
       setSummary(summaryData)
       setPayments(paymentsData.payments || [])
       setReceivables(receivablesData.receivables || [])
       setCuts(cutsData.cuts || [])
+      setIncomes(incomesData.incomes || [])
       setExpenses(expensesData.expenses || [])
     } catch (error: unknown) {
       setApiError(getErrorMessage(error, 'No se pudo cargar finanzas'))
@@ -218,6 +272,53 @@ export default function FinancePage() {
   useEffect(() => {
     void loadFinance()
   }, [loadFinance])
+
+  const handleCreateIncome = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setApiError(null)
+    setSuccessMessage(null)
+
+    const amount = Number(incomeForm.amount)
+    if (!incomeForm.description.trim()) {
+      setApiError('Describe el ingreso antes de guardarlo.')
+      return
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setApiError('El monto del ingreso debe ser mayor a cero.')
+      return
+    }
+
+    setIncomeSaving(true)
+    try {
+      await apiClient.post<FinanceIncome>('/admin/finance/incomes', {
+        ...incomeForm,
+        amount,
+      })
+      setIncomeForm(defaultIncomeForm())
+      setSuccessMessage('Ingreso externo registrado.')
+      await loadFinance(true)
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo registrar el ingreso'))
+    } finally {
+      setIncomeSaving(false)
+    }
+  }
+
+  const handleDeleteIncome = async (incomeID: string) => {
+    setApiError(null)
+    setSuccessMessage(null)
+    setDeletingIncomeID(incomeID)
+
+    try {
+      await apiClient.delete(`/admin/finance/incomes/${incomeID}`)
+      setSuccessMessage('Ingreso externo eliminado.')
+      await loadFinance(true)
+    } catch (error: unknown) {
+      setApiError(getErrorMessage(error, 'No se pudo eliminar el ingreso'))
+    } finally {
+      setDeletingIncomeID(null)
+    }
+  }
 
   const handleCreateExpense = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -284,6 +385,7 @@ export default function FinancePage() {
       setClearDialogOpen(false)
       setClearPassword('')
       setClearReason('')
+      setIncomeForm(defaultIncomeForm())
       setExpenseForm(defaultExpenseForm())
       setSuccessMessage('Finanzas limpiadas. El nuevo periodo inicia desde este momento.')
       await loadFinance(true)
@@ -366,33 +468,187 @@ export default function FinancePage() {
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
             <FinanceMetric label="Valor total" value={currency.format(totalValue)} icon={<DollarSign className="h-4 w-4" />} />
-            <FinanceMetric label="Cobrado" value={currency.format(summary.collected)} icon={<WalletCards className="h-4 w-4" />} accent="text-emerald-600" />
+            <FinanceMetric label="Ingresos" value={currency.format(summary.total_income)} icon={<WalletCards className="h-4 w-4" />} accent="text-emerald-600" />
+            <FinanceMetric label="Externos" value={currency.format(summary.external_income)} icon={<DollarSign className="h-4 w-4" />} accent="text-cyan-700" />
             <FinanceMetric label="Gastos" value={currency.format(summary.expenses)} icon={<ReceiptText className="h-4 w-4" />} accent="text-red-600" />
             <FinanceMetric label="Utilidad" value={currency.format(summary.net_profit)} icon={<TrendingUp className="h-4 w-4" />} accent={summary.net_profit >= 0 ? 'text-cyan-700' : 'text-red-600'} />
-            <FinanceMetric label="Por cobrar" value={currency.format(summary.pending)} icon={<CreditCard className="h-4 w-4" />} accent="text-amber-600" />
             <FinanceMetric label="Vencido" value={currency.format(summary.overdue)} icon={<TrendingUp className="h-4 w-4" />} accent="text-red-600" />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
             <PanelCard>
               <p className="text-sm text-muted-foreground">Tasa de cobranza</p>
               <p className="mt-2 text-3xl font-semibold">{summary.collection_rate.toFixed(1)}%</p>
             </PanelCard>
             <PanelCard>
-              <p className="text-sm text-muted-foreground">Pagos registrados</p>
+              <p className="text-sm text-muted-foreground">Cobrado en pedidos</p>
+              <p className="mt-2 text-3xl font-semibold">{currency.format(summary.collected)}</p>
+            </PanelCard>
+            <PanelCard>
+              <p className="text-sm text-muted-foreground">Pagos de pedidos</p>
               <p className="mt-2 text-3xl font-semibold">{summary.payments_count}</p>
+            </PanelCard>
+            <PanelCard>
+              <p className="text-sm text-muted-foreground">Ingresos externos</p>
+              <p className="mt-2 text-3xl font-semibold">{summary.income_count}</p>
             </PanelCard>
             <PanelCard>
               <p className="text-sm text-muted-foreground">Gastos registrados</p>
               <p className="mt-2 text-3xl font-semibold">{summary.expense_count}</p>
             </PanelCard>
-            <PanelCard>
-              <p className="text-sm text-muted-foreground">Documentos con valor</p>
-              <p className="mt-2 text-3xl font-semibold">{summary.total_orders + summary.total_quotes}</p>
-            </PanelCard>
           </div>
         </>
       )}
+
+      <section className="space-y-3">
+        <SectionTitle icon={<WalletCards className="h-5 w-5" />} title="Ingresos externos" />
+
+        <PanelCard>
+          <form onSubmit={handleCreateIncome} className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fuente</span>
+              <select
+                className={fieldClass}
+                value={incomeForm.source}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, source: event.target.value }))}
+                disabled={incomeSaving}
+              >
+                {incomeSources.map((source) => (
+                  <option key={source.value} value={source.value}>
+                    {source.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 lg:col-span-4">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Descripcion</span>
+              <input
+                className={fieldClass}
+                value={incomeForm.description}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, description: event.target.value }))}
+                placeholder="Pago TikTok Shop, venta externa afiliado..."
+                disabled={incomeSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Monto</span>
+              <input
+                className={fieldClass}
+                type="number"
+                min="0"
+                step="0.01"
+                value={incomeForm.amount}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, amount: event.target.value }))}
+                disabled={incomeSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</span>
+              <input
+                className={fieldClass}
+                type="date"
+                value={incomeForm.income_date}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, income_date: event.target.value }))}
+                disabled={incomeSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagador</span>
+              <input
+                className={fieldClass}
+                value={incomeForm.payer}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, payer: event.target.value }))}
+                placeholder="TikTok, afiliado, cliente..."
+                disabled={incomeSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-3">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metodo</span>
+              <input
+                className={fieldClass}
+                value={incomeForm.payment_method}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, payment_method: event.target.value }))}
+                placeholder="Efectivo, transferencia, deposito..."
+                disabled={incomeSaving}
+              />
+            </label>
+
+            <label className="space-y-1 lg:col-span-7">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notas</span>
+              <input
+                className={fieldClass}
+                value={incomeForm.notes}
+                onChange={(event) => setIncomeForm((prev) => ({ ...prev, notes: event.target.value }))}
+                disabled={incomeSaving}
+              />
+            </label>
+
+            <div className="flex items-end lg:col-span-2">
+              <Button type="submit" className="w-full" disabled={incomeSaving}>
+                <Plus className="h-4 w-4" />
+                {incomeSaving ? 'Guardando...' : 'Agregar'}
+              </Button>
+            </div>
+          </form>
+        </PanelCard>
+
+        {incomes.length === 0 ? (
+          <EmptyState
+            title="Sin ingresos externos"
+            description="Pagos de TikTok Shop, afiliados externos o efectivo apareceran aqui."
+            icon={<WalletCards className="h-5 w-5" />}
+          />
+        ) : (
+          <TableShell>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/35">
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Ingreso</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Fuente</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagador</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Monto</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Accion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {incomes.map((income) => (
+                  <tr key={income.id} className="border-b last:border-0">
+                    <td className="px-4 py-4">
+                      <div className="font-medium">{income.description}</div>
+                      {income.notes && <div className="mt-1 text-xs text-muted-foreground">{income.notes}</div>}
+                    </td>
+                    <td className="px-4 py-4">
+                      <Badge variant="outline">{incomeSourceLabel(income.source)}</Badge>
+                    </td>
+                    <td className="px-4 py-4 text-muted-foreground">{income.payer || income.payment_method || 'Sin detalle'}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{formatDate(income.income_date)}</td>
+                    <td className="px-4 py-4 text-right font-semibold text-emerald-600">{currency.format(income.amount)}</td>
+                    <td className="px-4 py-4 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Eliminar ingreso"
+                        onClick={() => void handleDeleteIncome(income.id)}
+                        disabled={deletingIncomeID === income.id}
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        )}
+      </section>
 
       <section className="space-y-3">
         <SectionTitle icon={<ReceiptText className="h-5 w-5" />} title="Gastos de Dofer" />
@@ -641,7 +897,8 @@ export default function FinancePage() {
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Periodo</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Ordenes</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Cotizaciones</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagos</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Externos</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Movs.</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Total</th>
                 </tr>
               </thead>
@@ -651,6 +908,7 @@ export default function FinancePage() {
                     <td className="px-4 py-4 font-medium">{formatPeriod(cut.period_start, cutPeriod)}</td>
                     <td className="px-4 py-4 text-right">{currency.format(cut.order_payments)}</td>
                     <td className="px-4 py-4 text-right">{currency.format(cut.quote_payments)}</td>
+                    <td className="px-4 py-4 text-right">{currency.format(cut.external_income)}</td>
                     <td className="px-4 py-4 text-right text-muted-foreground">{cut.payments_count}</td>
                     <td className="px-4 py-4 text-right font-semibold text-emerald-600">{currency.format(cut.total_collected)}</td>
                   </tr>
@@ -845,6 +1103,10 @@ function toDateInputValue(value: Date) {
 
 function expenseCategoryLabel(value: string) {
   return expenseCategories.find((category) => category.value === value)?.label || value || 'Operacion'
+}
+
+function incomeSourceLabel(value: string) {
+  return incomeSources.find((source) => source.value === value)?.label || value || 'Otros'
 }
 
 function formatPeriod(value: string, period: CutPeriod) {

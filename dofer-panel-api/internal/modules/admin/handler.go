@@ -37,6 +37,9 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		r.Get("/finance/payments", h.ListFinancePayments)
 		r.Get("/finance/receivables", h.ListReceivables)
 		r.Get("/finance/cuts", h.ListFinanceCuts)
+		r.Get("/finance/incomes", h.ListFinanceIncomes)
+		r.Post("/finance/incomes", h.CreateFinanceIncome)
+		r.Delete("/finance/incomes/{incomeID}", h.DeleteFinanceIncome)
 		r.Get("/finance/expenses", h.ListFinanceExpenses)
 		r.Post("/finance/expenses", h.CreateFinanceExpense)
 		r.Delete("/finance/expenses/{expenseID}", h.DeleteFinanceExpense)
@@ -309,6 +312,96 @@ func (h *Handler) ListFinanceExpenses(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ListFinanceIncomes(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	incomes, err := h.repo.ListFinanceIncomes(r.Context(), organizationID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"incomes": incomes,
+		"total":   len(incomes),
+	})
+}
+
+func (h *Handler) CreateFinanceIncome(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	var request CreateFinanceIncomeRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	incomeDate, err := parseFinanceMovementDate(request.IncomeDate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	actorUserID, _ := middleware.UserIDFromContext(r.Context())
+	income, err := h.repo.CreateFinanceIncome(r.Context(), organizationID, actorUserID, request, incomeDate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if actorUserID != "" {
+		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "finance_external_incomes.created", "finance_external_income", income.ID, map[string]interface{}{
+			"amount":      income.Amount,
+			"source":      income.Source,
+			"description": income.Description,
+			"income_date": income.IncomeDate,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(income)
+}
+
+func (h *Handler) DeleteFinanceIncome(w http.ResponseWriter, r *http.Request) {
+	organizationID, ok := organizationIDFromRequest(r)
+	if !ok {
+		http.Error(w, "organization not available", http.StatusForbidden)
+		return
+	}
+
+	incomeID := strings.TrimSpace(chi.URLParam(r, "incomeID"))
+	income, err := h.repo.DeleteFinanceIncome(r.Context(), organizationID, incomeID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if actorUserID, ok := middleware.UserIDFromContext(r.Context()); ok {
+		_ = h.repo.CreateAuditLog(r.Context(), organizationID, actorUserID, "finance_external_incomes.deleted", "finance_external_income", income.ID, map[string]interface{}{
+			"amount":      income.Amount,
+			"source":      income.Source,
+			"description": income.Description,
+			"income_date": income.IncomeDate,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"message": "Income deleted successfully",
+		"income":  income,
+	})
+}
+
 func (h *Handler) CreateFinanceExpense(w http.ResponseWriter, r *http.Request) {
 	organizationID, ok := organizationIDFromRequest(r)
 	if !ok {
@@ -322,7 +415,7 @@ func (h *Handler) CreateFinanceExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expenseDate, err := parseFinanceExpenseDate(request.ExpenseDate)
+	expenseDate, err := parseFinanceMovementDate(request.ExpenseDate)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -431,7 +524,7 @@ func (h *Handler) ClearFinance(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(settings)
 }
 
-func parseFinanceExpenseDate(value string) (time.Time, error) {
+func parseFinanceMovementDate(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return time.Now(), nil
@@ -444,5 +537,5 @@ func parseFinanceExpenseDate(value string) (time.Time, error) {
 		return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 12, 0, 0, 0, time.Local), nil
 	}
 
-	return time.Time{}, errors.New("invalid expense date")
+	return time.Time{}, errors.New("invalid finance date")
 }

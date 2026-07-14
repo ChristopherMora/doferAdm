@@ -683,6 +683,14 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 				  AND payment_date >= scope.reset_at
 			) payments
 		),
+		external_income_totals AS (
+			SELECT
+				COALESCE(SUM(amount), 0) AS external_income,
+				COUNT(*) AS income_count
+			FROM finance_external_incomes, scope
+			WHERE organization_id = $1
+			  AND income_date >= scope.reset_at
+		),
 		expense_totals AS (
 			SELECT
 				COALESCE(SUM(amount), 0) AS expenses,
@@ -702,18 +710,21 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 			ot.order_value,
 			qt.quote_value,
 			pt.order_collected + pt.quote_collected AS collected,
+			it.external_income,
 			et.expenses,
 			ot.order_pending + qt.quote_pending AS pending,
 			ot.order_overdue + qt.quote_overdue AS overdue,
 			pt.order_payments_count + pt.quote_payments_count AS payments_count,
 			pt.order_payments_count,
 			pt.quote_payments_count,
+			it.income_count,
 			et.expense_count,
 			s.reset_at,
 			COALESCE(s.reset_reason, '')
 		FROM order_totals ot
 		CROSS JOIN quote_totals qt
 		CROSS JOIN payment_totals pt
+		CROSS JOIN external_income_totals it
 		CROSS JOIN expense_totals et
 		LEFT JOIN settings s ON true
 	`, organizationID).Scan(
@@ -722,12 +733,14 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 		&summary.OrderValue,
 		&summary.QuoteValue,
 		&summary.Collected,
+		&summary.ExternalIncome,
 		&summary.Expenses,
 		&summary.Pending,
 		&summary.Overdue,
 		&summary.PaymentsCount,
 		&summary.OrderPaymentsCount,
 		&summary.QuotePaymentsCount,
+		&summary.IncomeCount,
 		&summary.ExpenseCount,
 		&resetAt,
 		&resetReason,
@@ -736,7 +749,8 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 		return nil, err
 	}
 
-	summary.NetProfit = summary.Collected - summary.Expenses
+	summary.TotalIncome = summary.Collected + summary.ExternalIncome
+	summary.NetProfit = summary.TotalIncome - summary.Expenses
 	if resetAt.Valid {
 		value := resetAt.Time
 		summary.ResetAt = &value
@@ -994,11 +1008,17 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 			FROM quote_payments, scope
 			WHERE organization_id = $1
 			  AND payment_date >= scope.reset_at
+			UNION ALL
+			SELECT income_date AS payment_date, amount, 'external' AS source_type
+			FROM finance_external_incomes, scope
+			WHERE organization_id = $1
+			  AND income_date >= scope.reset_at
 		)
 		SELECT
 			date_trunc($2, payment_date)::timestamptz AS period_start,
 			COALESCE(SUM(amount) FILTER (WHERE source_type = 'order'), 0) AS order_payments,
 			COALESCE(SUM(amount) FILTER (WHERE source_type = 'quote'), 0) AS quote_payments,
+			COALESCE(SUM(amount) FILTER (WHERE source_type = 'external'), 0) AS external_income,
 			COALESCE(SUM(amount), 0) AS total_collected,
 			COUNT(*) AS payments_count
 		FROM payments
@@ -1019,6 +1039,7 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 			&cut.PeriodStart,
 			&cut.OrderPayments,
 			&cut.QuotePayments,
+			&cut.ExternalIncome,
 			&cut.TotalCollected,
 			&cut.PaymentsCount,
 		); err != nil {
@@ -1028,6 +1049,190 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 	}
 
 	return cuts, rows.Err()
+}
+
+func (r *Repository) ListFinanceIncomes(ctx context.Context, organizationID string, limit int) ([]FinanceIncome, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	rows, err := r.db.Query(ctx, `
+		WITH scope AS (
+			SELECT COALESCE(
+				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
+				'-infinity'::timestamptz
+			) AS reset_at
+		)
+		SELECT
+			id::text,
+			source,
+			description,
+			amount,
+			income_date,
+			payer,
+			payment_method,
+			notes,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+		FROM finance_external_incomes, scope
+		WHERE organization_id = $1
+		  AND income_date >= scope.reset_at
+		ORDER BY income_date DESC, created_at DESC
+		LIMIT $2
+	`, organizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	incomes := make([]FinanceIncome, 0)
+	for rows.Next() {
+		var income FinanceIncome
+		if err := rows.Scan(
+			&income.ID,
+			&income.Source,
+			&income.Description,
+			&income.Amount,
+			&income.IncomeDate,
+			&income.Payer,
+			&income.PaymentMethod,
+			&income.Notes,
+			&income.CreatedBy,
+			&income.CreatedAt,
+			&income.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		incomes = append(incomes, income)
+	}
+
+	return incomes, rows.Err()
+}
+
+func (r *Repository) CreateFinanceIncome(ctx context.Context, organizationID, actorUserID string, request CreateFinanceIncomeRequest, incomeDate time.Time) (*FinanceIncome, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	actorUserID = strings.TrimSpace(actorUserID)
+	source := normalizeFinanceSource(request.Source)
+	description := strings.TrimSpace(request.Description)
+	payer := strings.TrimSpace(request.Payer)
+	paymentMethod := strings.TrimSpace(request.PaymentMethod)
+	notes := strings.TrimSpace(request.Notes)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if description == "" {
+		return nil, errors.New("income description is required")
+	}
+	if request.Amount <= 0 {
+		return nil, errors.New("income amount must be greater than zero")
+	}
+	if incomeDate.IsZero() {
+		incomeDate = time.Now()
+	}
+
+	var actor interface{}
+	if isUUID(actorUserID) {
+		actor = actorUserID
+	}
+
+	var income FinanceIncome
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO finance_external_incomes (
+			organization_id,
+			source,
+			description,
+			amount,
+			income_date,
+			payer,
+			payment_method,
+			notes,
+			created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING
+			id::text,
+			source,
+			description,
+			amount,
+			income_date,
+			payer,
+			payment_method,
+			notes,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+	`, organizationID, source, description, request.Amount, incomeDate, payer, paymentMethod, notes, actor).Scan(
+		&income.ID,
+		&income.Source,
+		&income.Description,
+		&income.Amount,
+		&income.IncomeDate,
+		&income.Payer,
+		&income.PaymentMethod,
+		&income.Notes,
+		&income.CreatedBy,
+		&income.CreatedAt,
+		&income.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &income, nil
+}
+
+func (r *Repository) DeleteFinanceIncome(ctx context.Context, organizationID, incomeID string) (*FinanceIncome, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	incomeID = strings.TrimSpace(incomeID)
+	if organizationID == "" {
+		return nil, errors.New("organization ID is required")
+	}
+	if incomeID == "" {
+		return nil, errors.New("income ID is required")
+	}
+
+	var income FinanceIncome
+	err := r.db.QueryRow(ctx, `
+		DELETE FROM finance_external_incomes
+		WHERE organization_id = $1
+		  AND id = $2
+		RETURNING
+			id::text,
+			source,
+			description,
+			amount,
+			income_date,
+			payer,
+			payment_method,
+			notes,
+			COALESCE(created_by::text, '') AS created_by,
+			created_at,
+			updated_at
+	`, organizationID, incomeID).Scan(
+		&income.ID,
+		&income.Source,
+		&income.Description,
+		&income.Amount,
+		&income.IncomeDate,
+		&income.Payer,
+		&income.PaymentMethod,
+		&income.Notes,
+		&income.CreatedBy,
+		&income.CreatedAt,
+		&income.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("income not found")
+		}
+		return nil, err
+	}
+
+	return &income, nil
 }
 
 func (r *Repository) ListFinanceExpenses(ctx context.Context, organizationID string, limit int) ([]FinanceExpense, error) {
@@ -1278,6 +1483,16 @@ func normalizeFinanceCategory(value string) string {
 	value = strings.Trim(value, "_")
 	if value == "" {
 		return "operacion"
+	}
+	return value
+}
+
+func normalizeFinanceSource(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "_")
+	value = strings.Trim(value, "_")
+	if value == "" {
+		return "otros"
 	}
 	return value
 }

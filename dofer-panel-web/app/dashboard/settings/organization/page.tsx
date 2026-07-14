@@ -196,6 +196,8 @@ const actionLabels: Record<string, string> = {
   'order_payments.deleted': 'Pago de orden eliminado',
   'quote_payments.created': 'Pago de cotizacion creado',
   'quote_payments.deleted': 'Pago de cotizacion eliminado',
+  'finance_external_incomes.created': 'Ingreso externo creado',
+  'finance_external_incomes.deleted': 'Ingreso externo eliminado',
   'finance_expenses.created': 'Gasto financiero creado',
   'finance_expenses.deleted': 'Gasto financiero eliminado',
   'finance.cleared': 'Finanzas limpiadas',

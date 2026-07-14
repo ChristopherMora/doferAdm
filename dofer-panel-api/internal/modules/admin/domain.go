@@ -95,6 +95,8 @@ type FinanceSummary struct {
 	OrderValue         float64    `json:"order_value"`
 	QuoteValue         float64    `json:"quote_value"`
 	Collected          float64    `json:"collected"`
+	ExternalIncome     float64    `json:"external_income"`
+	TotalIncome        float64    `json:"total_income"`
 	Expenses           float64    `json:"expenses"`
 	NetProfit          float64    `json:"net_profit"`
 	Pending            float64    `json:"pending"`
@@ -103,6 +105,7 @@ type FinanceSummary struct {
 	PaymentsCount      int        `json:"payments_count"`
 	OrderPaymentsCount int        `json:"order_payments_count"`
 	QuotePaymentsCount int        `json:"quote_payments_count"`
+	IncomeCount        int        `json:"income_count"`
 	ExpenseCount       int        `json:"expense_count"`
 	ResetAt            *time.Time `json:"reset_at,omitempty"`
 	ResetReason        string     `json:"reset_reason"`
@@ -163,8 +166,33 @@ type FinanceCut struct {
 	PeriodStart    time.Time `json:"period_start"`
 	OrderPayments  float64   `json:"order_payments"`
 	QuotePayments  float64   `json:"quote_payments"`
+	ExternalIncome float64   `json:"external_income"`
 	TotalCollected float64   `json:"total_collected"`
 	PaymentsCount  int       `json:"payments_count"`
+}
+
+type FinanceIncome struct {
+	ID            string    `json:"id"`
+	Source        string    `json:"source"`
+	Description   string    `json:"description"`
+	Amount        float64   `json:"amount"`
+	IncomeDate    time.Time `json:"income_date"`
+	Payer         string    `json:"payer"`
+	PaymentMethod string    `json:"payment_method"`
+	Notes         string    `json:"notes"`
+	CreatedBy     string    `json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type CreateFinanceIncomeRequest struct {
+	Source        string  `json:"source"`
+	Description   string  `json:"description"`
+	Amount        float64 `json:"amount"`
+	IncomeDate    string  `json:"income_date"`
+	Payer         string  `json:"payer"`
+	PaymentMethod string  `json:"payment_method"`
+	Notes         string  `json:"notes"`
 }
 
 type FinanceExpense struct {
