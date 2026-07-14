@@ -675,12 +675,12 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 				SELECT amount, 'order' AS source_type
 				FROM order_payments, scope
 				WHERE organization_id = $1
-				  AND payment_date >= scope.reset_at
+				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
 				UNION ALL
 				SELECT amount, 'quote' AS source_type
 				FROM quote_payments, scope
 				WHERE organization_id = $1
-				  AND payment_date >= scope.reset_at
+				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
 			) payments
 		),
 		external_income_totals AS (
@@ -689,7 +689,7 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 				COUNT(*) AS income_count
 			FROM finance_external_incomes, scope
 			WHERE organization_id = $1
-			  AND income_date >= scope.reset_at
+			  AND (income_date >= scope.reset_at OR created_at >= scope.reset_at)
 		),
 		expense_totals AS (
 			SELECT
@@ -697,7 +697,7 @@ func (r *Repository) GetFinanceSummary(ctx context.Context, organizationID strin
 				COUNT(*) AS expense_count
 			FROM finance_expenses, scope
 			WHERE organization_id = $1
-			  AND expense_date >= scope.reset_at
+			  AND (expense_date >= scope.reset_at OR created_at >= scope.reset_at)
 		),
 		settings AS (
 			SELECT reset_at, reset_reason
@@ -797,12 +797,12 @@ func (r *Repository) ListFinancePayments(ctx context.Context, organizationID str
 				COALESCE(op.notes, '') AS notes,
 				COALESCE(op.created_by, '') AS created_by,
 				op.created_at
-			FROM order_payments op
-			INNER JOIN orders o ON o.id = op.order_id AND o.organization_id = op.organization_id
-			CROSS JOIN scope
-			WHERE op.organization_id = $1
-			  AND op.payment_date >= scope.reset_at
-			UNION ALL
+				FROM order_payments op
+				INNER JOIN orders o ON o.id = op.order_id AND o.organization_id = op.organization_id
+				CROSS JOIN scope
+				WHERE op.organization_id = $1
+				  AND (op.payment_date >= scope.reset_at OR op.created_at >= scope.reset_at)
+				UNION ALL
 			SELECT
 				qp.id::text,
 				'quote' AS source_type,
@@ -815,15 +815,17 @@ func (r *Repository) ListFinancePayments(ctx context.Context, organizationID str
 				COALESCE(qp.notes, '') AS notes,
 				COALESCE(qp.created_by, '') AS created_by,
 				qp.created_at
-			FROM quote_payments qp
-			INNER JOIN quotes q ON q.id = qp.quote_id AND q.organization_id = qp.organization_id
-			CROSS JOIN scope
-			WHERE qp.organization_id = $1
-			  AND qp.payment_date >= scope.reset_at
-		) payments
-		ORDER BY payment_date DESC, created_at DESC
-		LIMIT $2
-	`, organizationID, limit)
+				FROM quote_payments qp
+				INNER JOIN quotes q ON q.id = qp.quote_id AND q.organization_id = qp.organization_id
+				CROSS JOIN scope
+				WHERE qp.organization_id = $1
+				  AND (qp.payment_date >= scope.reset_at OR qp.created_at >= scope.reset_at)
+			) payments
+			ORDER BY
+				CASE WHEN payment_date >= (SELECT reset_at FROM scope) THEN payment_date ELSE created_at END DESC,
+				created_at DESC
+			LIMIT $2
+		`, organizationID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -997,23 +999,32 @@ func (r *Repository) ListFinanceCuts(ctx context.Context, organizationID, period
 				(SELECT reset_at FROM finance_settings WHERE organization_id = $1),
 				'-infinity'::timestamptz
 			) AS reset_at
-		),
-		payments AS (
-			SELECT payment_date, amount, 'order' AS source_type
-			FROM order_payments, scope
-			WHERE organization_id = $1
-			  AND payment_date >= scope.reset_at
-			UNION ALL
-			SELECT payment_date, amount, 'quote' AS source_type
-			FROM quote_payments, scope
-			WHERE organization_id = $1
-			  AND payment_date >= scope.reset_at
-			UNION ALL
-			SELECT income_date AS payment_date, amount, 'external' AS source_type
-			FROM finance_external_incomes, scope
-			WHERE organization_id = $1
-			  AND income_date >= scope.reset_at
-		)
+			),
+			payments AS (
+				SELECT
+					CASE WHEN payment_date >= scope.reset_at THEN payment_date ELSE created_at END AS payment_date,
+					amount,
+					'order' AS source_type
+				FROM order_payments, scope
+				WHERE organization_id = $1
+				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
+				UNION ALL
+				SELECT
+					CASE WHEN payment_date >= scope.reset_at THEN payment_date ELSE created_at END AS payment_date,
+					amount,
+					'quote' AS source_type
+				FROM quote_payments, scope
+				WHERE organization_id = $1
+				  AND (payment_date >= scope.reset_at OR created_at >= scope.reset_at)
+				UNION ALL
+				SELECT
+					CASE WHEN income_date >= scope.reset_at THEN income_date ELSE created_at END AS payment_date,
+					amount,
+					'external' AS source_type
+				FROM finance_external_incomes, scope
+				WHERE organization_id = $1
+				  AND (income_date >= scope.reset_at OR created_at >= scope.reset_at)
+			)
 		SELECT
 			date_trunc($2, payment_date)::timestamptz AS period_start,
 			COALESCE(SUM(amount) FILTER (WHERE source_type = 'order'), 0) AS order_payments,
@@ -1079,12 +1090,14 @@ func (r *Repository) ListFinanceIncomes(ctx context.Context, organizationID stri
 			COALESCE(created_by::text, '') AS created_by,
 			created_at,
 			updated_at
-		FROM finance_external_incomes, scope
-		WHERE organization_id = $1
-		  AND income_date >= scope.reset_at
-		ORDER BY income_date DESC, created_at DESC
-		LIMIT $2
-	`, organizationID, limit)
+			FROM finance_external_incomes, scope
+			WHERE organization_id = $1
+			  AND (income_date >= scope.reset_at OR created_at >= scope.reset_at)
+			ORDER BY
+				CASE WHEN income_date >= scope.reset_at THEN income_date ELSE created_at END DESC,
+				created_at DESC
+			LIMIT $2
+		`, organizationID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1263,12 +1276,14 @@ func (r *Repository) ListFinanceExpenses(ctx context.Context, organizationID str
 			COALESCE(created_by::text, '') AS created_by,
 			created_at,
 			updated_at
-		FROM finance_expenses, scope
-		WHERE organization_id = $1
-		  AND expense_date >= scope.reset_at
-		ORDER BY expense_date DESC, created_at DESC
-		LIMIT $2
-	`, organizationID, limit)
+			FROM finance_expenses, scope
+			WHERE organization_id = $1
+			  AND (expense_date >= scope.reset_at OR created_at >= scope.reset_at)
+			ORDER BY
+				CASE WHEN expense_date >= scope.reset_at THEN expense_date ELSE created_at END DESC,
+				created_at DESC
+			LIMIT $2
+		`, organizationID, limit)
 	if err != nil {
 		return nil, err
 	}

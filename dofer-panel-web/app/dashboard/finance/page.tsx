@@ -176,13 +176,23 @@ const incomeSources: Array<{ value: string; label: string }> = [
   { value: 'otros', label: 'Otros' },
 ]
 
+const paymentMethods: Array<{ value: string; label: string }> = [
+  { value: 'efectivo', label: 'Efectivo' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'deposito', label: 'Deposito' },
+  { value: 'tarjeta', label: 'Tarjeta' },
+  { value: 'tiktok_shop', label: 'TikTok Shop' },
+  { value: 'mercado_pago', label: 'Mercado Pago' },
+  { value: 'otro', label: 'Otro' },
+]
+
 const defaultExpenseForm = (): ExpenseFormState => ({
   description: '',
   category: 'materiales',
   amount: '',
   expense_date: toDateInputValue(new Date()),
   vendor: '',
-  payment_method: '',
+  payment_method: 'efectivo',
   notes: '',
 })
 
@@ -192,7 +202,7 @@ const defaultIncomeForm = (): IncomeFormState => ({
   amount: '',
   income_date: toDateInputValue(new Date()),
   payer: '',
-  payment_method: '',
+  payment_method: 'efectivo',
   notes: '',
 })
 
@@ -569,13 +579,18 @@ export default function FinancePage() {
 
             <label className="space-y-1 lg:col-span-3">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metodo</span>
-              <input
+              <select
                 className={fieldClass}
                 value={incomeForm.payment_method}
                 onChange={(event) => setIncomeForm((prev) => ({ ...prev, payment_method: event.target.value }))}
-                placeholder="Efectivo, transferencia, deposito..."
                 disabled={incomeSaving}
-              />
+              >
+                {paymentMethods.map((method) => (
+                  <option key={method.value} value={method.value}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="space-y-1 lg:col-span-7">
@@ -610,7 +625,7 @@ export default function FinancePage() {
                 <tr className="border-b bg-muted/35">
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Ingreso</th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Fuente</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagador</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagador / metodo</th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Monto</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Accion</th>
@@ -626,7 +641,10 @@ export default function FinancePage() {
                     <td className="px-4 py-4">
                       <Badge variant="outline">{incomeSourceLabel(income.source)}</Badge>
                     </td>
-                    <td className="px-4 py-4 text-muted-foreground">{income.payer || income.payment_method || 'Sin detalle'}</td>
+                    <td className="px-4 py-4 text-muted-foreground">
+                      <div>{income.payer || 'Sin pagador'}</div>
+                      <div className="mt-1 text-xs">{paymentMethodLabel(income.payment_method)}</div>
+                    </td>
                     <td className="px-4 py-4 text-muted-foreground">{formatDate(income.income_date)}</td>
                     <td className="px-4 py-4 text-right font-semibold text-emerald-600">{currency.format(income.amount)}</td>
                     <td className="px-4 py-4 text-right">
@@ -718,13 +736,18 @@ export default function FinancePage() {
 
             <label className="space-y-1 lg:col-span-3">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metodo</span>
-              <input
+              <select
                 className={fieldClass}
                 value={expenseForm.payment_method}
                 onChange={(event) => setExpenseForm((prev) => ({ ...prev, payment_method: event.target.value }))}
-                placeholder="Efectivo, transferencia, tarjeta..."
                 disabled={expenseSaving}
-              />
+              >
+                {paymentMethods.map((method) => (
+                  <option key={method.value} value={method.value}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="space-y-1 lg:col-span-7">
@@ -759,7 +782,7 @@ export default function FinancePage() {
                 <tr className="border-b bg-muted/35">
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Gasto</th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Categoria</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Proveedor</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Proveedor / metodo</th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Monto</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Accion</th>
@@ -775,7 +798,10 @@ export default function FinancePage() {
                     <td className="px-4 py-4">
                       <Badge variant="outline">{expenseCategoryLabel(expense.category)}</Badge>
                     </td>
-                    <td className="px-4 py-4 text-muted-foreground">{expense.vendor || expense.payment_method || 'Sin detalle'}</td>
+                    <td className="px-4 py-4 text-muted-foreground">
+                      <div>{expense.vendor || 'Sin proveedor'}</div>
+                      <div className="mt-1 text-xs">{paymentMethodLabel(expense.payment_method)}</div>
+                    </td>
                     <td className="px-4 py-4 text-muted-foreground">{formatDate(expense.expense_date)}</td>
                     <td className="px-4 py-4 text-right font-semibold text-red-600">{currency.format(expense.amount)}</td>
                     <td className="px-4 py-4 text-right">
@@ -949,7 +975,7 @@ export default function FinancePage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-4">{payment.customer_name}</td>
-                    <td className="px-4 py-4 text-muted-foreground">{payment.payment_method || 'Sin metodo'}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{paymentMethodLabel(payment.payment_method)}</td>
                     <td className="px-4 py-4 text-muted-foreground">{formatDate(payment.payment_date)}</td>
                     <td className="px-4 py-4 text-right font-semibold">{currency.format(payment.amount)}</td>
                   </tr>
@@ -1107,6 +1133,10 @@ function expenseCategoryLabel(value: string) {
 
 function incomeSourceLabel(value: string) {
   return incomeSources.find((source) => source.value === value)?.label || value || 'Otros'
+}
+
+function paymentMethodLabel(value: string) {
+  return paymentMethods.find((method) => method.value === value)?.label || value || 'Sin metodo'
 }
 
 function formatPeriod(value: string, period: CutPeriod) {

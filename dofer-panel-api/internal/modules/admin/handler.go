@@ -534,6 +534,10 @@ func parseFinanceMovementDate(value string) (time.Time, error) {
 		return parsed, nil
 	}
 	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		now := time.Now()
+		if parsed.Year() == now.Year() && parsed.Month() == now.Month() && parsed.Day() == now.Day() {
+			return now, nil
+		}
 		return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 12, 0, 0, 0, time.Local), nil
 	}
 
