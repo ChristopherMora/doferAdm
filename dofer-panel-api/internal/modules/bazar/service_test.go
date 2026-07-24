@@ -29,8 +29,26 @@ func TestPrepareCreateProduct(t *testing.T) {
 	if command.Category != "Doflins" || command.Price != 40 || command.Stock != 12 {
 		t.Fatalf("unexpected product values: %#v", command)
 	}
+	if !command.TrackStock {
+		t.Fatal("expected regular products to track stock by default")
+	}
 	if command.ImageURL == nil || *command.ImageURL != "https://example.com/capybara.jpg" {
 		t.Fatalf("unexpected image URL: %#v", command.ImageURL)
+	}
+}
+
+func TestPrepareCreateProductAllowsFreeSaleProducts(t *testing.T) {
+	trackStock := false
+	command, err := prepareCreateProduct(CreateProductRequest{
+		Name:       "Producto rápido",
+		Price:      25,
+		TrackStock: &trackStock,
+	})
+	if err != nil {
+		t.Fatalf("prepareCreateProduct returned an error: %v", err)
+	}
+	if command.TrackStock {
+		t.Fatal("expected quick product to allow sales without stock tracking")
 	}
 }
 

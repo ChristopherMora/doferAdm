@@ -53,6 +53,7 @@ interface BazarProduct {
   category: string
   price: number
   stock: number
+  track_stock: boolean
   image_url?: string
   active: boolean
   source?: 'manual' | 'sheets' | 'catalog'
@@ -203,6 +204,15 @@ interface SalePayload {
   payment_method: PaymentMethod
 }
 
+interface QuickSaleInput {
+  product: BazarProduct | null
+  name: string
+  category: string
+  price: number
+  quantity: number
+  paymentMethod: PaymentMethod
+}
+
 interface OfflineSaleEntry {
   payload: SalePayload
   sale: Sale
@@ -272,6 +282,24 @@ const AUDIT_LABELS: Record<string, string> = {
   'sale.cancelled': 'Canceló una venta',
 }
 
+const MAX_SALE_QUANTITY = 999
+
+function productTracksStock(product: BazarProduct) {
+  return product.track_stock !== false
+}
+
+function productSaleLimit(product: BazarProduct) {
+  return productTracksStock(product) ? product.stock : MAX_SALE_QUANTITY
+}
+
+function normalizeProductLookup(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase('es')
+}
+
 const moneyFormatter = new Intl.NumberFormat('es-MX', {
   style: 'currency',
   currency: 'MXN',
@@ -335,10 +363,14 @@ function applyOfflineStock(products: BazarProduct[]) {
       )
     }
   }
-  return products.map((product) => ({
-    ...product,
-    stock: Math.max(0, product.stock - (queuedQuantities.get(product.id) || 0)),
-  }))
+  return products.map((product) =>
+    productTracksStock(product)
+      ? {
+          ...product,
+          stock: Math.max(0, product.stock - (queuedQuantities.get(product.id) || 0)),
+        }
+      : product,
+  )
 }
 
 function isNetworkError(error: unknown) {
@@ -423,7 +455,8 @@ function downloadDailyReportCSV(report: BazarReport) {
       item.quantity,
       item.total,
     ]),
-  ]
+]
+
   const content = '\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\n')
   const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a')
@@ -535,6 +568,8 @@ export default function BazarSalesPage() {
   const [creatingBazar, setCreatingBazar] = useState(false)
   const [showNewProduct, setShowNewProduct] = useState(false)
   const [creatingProduct, setCreatingProduct] = useState(false)
+  const [showQuickSale, setShowQuickSale] = useState(false)
+  const [quickSaleBusy, setQuickSaleBusy] = useState(false)
   const [editingProduct, setEditingProduct] = useState<BazarProduct | null>(null)
   const [adjustingProduct, setAdjustingProduct] = useState<BazarProduct | null>(null)
   const [savingProduct, setSavingProduct] = useState(false)
@@ -570,6 +605,22 @@ export default function BazarSalesPage() {
         .map((product) => ({ product, quantity: cart[product.id] })),
     [cart, products],
   )
+  const quickSaleProducts = useMemo(() => {
+    const recentPosition = new Map<string, number>()
+    for (const sale of sales) {
+      for (const item of sale.items) {
+        if (!recentPosition.has(item.product_id)) {
+          recentPosition.set(item.product_id, recentPosition.size)
+        }
+      }
+    }
+    return [...products].sort((first, second) => {
+      const firstPosition = recentPosition.get(first.id) ?? Number.MAX_SAFE_INTEGER
+      const secondPosition = recentPosition.get(second.id) ?? Number.MAX_SAFE_INTEGER
+      if (firstPosition !== secondPosition) return firstPosition - secondPosition
+      return first.name.localeCompare(second.name, 'es')
+    })
+  }, [products, sales])
   const cartUnits = useMemo(
     () => cartProducts.reduce((total, item) => total + item.quantity, 0),
     [cartProducts],
@@ -597,9 +648,9 @@ export default function BazarSalesPage() {
       const matchesCategory = category === 'Todos' || product.category === category
       const matchesStock =
         stockFilter === 'all' ||
-        (stockFilter === 'available' && product.stock > 0) ||
-        (stockFilter === 'low' && product.stock > 0 && product.stock <= 2) ||
-        (stockFilter === 'out' && product.stock === 0) ||
+        (stockFilter === 'available' && (!productTracksStock(product) || product.stock > 0)) ||
+        (stockFilter === 'low' && productTracksStock(product) && product.stock > 0 && product.stock <= 2) ||
+        (stockFilter === 'out' && productTracksStock(product) && product.stock === 0) ||
         stockFilter === 'inactive'
       const matchesStatus = stockFilter === 'inactive' ? !product.active : product.active
       return matchesStatus && matchesQuery && matchesCategory && matchesStock
@@ -847,7 +898,11 @@ export default function BazarSalesPage() {
   ) => {
     if (!activeBazar || !canSell || requestedItems.length === 0) return null
     for (const item of requestedItems) {
-      if (item.quantity <= 0 || item.quantity > item.product.stock) {
+      if (item.quantity <= 0 || item.quantity > MAX_SALE_QUANTITY) {
+        setError('La cantidad debe estar entre 1 y 999.')
+        return null
+      }
+      if (productTracksStock(item.product) && item.quantity > item.product.stock) {
         setError(`Solo hay ${item.product.stock} unidades disponibles de ${item.product.name}.`)
         return null
       }
@@ -915,7 +970,9 @@ export default function BazarSalesPage() {
           unit_price: item.product.price,
           total: item.product.price * item.quantity,
           stock_before: item.product.stock,
-          stock_after: item.product.stock - item.quantity,
+          stock_after: productTracksStock(item.product)
+            ? item.product.stock - item.quantity
+            : item.product.stock,
         })),
       }
       const queued = [{ payload, sale: localSale }, ...readOfflineSales()]
@@ -927,7 +984,9 @@ export default function BazarSalesPage() {
       setProducts((current) =>
         current.map((product) => {
           const sold = requestedItems.find((item) => item.product.id === product.id)
-          return sold ? { ...product, stock: product.stock - sold.quantity } : product
+          return sold && productTracksStock(product)
+            ? { ...product, stock: product.stock - sold.quantity }
+            : product
         }),
       )
       setSales((current) => [localSale, ...current].slice(0, 12))
@@ -968,7 +1027,7 @@ export default function BazarSalesPage() {
     setCart((current) => {
       const next = { ...current }
       if (nextQuantity <= 0) delete next[product.id]
-      else next[product.id] = Math.min(product.stock, nextQuantity)
+      else next[product.id] = Math.min(productSaleLimit(product), nextQuantity)
       return next
     })
   }
@@ -976,7 +1035,7 @@ export default function BazarSalesPage() {
   const addToCart = (product: BazarProduct) => {
     setCart((current) => ({
       ...current,
-      [product.id]: Math.min(product.stock, (current[product.id] || 0) + 1),
+      [product.id]: Math.min(productSaleLimit(product), (current[product.id] || 0) + 1),
     }))
   }
 
@@ -991,6 +1050,55 @@ export default function BazarSalesPage() {
       }
     } finally {
       setCartBusy(false)
+    }
+  }
+
+  const submitQuickSale = async (input: QuickSaleInput) => {
+    if (quickSaleBusy || !activeBazar) return
+    setQuickSaleBusy(true)
+    setError(null)
+    try {
+      let product = input.product
+      if (!product) {
+        const normalizedName = normalizeProductLookup(input.name)
+        product =
+          products.find(
+            (item) =>
+              normalizeProductLookup(item.name) === normalizedName ||
+              normalizeProductLookup(item.external_id) === normalizedName,
+          ) || null
+      }
+      if (!product) {
+        if (!navigator.onLine) {
+          setError('Conéctate a internet para guardar un producto nuevo. Los productos existentes sí pueden venderse sin conexión.')
+          return
+        }
+        const created = await apiClient.post<BazarProduct>('/bazar/products', {
+          name: input.name,
+          category: input.category,
+          price: input.price,
+          stock: 0,
+          track_stock: false,
+        })
+        product = created
+        setProducts((current) => [
+          created,
+          ...current.filter((item) => item.id !== created.id),
+        ])
+      }
+
+      const sale = await submitSale(
+        [{ product, quantity: input.quantity }],
+        input.paymentMethod,
+      )
+      if (sale) {
+        setPaymentMethod(input.paymentMethod)
+        setShowQuickSale(false)
+      }
+    } catch (quickSaleError) {
+      setError(getErrorMessage(quickSaleError, 'No se pudo guardar el producto para esta venta.'))
+    } finally {
+      setQuickSaleBusy(false)
     }
   }
 
@@ -1057,7 +1165,9 @@ export default function BazarSalesPage() {
         setProducts((current) =>
           current.map((product) => {
             const restored = entry.sale.items.find((item) => item.product_id === product.id)
-            return restored ? { ...product, stock: product.stock + restored.quantity } : product
+            return restored && productTracksStock(product)
+              ? { ...product, stock: product.stock + restored.quantity }
+              : product
           }),
         )
         const units = entry.sale.items.reduce((total, item) => total + item.quantity, 0)
@@ -1371,8 +1481,20 @@ export default function BazarSalesPage() {
             {canSell && (
               <button
                 type="button"
+                onClick={() => setShowQuickSale(true)}
+                disabled={!activeBazar}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ReceiptText className="h-4 w-4" />
+                Nueva venta
+              </button>
+            )}
+
+            {canSell && (
+              <button
+                type="button"
                 onClick={() => setShowNewBazar(true)}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
               >
                 <Plus className="h-4 w-4" />
                 Nuevo bazar
@@ -1544,7 +1666,7 @@ export default function BazarSalesPage() {
                   onSell={() => void registerSale(product, 1)}
                   onMultiple={() => {
                     setQuantityProduct(product)
-                    setQuantity(Math.min(2, product.stock))
+                    setQuantity(Math.min(2, productSaleLimit(product)))
                   }}
                   onCart={() => addToCart(product)}
                   onEdit={() => setEditingProduct(product)}
@@ -1598,6 +1720,17 @@ export default function BazarSalesPage() {
           onPaymentChange={setPaymentMethod}
           onClose={() => setQuantityProduct(null)}
           onConfirm={() => void registerSale(quantityProduct, quantity)}
+        />
+      )}
+
+      {showQuickSale && activeBazar && canSell && (
+        <QuickSaleDialog
+          bazarName={activeBazar.name}
+          products={quickSaleProducts}
+          defaultPaymentMethod={paymentMethod}
+          busy={quickSaleBusy}
+          onClose={() => setShowQuickSale(false)}
+          onSubmit={(input) => void submitQuickSale(input)}
         />
       )}
 
@@ -1798,8 +1931,8 @@ function ProductCard({
   onEdit: () => void
   onAdjust: () => void
 }) {
-  const soldOut = product.stock === 0
-  const lowStock = product.stock > 0 && product.stock <= 2
+  const soldOut = productTracksStock(product) && product.stock === 0
+  const lowStock = productTracksStock(product) && product.stock > 0 && product.stock <= 2
   const unavailable = disabled || soldOut || busy
 
   return (
@@ -1832,6 +1965,8 @@ function ProductCard({
             ? 'Inactivo'
             : soldOut
             ? 'Agotado'
+            : !productTracksStock(product)
+              ? 'Venta libre'
             : lowStock
               ? `Quedan ${product.stock}`
               : `${product.stock} disponibles`}
@@ -1905,6 +2040,391 @@ function ProductCard({
   )
 }
 
+function QuickSaleDialog({
+  bazarName,
+  products,
+  defaultPaymentMethod,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  bazarName: string
+  products: BazarProduct[]
+  defaultPaymentMethod: PaymentMethod
+  busy: boolean
+  onClose: () => void
+  onSubmit: (input: QuickSaleInput) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [selectedProductID, setSelectedProductID] = useState('')
+  const [createNew, setCreateNew] = useState(false)
+  const [price, setPrice] = useState('')
+  const [category, setCategory] = useState('')
+  const [quantity, setQuantity] = useState(1)
+  const [paymentMethod, setPaymentMethod] = useState(defaultPaymentMethod)
+
+  const normalizedSearch = normalizeProductLookup(search)
+  const selectedProduct =
+    products.find((product) => product.id === selectedProductID) || null
+  const exactProduct =
+    !selectedProduct && normalizedSearch
+      ? products.find(
+          (product) =>
+            normalizeProductLookup(product.name) === normalizedSearch ||
+            normalizeProductLookup(product.external_id) === normalizedSearch,
+        ) || null
+      : null
+  const resolvedProduct = selectedProduct || exactProduct
+
+  const matchingProducts = useMemo(() => {
+    const candidates = products.filter((product) => {
+      if (!product.active) return false
+      if (!normalizedSearch) return true
+      return (
+        normalizeProductLookup(product.name).includes(normalizedSearch) ||
+        normalizeProductLookup(product.external_id).includes(normalizedSearch) ||
+        normalizeProductLookup(product.category).includes(normalizedSearch)
+      )
+    })
+    return candidates
+      .sort((first, second) => {
+        const rank = (product: BazarProduct) => {
+          const name = normalizeProductLookup(product.name)
+          const code = normalizeProductLookup(product.external_id)
+          if (name === normalizedSearch || code === normalizedSearch) return 0
+          if (name.startsWith(normalizedSearch)) return 1
+          if (code.startsWith(normalizedSearch)) return 2
+          return 3
+        }
+        return rank(first) - rank(second)
+      })
+      .slice(0, 6)
+  }, [normalizedSearch, products])
+
+  const newProductName = search.trim()
+  const isNewProduct =
+    !resolvedProduct &&
+    newProductName.length > 0 &&
+    (createNew || matchingProducts.length === 0)
+  const quantityLimit = resolvedProduct
+    ? productSaleLimit(resolvedProduct)
+    : MAX_SALE_QUANTITY
+  const unitPrice = resolvedProduct?.price ?? Number(price || 0)
+  const unavailable =
+    resolvedProduct !== null &&
+    (!resolvedProduct.active ||
+      (productTracksStock(resolvedProduct) && resolvedProduct.stock === 0))
+  const validNewProduct =
+    isNewProduct &&
+    price.trim() !== '' &&
+    Number.isFinite(Number(price)) &&
+    Number(price) >= 0
+  const canSubmit =
+    !busy &&
+    !unavailable &&
+    quantity >= 1 &&
+    quantity <= quantityLimit &&
+    (resolvedProduct !== null || validNewProduct)
+
+  const selectProduct = (product: BazarProduct) => {
+    setSelectedProductID(product.id)
+    setSearch(product.name)
+    setCreateNew(false)
+    setQuantity(Math.min(quantity, productSaleLimit(product)) || 1)
+  }
+
+  const resetSelection = () => {
+    setSelectedProductID('')
+    setCreateNew(false)
+    setSearch('')
+    setPrice('')
+    setCategory('')
+    setQuantity(1)
+  }
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canSubmit) return
+    onSubmit({
+      product: resolvedProduct,
+      name: newProductName,
+      category: category.trim(),
+      price: unitPrice,
+      quantity,
+      paymentMethod,
+    })
+  }
+
+  return (
+    <DialogBackdrop onClose={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        role="dialog"
+        aria-modal="true"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
+      >
+        <DialogHeader eyebrow={bazarName} title="Nueva venta" onClose={onClose} />
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="space-y-4 px-5 py-5">
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">Producto</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value)
+                    setSelectedProductID('')
+                    setCreateNew(false)
+                    setQuantity(1)
+                  }}
+                  autoFocus
+                  autoComplete="off"
+                  placeholder="Nombre o código"
+                  className="h-12 w-full rounded-md border border-input bg-background pl-11 pr-11 text-base"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={resetSelection}
+                    className="absolute right-1 top-1 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                    title="Limpiar producto"
+                    aria-label="Limpiar producto"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </label>
+
+            {!resolvedProduct && !isNewProduct && (
+              <div className="border-y border-border">
+                <p className="py-2 text-xs font-medium uppercase text-muted-foreground">
+                  {normalizedSearch ? 'Coincidencias' : 'Selección rápida'}
+                </p>
+                {matchingProducts.map((product) => {
+                  const soldOut = productTracksStock(product) && product.stock === 0
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => selectProduct(product)}
+                      disabled={soldOut}
+                      className="flex min-h-14 w-full items-center gap-3 border-t border-border py-2 text-left hover:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                        <PackageCheck className="h-4 w-4 text-muted-foreground" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">{product.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {product.category || product.external_id}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-sm font-semibold">{moneyFormatter.format(product.price)}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {!productTracksStock(product)
+                            ? 'Venta libre'
+                            : soldOut
+                              ? 'Agotado'
+                              : `${product.stock} disponibles`}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+                {matchingProducts.length === 0 && !normalizedSearch && (
+                  <p className="border-t border-border py-4 text-sm text-muted-foreground">
+                    Sin productos guardados.
+                  </p>
+                )}
+                {normalizedSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCreateNew(true)}
+                    className="flex min-h-14 w-full items-center gap-3 border-t border-border py-2 text-left font-medium text-primary hover:bg-accent/60"
+                  >
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-primary/30">
+                      <Plus className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 truncate">Crear “{newProductName}”</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {resolvedProduct && (
+              <div className="flex items-center gap-3 border-y border-border py-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
+                  <PackageCheck className="h-5 w-5 text-muted-foreground" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{resolvedProduct.name}</span>
+                  <span className="block text-sm text-muted-foreground">
+                    {moneyFormatter.format(resolvedProduct.price)}
+                    {' · '}
+                    {!resolvedProduct.active
+                      ? 'Inactivo'
+                      : !productTracksStock(resolvedProduct)
+                        ? 'Venta libre'
+                        : `${resolvedProduct.stock} disponibles`}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={resetSelection}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-accent"
+                  title="Cambiar producto"
+                  aria-label="Cambiar producto"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {isNewProduct && (
+              <div className="space-y-4 border-y border-border py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Producto nuevo</p>
+                    <p className="truncate font-semibold">{newProductName}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetSelection}
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-accent"
+                    title="Cambiar producto"
+                    aria-label="Cambiar producto"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">Precio</span>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                      <input
+                        type="number"
+                        value={price}
+                        onChange={(event) => setPrice(event.target.value)}
+                        required
+                        min="0"
+                        max="999999999"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        className="h-11 w-full rounded-md border border-input bg-background pl-7 pr-3"
+                      />
+                    </div>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">Categoría</span>
+                    <input
+                      value={category}
+                      onChange={(event) => setCategory(event.target.value)}
+                      maxLength={100}
+                      placeholder="Opcional"
+                      className="h-11 w-full rounded-md border border-input bg-background px-3"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {(resolvedProduct || isNewProduct) && (
+              <>
+                <div className="grid grid-cols-[minmax(0,1fr)_148px] gap-4">
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">Método de pago</span>
+                    <select
+                      value={paymentMethod}
+                      onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
+                      className="h-11 w-full rounded-md border border-input bg-background px-3"
+                    >
+                      {PAYMENT_METHODS.map((method) => (
+                        <option key={method.value} value={method.value}>{method.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div>
+                    <span className="mb-1.5 block text-sm font-medium">Cantidad</span>
+                    <div className="grid h-11 grid-cols-[36px_1fr_36px] overflow-hidden rounded-md border border-input">
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                        disabled={quantity <= 1}
+                        className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
+                        title="Restar unidad"
+                        aria-label="Restar unidad"
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={quantityLimit}
+                        value={quantity}
+                        onChange={(event) =>
+                          setQuantity(
+                            Math.min(
+                              quantityLimit,
+                              Math.max(1, Number(event.target.value) || 1),
+                            ),
+                          )
+                        }
+                        className="min-w-0 border-x border-input bg-background text-center font-semibold"
+                        aria-label="Cantidad"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(Math.min(quantityLimit, quantity + 1))}
+                        disabled={quantity >= quantityLimit}
+                        className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
+                        title="Agregar unidad"
+                        aria-label="Agregar unidad"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {unavailable && (
+                  <p className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Producto no disponible para venta.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-border bg-muted/45 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Total</p>
+            <p className="truncate text-2xl font-semibold text-primary">
+              {moneyFormatter.format(unitPrice * quantity)}
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-5 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {isNewProduct ? 'Guardar y cobrar' : 'Cobrar'}
+          </button>
+        </div>
+      </form>
+    </DialogBackdrop>
+  )
+}
+
 function QuantityDialog({
   product,
   quantity,
@@ -1924,6 +2444,7 @@ function QuantityDialog({
   onClose: () => void
   onConfirm: () => void
 }) {
+  const quantityLimit = productSaleLimit(product)
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div
@@ -1956,16 +2477,16 @@ function QuantityDialog({
           <input
             type="number"
             min={1}
-            max={product.stock}
+            max={quantityLimit}
             value={quantity}
-            onChange={(event) => onQuantityChange(Math.min(product.stock, Math.max(1, Number(event.target.value) || 1)))}
+            onChange={(event) => onQuantityChange(Math.min(quantityLimit, Math.max(1, Number(event.target.value) || 1)))}
             className="h-14 w-24 rounded-md border border-input bg-background text-center text-2xl font-semibold"
             aria-label="Cantidad"
           />
           <button
             type="button"
-            onClick={() => onQuantityChange(Math.min(product.stock, quantity + 1))}
-            disabled={quantity >= product.stock}
+            onClick={() => onQuantityChange(Math.min(quantityLimit, quantity + 1))}
+            disabled={quantity >= quantityLimit}
             className="inline-flex h-12 w-12 items-center justify-center rounded-md border border-input hover:bg-accent disabled:opacity-40"
             title="Agregar unidad"
             aria-label="Agregar unidad"
@@ -2334,8 +2855,12 @@ function ProductDialog({
               </label>
             ) : (
               <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Existencia actual</p>
-                <p className="font-semibold">{product.stock} unidades</p>
+                <p className="text-xs text-muted-foreground">
+                  {productTracksStock(product) ? 'Existencia actual' : 'Control de stock'}
+                </p>
+                <p className="font-semibold">
+                  {productTracksStock(product) ? `${product.stock} unidades` : 'Venta libre'}
+                </p>
               </div>
             )}
           </div>
@@ -2472,7 +2997,11 @@ function StockAdjustmentDialog({
         aria-modal="true"
         className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
       >
-        <DialogHeader eyebrow={`${product.name} · ${product.stock} disponibles`} title="Ajustar inventario" onClose={onClose} />
+        <DialogHeader
+          eyebrow={`${product.name} · ${productTracksStock(product) ? `${product.stock} disponibles` : 'Venta libre'}`}
+          title="Ajustar inventario"
+          onClose={onClose}
+        />
         <div className="space-y-4 px-5 py-5">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">Movimiento</span>
@@ -2564,7 +3093,7 @@ function CartDialog({
                   <Minus className="h-4 w-4" />
                 </button>
                 <span className="w-8 text-center font-semibold">{quantity}</span>
-                <button type="button" onClick={() => onQuantityChange(product, quantity + 1)} disabled={quantity >= product.stock} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input disabled:opacity-40" title="Sumar">
+                <button type="button" onClick={() => onQuantityChange(product, quantity + 1)} disabled={quantity >= productSaleLimit(product)} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input disabled:opacity-40" title="Sumar">
                   <Plus className="h-4 w-4" />
                 </button>
                 <button type="button" onClick={() => onQuantityChange(product, 0)} className="ml-1 inline-flex h-9 w-9 items-center justify-center rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40" title="Quitar">

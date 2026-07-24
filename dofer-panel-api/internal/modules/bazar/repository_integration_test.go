@@ -142,6 +142,52 @@ func TestManualProductSaleLifecycleIntegration(t *testing.T) {
 		t.Fatalf("expected restored stock 12, got %#v", restored)
 	}
 
+	trackStock := false
+	freeSaleProduct, err := service.CreateProduct(
+		ctx,
+		organizationID.String(),
+		userID,
+		"Integration Admin",
+		CreateProductRequest{
+			SKU:        "TEST-FREE-01",
+			Name:       "Producto de venta libre",
+			Price:      30,
+			TrackStock: &trackStock,
+		},
+	)
+	if err != nil {
+		t.Fatalf("create free sale product: %v", err)
+	}
+	freeSale, err := service.CreateSale(ctx, organizationID.String(), userID, "Integration Admin", CreateSaleRequest{
+		ClientRequestID: uuid.NewString(),
+		BazarID:         bazarItem.ID.String(),
+		ProductID:       freeSaleProduct.ID.String(),
+		Quantity:        4,
+		PaymentMethod:   PaymentTransfer,
+	})
+	if err != nil {
+		t.Fatalf("create sale without stock tracking: %v", err)
+	}
+	if len(freeSale.Sale.Items) != 1 || freeSale.Sale.Items[0].StockBefore != 0 ||
+		freeSale.Sale.Items[0].StockAfter != 0 {
+		t.Fatalf("unexpected free sale stock: %#v", freeSale.Sale.Items)
+	}
+	_, err = service.CancelSale(
+		ctx,
+		organizationID.String(),
+		freeSale.Sale.ID,
+		userID,
+		"Integration Admin",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("cancel sale without stock tracking: %v", err)
+	}
+	freeSaleProduct, err = repository.GetProduct(ctx, organizationID.String(), freeSaleProduct.ID)
+	if err != nil || freeSaleProduct == nil || freeSaleProduct.Stock != 0 || freeSaleProduct.TrackStock {
+		t.Fatalf("free sale product changed stock mode: %#v, err=%v", freeSaleProduct, err)
+	}
+
 	secondProduct, err := service.CreateProduct(ctx, organizationID.String(), userID, "Integration Admin", CreateProductRequest{
 		SKU:      "TEST-CAP-02",
 		Name:     "Capibara rosa",

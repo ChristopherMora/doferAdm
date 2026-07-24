@@ -34,7 +34,7 @@ func (r *Repository) UpdateProduct(
 		WHERE id = $9 AND organization_id = $10 AND bazar_enabled = TRUE
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		          bazar_source, stock_sync_policy
+		          bazar_source, stock_sync_policy, track_stock
 	`,
 		product.SKU,
 		product.Name,
@@ -94,7 +94,7 @@ func (r *Repository) AdjustStock(
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE products
-		SET stock = $1, stock_sync_policy = 'manual', updated_at = NOW()
+		SET stock = $1, track_stock = TRUE, stock_sync_policy = 'manual', updated_at = NOW()
 		WHERE id = $2 AND organization_id = $3
 	`, stockAfter, command.ProductID, organizationID); err != nil {
 		return nil, err
@@ -534,6 +534,7 @@ func (r *Repository) FindSyncConflicts(
 		FROM products
 		WHERE organization_id = $1
 		  AND bazar_enabled = TRUE
+		  AND track_stock = TRUE
 		  AND stock_sync_policy = 'manual'
 		  AND sku = ANY($2)
 		  AND NOT EXISTS (

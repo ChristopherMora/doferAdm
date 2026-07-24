@@ -23,6 +23,7 @@ type Product struct {
 	Price         float64    `json:"price"`
 	Cost          *float64   `json:"cost,omitempty"`
 	Stock         int        `json:"stock"`
+	TrackStock    bool       `json:"track_stock"`
 	ImageURL      *string    `json:"image_url,omitempty"`
 	Active        bool       `json:"active"`
 	SheetRow      *int       `json:"sheet_row,omitempty"`
@@ -110,13 +111,14 @@ type CreateBazarRequest struct {
 }
 
 type CreateProductRequest struct {
-	SKU      string   `json:"sku,omitempty"`
-	Name     string   `json:"name"`
-	Category string   `json:"category,omitempty"`
-	Price    float64  `json:"price"`
-	Cost     *float64 `json:"cost,omitempty"`
-	Stock    int      `json:"stock"`
-	ImageURL *string  `json:"image_url,omitempty"`
+	SKU        string   `json:"sku,omitempty"`
+	Name       string   `json:"name"`
+	Category   string   `json:"category,omitempty"`
+	Price      float64  `json:"price"`
+	Cost       *float64 `json:"cost,omitempty"`
+	Stock      int      `json:"stock"`
+	TrackStock *bool    `json:"track_stock,omitempty"`
+	ImageURL   *string  `json:"image_url,omitempty"`
 }
 
 type UpdateProductRequest struct {
@@ -274,13 +276,14 @@ type createSaleItemCommand struct {
 }
 
 type createProductCommand struct {
-	SKU      string
-	Name     string
-	Category string
-	Price    float64
-	Cost     *float64
-	Stock    int
-	ImageURL *string
+	SKU        string
+	Name       string
+	Category   string
+	Price      float64
+	Cost       *float64
+	Stock      int
+	TrackStock bool
+	ImageURL   *string
 }
 
 type updateProductCommand struct {

@@ -119,7 +119,7 @@ func (r *Repository) ListProducts(ctx context.Context, organizationID, query, ca
 	sqlQuery := `
 		SELECT id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		       bazar_source, stock_sync_policy
+		       bazar_source, stock_sync_policy, track_stock
 		FROM products
 		WHERE organization_id = $1 AND bazar_enabled = TRUE
 	`
@@ -136,7 +136,7 @@ func (r *Repository) ListProducts(ctx context.Context, organizationID, query, ca
 		args = append(args, category)
 		sqlQuery += fmt.Sprintf(" AND category = $%d", len(args))
 	}
-	sqlQuery += " ORDER BY is_active DESC, (stock > 0) DESC, category, name"
+	sqlQuery += " ORDER BY is_active DESC, (NOT track_stock OR stock > 0) DESC, category, name"
 
 	rows, err := r.db.Query(ctx, sqlQuery, args...)
 	if err != nil {
@@ -159,7 +159,7 @@ func (r *Repository) GetProduct(ctx context.Context, organizationID string, prod
 	row := r.db.QueryRow(ctx, `
 		SELECT id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		       bazar_source, stock_sync_policy
+		       bazar_source, stock_sync_policy, track_stock
 		FROM products
 		WHERE organization_id = $1 AND id = $2 AND bazar_enabled = TRUE
 	`, organizationID, productID)
@@ -190,6 +190,7 @@ func scanProduct(row pgx.Row) (*Product, error) {
 		&sheetSyncedAt,
 		&product.Source,
 		&product.SyncPolicy,
+		&product.TrackStock,
 	); err != nil {
 		return nil, err
 	}
@@ -217,11 +218,11 @@ func (r *Repository) CreateManualProduct(
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
 			organization_id, sku, name, category, suggested_price, cost, stock,
-			image_url, is_active, bazar_enabled, bazar_source, stock_sync_policy
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE, 'manual', 'manual')
+			image_url, is_active, bazar_enabled, bazar_source, stock_sync_policy, track_stock
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE, 'manual', 'manual', $9)
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		          bazar_source, stock_sync_policy
+		          bazar_source, stock_sync_policy, track_stock
 	`,
 		organizationID,
 		product.SKU,
@@ -231,6 +232,7 @@ func (r *Repository) CreateManualProduct(
 		product.Cost,
 		product.Stock,
 		product.ImageURL,
+		product.TrackStock,
 	)
 
 	created, err := scanProduct(row)
@@ -355,6 +357,7 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		Name       string
 		Price      float64
 		Stock      int
+		TrackStock bool
 	}
 	lockedProducts := make([]lockedProduct, 0, len(cmd.Items))
 	total := 0.0
@@ -363,7 +366,8 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		var product lockedProduct
 		var active, bazarEnabled bool
 		err := tx.QueryRow(ctx, `
-			SELECT id, sku, name, COALESCE(suggested_price, 0), stock, is_active, bazar_enabled
+			SELECT id, sku, name, COALESCE(suggested_price, 0), stock, track_stock,
+			       is_active, bazar_enabled
 			FROM products
 			WHERE id = $1 AND organization_id = $2
 			FOR UPDATE
@@ -373,6 +377,7 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 			&product.Name,
 			&product.Price,
 			&product.Stock,
+			&product.TrackStock,
 			&active,
 			&bazarEnabled,
 		)
@@ -385,7 +390,7 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		if !active {
 			return nil, &serviceError{Status: http.StatusConflict, Message: product.Name + " está inactivo."}
 		}
-		if item.Quantity > product.Stock {
+		if product.TrackStock && item.Quantity > product.Stock {
 			return nil, &serviceError{
 				Status:  http.StatusConflict,
 				Message: fmt.Sprintf("Stock insuficiente para %s. Disponibles: %d.", product.Name, product.Stock),
@@ -426,15 +431,20 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 
 	for index, item := range cmd.Items {
 		product := lockedProducts[index]
-		stockAfter := product.Stock - item.Quantity
+		stockAfter := product.Stock
+		if product.TrackStock {
+			stockAfter -= item.Quantity
+		}
 		lineTotal := product.Price * float64(item.Quantity)
 
-		if _, err := tx.Exec(ctx, `
-			UPDATE products
-			SET stock = $1, updated_at = NOW()
-			WHERE id = $2 AND organization_id = $3
-		`, stockAfter, product.ID, organizationID); err != nil {
-			return nil, err
+		if product.TrackStock {
+			if _, err := tx.Exec(ctx, `
+				UPDATE products
+				SET stock = $1, updated_at = NOW()
+				WHERE id = $2 AND organization_id = $3
+			`, stockAfter, product.ID, organizationID); err != nil {
+				return nil, err
+			}
 		}
 
 		if _, err := tx.Exec(ctx, `
@@ -457,22 +467,24 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 			return nil, err
 		}
 
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO bazar_inventory_movements (
-				organization_id, product_id, sale_id, bazar_id, movement_type,
-				quantity, stock_before, stock_after, reason, created_by
-			) VALUES ($1, $2, $3, $4, 'sale', $5, $6, $7, 'Venta de bazar', $8)
-		`,
-			organizationID,
-			product.ID,
-			saleID,
-			cmd.BazarID,
-			-item.Quantity,
-			product.Stock,
-			stockAfter,
-			cmd.SellerID,
-		); err != nil {
-			return nil, err
+		if product.TrackStock {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO bazar_inventory_movements (
+					organization_id, product_id, sale_id, bazar_id, movement_type,
+					quantity, stock_before, stock_after, reason, created_by
+				) VALUES ($1, $2, $3, $4, 'sale', $5, $6, $7, 'Venta de bazar', $8)
+			`,
+				organizationID,
+				product.ID,
+				saleID,
+				cmd.BazarID,
+				-item.Quantity,
+				product.Stock,
+				stockAfter,
+				cmd.SellerID,
+			); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -709,12 +721,16 @@ func (r *Repository) CancelSale(
 
 	for _, item := range items {
 		var stockBefore int
+		var trackStock bool
 		if err := tx.QueryRow(ctx, `
-			SELECT stock FROM products
+			SELECT stock, track_stock FROM products
 			WHERE id = $1 AND organization_id = $2
 			FOR UPDATE
-		`, item.ProductID, organizationID).Scan(&stockBefore); err != nil {
+		`, item.ProductID, organizationID).Scan(&stockBefore, &trackStock); err != nil {
 			return nil, err
+		}
+		if !trackStock {
+			continue
 		}
 		stockAfter := stockBefore + item.Quantity
 		if _, err := tx.Exec(ctx, `
@@ -906,8 +922,8 @@ func (r *Repository) GetDailyStats(
 
 	if err := r.db.QueryRow(ctx, `
 		SELECT
-			COUNT(*) FILTER (WHERE stock > 0 AND stock <= 2),
-			COUNT(*) FILTER (WHERE stock = 0)
+			COUNT(*) FILTER (WHERE track_stock AND stock > 0 AND stock <= 2),
+			COUNT(*) FILTER (WHERE track_stock AND stock = 0)
 		FROM products
 		WHERE organization_id = $1 AND bazar_enabled = TRUE AND is_active = TRUE
 	`, organizationID).Scan(&stats.LowStockProducts, &stats.OutOfStock); err != nil {

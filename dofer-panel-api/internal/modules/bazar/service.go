@@ -497,27 +497,33 @@ func prepareCreateProduct(req CreateProductRequest) (createProductCommand, error
 	if err != nil {
 		return createProductCommand{}, err
 	}
+	trackStock := true
+	if req.TrackStock != nil {
+		trackStock = *req.TrackStock
+	}
 
 	return createProductCommand{
-		SKU:      sku,
-		Name:     name,
-		Category: category,
-		Price:    req.Price,
-		Cost:     req.Cost,
-		Stock:    req.Stock,
-		ImageURL: imageURL,
+		SKU:        sku,
+		Name:       name,
+		Category:   category,
+		Price:      req.Price,
+		Cost:       req.Cost,
+		Stock:      req.Stock,
+		TrackStock: trackStock,
+		ImageURL:   imageURL,
 	}, nil
 }
 
 func prepareUpdateProduct(current Product, req UpdateProductRequest) (updateProductCommand, error) {
 	createRequest := CreateProductRequest{
-		SKU:      current.ExternalID,
-		Name:     current.Name,
-		Category: current.Category,
-		Price:    current.Price,
-		Cost:     current.Cost,
-		Stock:    current.Stock,
-		ImageURL: current.ImageURL,
+		SKU:        current.ExternalID,
+		Name:       current.Name,
+		Category:   current.Category,
+		Price:      current.Price,
+		Cost:       current.Cost,
+		Stock:      current.Stock,
+		TrackStock: &current.TrackStock,
+		ImageURL:   current.ImageURL,
 	}
 	if req.SKU != nil {
 		createRequest.SKU = *req.SKU
