@@ -39,6 +39,7 @@ interface BazarProduct {
   stock: number
   image_url?: string
   active: boolean
+  preview?: boolean
 }
 
 interface Bazar {
@@ -131,6 +132,18 @@ const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'other', label: 'Otro' },
 ]
 
+const REFERENCE_PRODUCT: BazarProduct = {
+  id: 'reference-product',
+  external_id: 'DOF-001',
+  name: 'Capibara café',
+  category: 'Doflins',
+  price: 40,
+  stock: 12,
+  image_url: '/bazar-reference-capybara.webp',
+  active: true,
+  preview: true,
+}
+
 const moneyFormatter = new Intl.NumberFormat('es-MX', {
   style: 'currency',
   currency: 'MXN',
@@ -178,17 +191,23 @@ export default function BazarSalesPage() {
   const canSell = ['admin', 'operator'].includes(
     currentUser?.organization_role || currentUser?.role || '',
   )
+  const showReferenceProduct =
+    products.length === 0 && syncStatus?.status === 'not_configured'
+  const catalogProducts = useMemo(
+    () => (showReferenceProduct ? [REFERENCE_PRODUCT] : products),
+    [products, showReferenceProduct],
+  )
 
   const categories = useMemo(() => {
     const values = new Set(
-      products.map((product) => product.category.trim()).filter(Boolean),
+      catalogProducts.map((product) => product.category.trim()).filter(Boolean),
     )
     return ['Todos', ...Array.from(values).sort((a, b) => a.localeCompare(b, 'es'))]
-  }, [products])
+  }, [catalogProducts])
 
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('es')
-    return products.filter((product) => {
+    return catalogProducts.filter((product) => {
       const matchesQuery =
         !normalizedQuery ||
         product.name.toLocaleLowerCase('es').includes(normalizedQuery) ||
@@ -202,7 +221,7 @@ export default function BazarSalesPage() {
         (stockFilter === 'out' && product.stock === 0)
       return product.active && matchesQuery && matchesCategory && matchesStock
     })
-  }, [category, products, query, stockFilter])
+  }, [catalogProducts, category, query, stockFilter])
 
   const loadProducts = useCallback(async () => {
     const response = await apiClient.get<{ products: BazarProduct[] }>('/bazar/products')
@@ -258,8 +277,6 @@ export default function BazarSalesPage() {
         if (selected) {
           setActiveBazarID(selected.id)
           setPaymentMethod(selected.default_payment_method)
-        } else {
-          setShowNewBazar(availableBazaars.length === 0)
         }
 
         const lastSync = currentSyncStatus.last_product_sync
@@ -587,7 +604,9 @@ export default function BazarSalesPage() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Catálogo</h2>
             <span className="text-sm text-muted-foreground">
-              {visibleProducts.length} productos
+              {showReferenceProduct
+                ? 'Vista previa'
+                : `${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`}
             </span>
           </div>
 
@@ -599,13 +618,13 @@ export default function BazarSalesPage() {
               canSync={canSell}
             />
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
               {visibleProducts.map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
                   busy={sellingProducts.has(product.id)}
-                  disabled={!canSell || !activeBazar}
+                  disabled={!canSell || !activeBazar || product.preview === true}
                   onSell={() => void registerSale(product, 1)}
                   onMultiple={() => {
                     setQuantityProduct(product)
@@ -660,7 +679,7 @@ export default function BazarSalesPage() {
       {showNewBazar && canSell && (
         <NewBazarDialog
           creating={creatingBazar}
-          canClose={bazaars.length > 0}
+          canClose
           onClose={() => setShowNewBazar(false)}
           onSubmit={createBazar}
         />
@@ -774,8 +793,19 @@ function ProductCard({
               ? 'bg-amber-400 text-amber-950'
               : 'bg-emerald-600 text-white'
         }`}>
-          {soldOut ? 'Agotado' : lowStock ? `Quedan ${product.stock}` : `${product.stock} disponibles`}
+          {soldOut
+            ? 'Agotado'
+            : product.preview
+              ? `Stock ${product.stock}`
+              : lowStock
+                ? `Quedan ${product.stock}`
+                : `${product.stock} disponibles`}
         </span>
+        {product.preview && (
+          <span className="absolute right-2 top-2 rounded-sm bg-card/95 px-2 py-1 text-xs font-semibold text-card-foreground shadow-sm">
+            Vista previa
+          </span>
+        )}
       </div>
 
       <div className="space-y-3 p-3">
