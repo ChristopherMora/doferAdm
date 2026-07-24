@@ -242,16 +242,19 @@ interface OfflineSaleEntry {
 
 interface OfflineProductEntry {
   payload: {
-    id: string
+    id?: string
     sku: string
     name: string
     category: string
     price: number
-    stock: number
-    track_stock: boolean
+    stock?: number
+    track_stock?: boolean
     image_url?: string
+    active?: boolean
+    stock_sync_policy?: string
   }
   product: BazarProduct
+  operation?: 'create' | 'update'
   attempts: number
   last_error?: string
 }
@@ -711,6 +714,7 @@ export default function BazarSalesPage() {
   const [quantityProduct, setQuantityProduct] = useState<BazarProduct | null>(null)
   const [quantity, setQuantity] = useState(2)
   const [confirmation, setConfirmation] = useState<Sale | null>(null)
+  const [repeatSale, setRepeatSale] = useState<Sale | null>(null)
   const [showNewBazar, setShowNewBazar] = useState(false)
   const [creatingBazar, setCreatingBazar] = useState(false)
   const [showNewProduct, setShowNewProduct] = useState(false)
@@ -1308,6 +1312,7 @@ export default function BazarSalesPage() {
         {
           payload,
           product: localProduct,
+          operation: 'create' as const,
           attempts: 0,
           last_error: message,
         },
@@ -1434,12 +1439,7 @@ export default function BazarSalesPage() {
     setHeldSales(next)
   }
 
-  const repeatLastSale = () => {
-    const lastSale = sales.find((sale) => sale.status === 'completed')
-    if (!lastSale) {
-      setError('Todavía no hay una venta para repetir.')
-      return
-    }
+  const confirmRepeatSale = (lastSale: Sale) => {
     const items: Record<string, number> = {}
     for (const item of lastSale.items) {
       const product = products.find((candidate) => candidate.id === item.product_id)
@@ -1449,8 +1449,10 @@ export default function BazarSalesPage() {
     }
     if (Object.keys(items).length === 0) {
       setError('Los productos de la última venta ya no están disponibles.')
+      setRepeatSale(null)
       return
     }
+    setRepeatSale(null)
     openPos(items)
   }
 
@@ -1466,6 +1468,17 @@ export default function BazarSalesPage() {
     } catch {
       // El modo caja visual sigue activo aunque el navegador bloquee pantalla completa.
     }
+  }
+
+  const leaveCashModeForProduct = (product: BazarProduct, action: 'edit' | 'stock') => {
+    if (cashMode) {
+      setCashMode(false)
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => undefined)
+      }
+    }
+    if (action === 'edit') setEditingProduct(product)
+    else setAdjustingProduct(product)
   }
 
   useEffect(() => {
@@ -1498,7 +1511,13 @@ export default function BazarSalesPage() {
     try {
       for (const entry of [...productQueue].reverse()) {
         try {
-          const product = await apiClient.post<BazarProduct>('/bazar/products', entry.payload)
+          const product =
+            entry.operation === 'update'
+              ? await apiClient.put<BazarProduct>(
+                  `/bazar/products/${entry.product.id}`,
+                  entry.payload,
+                )
+              : await apiClient.post<BazarProduct>('/bazar/products', entry.payload)
           syncedProducts.push(product)
         } catch (syncError) {
           pendingProducts.unshift({
@@ -1697,6 +1716,7 @@ export default function BazarSalesPage() {
             {
               payload,
               product: localProduct,
+              operation: 'create' as const,
               attempts: 0,
               last_error: getErrorMessage(productError, 'Conexión interrumpida.'),
             },
@@ -1710,7 +1730,7 @@ export default function BazarSalesPage() {
         }
       } else {
         const queued = [
-          { payload, product: localProduct, attempts: 0 },
+          { payload, product: localProduct, operation: 'create' as const, attempts: 0 },
           ...getOfflineProductQueue(),
         ]
         if (!writeOfflineProducts(queued)) {
@@ -1761,55 +1781,83 @@ export default function BazarSalesPage() {
       const offlineEntry = offlineProducts.find(
         (entry) => entry.product.id === editingProduct.id,
       )
-      if (offlineEntry) {
-        const edited: BazarProduct = {
-          ...editingProduct,
-          external_id: updates.sku,
-          name: updates.name,
-          category: updates.category,
-          price: updates.price,
-          image_url: updates.image_url,
-          active: updates.active,
-          stock_sync_policy: updates.stock_sync_policy as 'manual' | 'sheets',
-        }
-        const next = offlineProducts.map((entry) =>
-          entry.product.id === edited.id
-            ? {
-                ...entry,
-                payload: {
-                  ...entry.payload,
-                  sku: updates.sku,
-                  name: updates.name,
-                  category: updates.category,
-                  price: updates.price,
-                  image_url: updates.image_url,
-                },
-                product: edited,
-                attempts: 0,
-                last_error: undefined,
-              }
-            : entry,
-        )
+      const edited: BazarProduct = {
+        ...editingProduct,
+        external_id: updates.sku,
+        name: updates.name,
+        category: updates.category,
+        price: updates.price,
+        image_url: updates.image_url,
+        active: updates.active,
+        stock_sync_policy: updates.stock_sync_policy as 'manual' | 'sheets',
+      }
+      const queueUpdate = (message?: string) => {
+        const nextEntry: OfflineProductEntry = offlineEntry
+          ? {
+              ...offlineEntry,
+              payload:
+                offlineEntry.operation === 'update'
+                  ? { ...offlineEntry.payload, ...updates }
+                  : {
+                      ...offlineEntry.payload,
+                      sku: updates.sku,
+                      name: updates.name,
+                      category: updates.category,
+                      price: updates.price,
+                      image_url: updates.image_url,
+                    },
+              product: edited,
+              attempts: 0,
+              last_error: message,
+            }
+          : {
+              payload: updates,
+              product: edited,
+              operation: 'update',
+              attempts: 0,
+              last_error: message,
+            }
+        const next = [
+          nextEntry,
+          ...offlineProducts.filter((entry) => entry.product.id !== edited.id),
+        ]
         if (!writeOfflineProducts(next)) {
           throw new Error('No se pudo actualizar el producto guardado en este dispositivo.')
         }
         setProducts((current) =>
           current.map((product) => (product.id === edited.id ? edited : product)),
         )
+        setOfflineProductCount(next.length)
         setOfflineErrorCount(countOfflineErrors())
         setEditingProduct(null)
-        if (navigator.onLine) window.setTimeout(() => void flushOfflineSales(), 0)
+      }
+      if (offlineEntry || !navigator.onLine) {
+        queueUpdate()
+        if (offlineEntry && navigator.onLine) {
+          window.setTimeout(() => void flushOfflineSales(), 0)
+        }
         return
       }
-      const edited = await apiClient.put<BazarProduct>(
-        `/bazar/products/${editingProduct.id}`,
-        updates,
-      )
+      let savedProduct: BazarProduct
+      try {
+        savedProduct = await apiClient.put<BazarProduct>(
+          `/bazar/products/${editingProduct.id}`,
+          updates,
+        )
+      } catch (updateError) {
+        if (!isNetworkError(updateError)) throw updateError
+        queueUpdate(getErrorMessage(updateError, 'Conexión interrumpida.'))
+        return
+      }
       updateCachedProducts((cachedProducts) =>
-        cachedProducts.map((product) => (product.id === edited.id ? edited : product)),
+        cachedProducts.map((product) =>
+          product.id === savedProduct.id ? savedProduct : product,
+        ),
       )
       setProducts((current) =>
-        current.map((product) => (product.id === edited.id ? edited : product)),
+        current.map((product) =>
+          product.id === savedProduct.id ? savedProduct : product,
+        ),
       )
       setEditingProduct(null)
     } catch (updateError) {
@@ -2118,7 +2166,11 @@ export default function BazarSalesPage() {
             {canSell && sales.length > 0 && (
               <button
                 type="button"
-                onClick={repeatLastSale}
+                onClick={() => {
+                  const lastSale = sales.find((sale) => sale.status === 'completed')
+                  if (lastSale) setRepeatSale(lastSale)
+                  else setError('Todavía no hay una venta para repetir.')
+                }}
                 disabled={!activeBazar}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
                 title="Repetir la última venta"
@@ -2332,7 +2384,7 @@ export default function BazarSalesPage() {
                   product={product}
                   busy={sellingProducts.has(product.id)}
                   disabled={!canSell || !activeBazar || !product.active}
-                  canEdit={canSell && !cashMode}
+                  canEdit={canSell}
                   favorite={favoriteProducts.has(product.id)}
                   onSell={() => void registerSale(product, 1)}
                   onMultiple={() => {
@@ -2340,8 +2392,8 @@ export default function BazarSalesPage() {
                     setQuantity(Math.min(2, productSaleLimit(product)))
                   }}
                   onCart={() => addToCart(product)}
-                  onEdit={() => setEditingProduct(product)}
-                  onAdjust={() => setAdjustingProduct(product)}
+                  onEdit={() => leaveCashModeForProduct(product, 'edit')}
+                  onAdjust={() => leaveCashModeForProduct(product, 'stock')}
                   onFavorite={() => toggleFavoriteProduct(product.id)}
                 />
               ))}
@@ -2414,6 +2466,15 @@ export default function BazarSalesPage() {
           onHoldSale={holdSale}
           onDeleteHeldSale={deleteHeldSale}
           onSubmit={submitPosSale}
+        />
+      )}
+
+      {repeatSale && (
+        <RepeatSaleDialog
+          sale={repeatSale}
+          products={products}
+          onClose={() => setRepeatSale(null)}
+          onConfirm={() => confirmRepeatSale(repeatSale)}
         />
       )}
 
@@ -2762,6 +2823,90 @@ function ProductCard({
         </div>
       </div>
     </article>
+  )
+}
+
+function RepeatSaleDialog({
+  sale,
+  products,
+  onClose,
+  onConfirm,
+}: {
+  sale: Sale
+  products: BazarProduct[]
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const hasUnavailableItems = sale.items.some((item) => {
+    const product = products.find((candidate) => candidate.id === item.product_id)
+    return (
+      !product?.active ||
+      (productTracksStock(product) && product.stock < item.quantity)
+    )
+  })
+
+  return (
+    <DialogBackdrop onClose={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="w-full max-w-md overflow-hidden rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
+      >
+        <DialogHeader
+          eyebrow={`Venta ${sale.external_id}`}
+          title="Preparar venta anterior"
+          onClose={onClose}
+        />
+        <div className="space-y-4 px-5 py-5">
+          <p className="text-sm text-muted-foreground">
+            Cargará los mismos productos y cantidades en Nueva venta. Podrás revisarlos,
+            cambiar el método de pago y decidir cuándo cobrar.
+          </p>
+          <div className="divide-y divide-border border-y border-border">
+            {sale.items.map((item) => (
+              <div key={item.product_id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{item.product_name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.quantity} × {moneyFormatter.format(item.unit_price)}
+                  </p>
+                </div>
+                <strong className="shrink-0 text-sm">{moneyFormatter.format(item.total)}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-muted-foreground">
+              Pago anterior: {paymentLabel(sale.payment_method)}
+            </span>
+            <strong>{moneyFormatter.format(sale.total)}</strong>
+          </div>
+          {hasUnavailableItems && (
+            <div className="flex gap-2 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Alguna cantidad se ajustará al stock disponible.
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2 border-t border-border bg-muted/45 px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 rounded-md border border-input bg-background px-4 font-medium hover:bg-accent"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground"
+          >
+            <Repeat2 className="h-4 w-4" />
+            Preparar venta
+          </button>
+        </div>
+      </div>
+    </DialogBackdrop>
   )
 }
 
@@ -4672,7 +4817,9 @@ function OfflineQueueDialog({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{entry.product.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Producto · {entry.attempts > 0 ? `${entry.attempts} intentos` : 'Pendiente'}
+                    {entry.operation === 'update' ? 'Edición de producto' : 'Producto nuevo'}
+                    {' · '}
+                    {entry.attempts > 0 ? `${entry.attempts} intentos` : 'Pendiente'}
                   </p>
                   {entry.last_error && (
                     <p className="mt-1 text-xs text-red-600">{entry.last_error}</p>
