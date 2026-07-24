@@ -1,9 +1,12 @@
 package bazar
 
 import (
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestPrepareCreateProduct(t *testing.T) {
@@ -28,6 +31,59 @@ func TestPrepareCreateProduct(t *testing.T) {
 	}
 	if command.ImageURL == nil || *command.ImageURL != "https://example.com/capybara.jpg" {
 		t.Fatalf("unexpected image URL: %#v", command.ImageURL)
+	}
+}
+
+func TestValidateProductImageDataURL(t *testing.T) {
+	image := "data:image/webp;base64," + base64.StdEncoding.EncodeToString([]byte("webp image"))
+	validated, err := validateProductImage(&image)
+	if err != nil {
+		t.Fatalf("validateProductImage returned an error: %v", err)
+	}
+	if validated == nil || *validated != image {
+		t.Fatalf("unexpected validated image: %#v", validated)
+	}
+
+	tooLarge := "data:image/png;base64," + base64.StdEncoding.EncodeToString(make([]byte, 700_001))
+	_, err = validateProductImage(&tooLarge)
+	if err == nil {
+		t.Fatal("expected oversized image validation error")
+	}
+}
+
+func TestPrepareStockAdjustmentDirections(t *testing.T) {
+	tests := []struct {
+		movementType string
+		quantity     int
+		wantDelta    int
+	}{
+		{movementType: "inventory_entry", quantity: -3, wantDelta: 3},
+		{movementType: "return", quantity: 2, wantDelta: 2},
+		{movementType: "damaged", quantity: 2, wantDelta: -2},
+		{movementType: "lost", quantity: 2, wantDelta: -2},
+		{movementType: "gift", quantity: 2, wantDelta: -2},
+		{movementType: "sample", quantity: 2, wantDelta: -2},
+		{movementType: "manual_adjustment", quantity: -2, wantDelta: -2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.movementType, func(t *testing.T) {
+			command, err := prepareStockAdjustment(
+				uuid.New(),
+				uuid.New(),
+				"Admin",
+				AdjustStockRequest{
+					MovementType: test.movementType,
+					Quantity:     test.quantity,
+				},
+			)
+			if err != nil {
+				t.Fatalf("prepareStockAdjustment returned an error: %v", err)
+			}
+			if command.Delta != test.wantDelta {
+				t.Fatalf("expected delta %d, got %d", test.wantDelta, command.Delta)
+			}
+		})
 	}
 }
 

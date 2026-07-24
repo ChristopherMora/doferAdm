@@ -113,7 +113,7 @@ func (c *GoogleSheetsClient) SyncSale(ctx context.Context, sale *Sale, stocks ma
 	if err != nil {
 		return fmt.Errorf("leer inventario: %w", err)
 	}
-	if err := c.updateInventoryStocks(ctx, inventoryRows, stocks); err != nil {
+	if err := c.updateInventoryStocks(ctx, inventoryRows, stocks, sale); err != nil {
 		return fmt.Errorf("actualizar inventario: %w", err)
 	}
 
@@ -135,7 +135,12 @@ func (c *GoogleSheetsClient) SyncSale(ctx context.Context, sale *Sale, stocks ma
 	return c.appendMissingSaleRows(ctx, salesRows, sale)
 }
 
-func (c *GoogleSheetsClient) updateInventoryStocks(ctx context.Context, rows [][]any, stocks map[string]int) error {
+func (c *GoogleSheetsClient) updateInventoryStocks(
+	ctx context.Context,
+	rows [][]any,
+	stocks map[string]int,
+	sale *Sale,
+) error {
 	if len(stocks) == 0 {
 		return nil
 	}
@@ -152,6 +157,9 @@ func (c *GoogleSheetsClient) updateInventoryStocks(ctx context.Context, rows [][
 	if !ok {
 		return errors.New("falta la columna Stock en Inventario")
 	}
+	nameColumn, hasName := findHeader(headers, "producto", "nombre", "product")
+	priceColumn, hasPrice := findHeader(headers, "precio", "price")
+	activeColumn, hasActive := findHeader(headers, "activo", "active")
 
 	rowByID := make(map[string]int)
 	for index, row := range rows[1:] {
@@ -162,10 +170,28 @@ func (c *GoogleSheetsClient) updateInventoryStocks(ctx context.Context, rows [][
 	}
 
 	data := make([]map[string]any, 0, len(stocks))
+	missingValues := make([][]any, 0)
+	saleItems := make(map[string]SaleItem, len(sale.Items))
+	for _, item := range sale.Items {
+		saleItems[item.ProductExternalID] = item
+	}
 	for externalID, stock := range stocks {
 		rowNumber, exists := rowByID[externalID]
 		if !exists {
-			return fmt.Errorf("producto %s no existe en Inventario", externalID)
+			item, found := saleItems[externalID]
+			if !found || !hasName || !hasPrice {
+				return fmt.Errorf("producto %s no existe en Inventario", externalID)
+			}
+			row := make([]any, len(rows[0]))
+			row[idColumn] = externalID
+			row[nameColumn] = item.ProductName
+			row[priceColumn] = item.UnitPrice
+			row[stockColumn] = stock
+			if hasActive {
+				row[activeColumn] = true
+			}
+			missingValues = append(missingValues, row)
+			continue
 		}
 		data = append(data, map[string]any{
 			"range":  sheetCellRange(c.config.InventoryName, stockColumn, rowNumber),
@@ -173,10 +199,22 @@ func (c *GoogleSheetsClient) updateInventoryStocks(ctx context.Context, rows [][
 		})
 	}
 
-	payload := map[string]any{
-		"valueInputOption": "RAW",
-		"data":             data,
+	if len(missingValues) > 0 {
+		query := url.Values{
+			"valueInputOption": {"USER_ENTERED"},
+			"insertDataOption": {"INSERT_ROWS"},
+		}
+		endpoint := c.spreadsheetEndpoint(
+			"/values/" + url.PathEscape(quoteSheetName(c.config.InventoryName)+"!A:Z") + ":append",
+		)
+		if err := c.doJSON(ctx, http.MethodPost, endpoint, query, map[string]any{"values": missingValues}, nil); err != nil {
+			return err
+		}
 	}
+	if len(data) == 0 {
+		return nil
+	}
+	payload := map[string]any{"valueInputOption": "RAW", "data": data}
 	return c.doJSON(ctx, http.MethodPost, c.spreadsheetEndpoint("/values:batchUpdate"), nil, payload, nil)
 }
 

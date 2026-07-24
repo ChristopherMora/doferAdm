@@ -25,7 +25,8 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) ListBazaars(ctx context.Context, organizationID string) ([]Bazar, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, name, location, status, default_payment_method, starts_at, ends_at
+		SELECT id, name, location, status, default_payment_method, starts_at, ends_at,
+		       opening_cash, expected_cash, closing_cash, cash_difference, closing_notes
 		FROM bazaars
 		WHERE organization_id = $1 AND status <> 'archived'
 		ORDER BY (status = 'active') DESC, starts_at DESC
@@ -51,6 +52,9 @@ func (r *Repository) CreateBazar(ctx context.Context, organizationID string, use
 	if name == "" {
 		return nil, &serviceError{Status: http.StatusBadRequest, Message: "El nombre del bazar es obligatorio."}
 	}
+	if req.OpeningCash < 0 || req.OpeningCash > 999999999 {
+		return nil, &serviceError{Status: http.StatusBadRequest, Message: "El efectivo inicial no es válido."}
+	}
 
 	paymentMethod := normalizePaymentMethod(req.DefaultPaymentMethod)
 	if paymentMethod == "" {
@@ -59,10 +63,11 @@ func (r *Repository) CreateBazar(ctx context.Context, organizationID string, use
 
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO bazaars (
-			organization_id, name, location, default_payment_method, created_by
-		) VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, name, location, status, default_payment_method, starts_at, ends_at
-	`, organizationID, name, sanitizeString(req.Location), paymentMethod, userID)
+			organization_id, name, location, default_payment_method, opening_cash, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, location, status, default_payment_method, starts_at, ends_at,
+		          opening_cash, expected_cash, closing_cash, cash_difference, closing_notes
+	`, organizationID, name, sanitizeString(req.Location), paymentMethod, req.OpeningCash, userID)
 
 	return scanBazar(row)
 }
@@ -71,6 +76,8 @@ func scanBazar(row pgx.Row) (*Bazar, error) {
 	var item Bazar
 	var location sql.NullString
 	var endsAt sql.NullTime
+	var expectedCash, closingCash, cashDifference sql.NullFloat64
+	var closingNotes sql.NullString
 	if err := row.Scan(
 		&item.ID,
 		&item.Name,
@@ -79,6 +86,11 @@ func scanBazar(row pgx.Row) (*Bazar, error) {
 		&item.DefaultPaymentMethod,
 		&item.StartsAt,
 		&endsAt,
+		&item.OpeningCash,
+		&expectedCash,
+		&closingCash,
+		&cashDifference,
+		&closingNotes,
 	); err != nil {
 		return nil, err
 	}
@@ -88,13 +100,26 @@ func scanBazar(row pgx.Row) (*Bazar, error) {
 	if endsAt.Valid {
 		item.EndsAt = &endsAt.Time
 	}
+	if expectedCash.Valid {
+		item.ExpectedCash = &expectedCash.Float64
+	}
+	if closingCash.Valid {
+		item.ClosingCash = &closingCash.Float64
+	}
+	if cashDifference.Valid {
+		item.CashDifference = &cashDifference.Float64
+	}
+	if closingNotes.Valid {
+		item.ClosingNotes = &closingNotes.String
+	}
 	return &item, nil
 }
 
 func (r *Repository) ListProducts(ctx context.Context, organizationID, query, category string) ([]Product, error) {
 	sqlQuery := `
 		SELECT id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
-		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at
+		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
+		       bazar_source, stock_sync_policy
 		FROM products
 		WHERE organization_id = $1 AND bazar_enabled = TRUE
 	`
@@ -133,7 +158,8 @@ func (r *Repository) ListProducts(ctx context.Context, organizationID, query, ca
 func (r *Repository) GetProduct(ctx context.Context, organizationID string, productID uuid.UUID) (*Product, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
-		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at
+		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
+		       bazar_source, stock_sync_policy
 		FROM products
 		WHERE organization_id = $1 AND id = $2 AND bazar_enabled = TRUE
 	`, organizationID, productID)
@@ -162,6 +188,8 @@ func scanProduct(row pgx.Row) (*Product, error) {
 		&product.Active,
 		&sheetRow,
 		&sheetSyncedAt,
+		&product.Source,
+		&product.SyncPolicy,
 	); err != nil {
 		return nil, err
 	}
@@ -189,10 +217,11 @@ func (r *Repository) CreateManualProduct(
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
 			organization_id, sku, name, category, suggested_price, cost, stock,
-			image_url, is_active, bazar_enabled
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE)
+			image_url, is_active, bazar_enabled, bazar_source, stock_sync_policy
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE, 'manual', 'manual')
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
-		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at
+		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
+		          bazar_source, stock_sync_policy
 	`,
 		organizationID,
 		product.SKU,
@@ -211,7 +240,12 @@ func (r *Repository) CreateManualProduct(
 	return created, err
 }
 
-func (r *Repository) UpsertSheetProducts(ctx context.Context, organizationID string, products []sheetProduct) error {
+func (r *Repository) UpsertSheetProducts(
+	ctx context.Context,
+	organizationID string,
+	products []sheetProduct,
+	conflictStrategy string,
+) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -222,13 +256,14 @@ func (r *Repository) UpsertSheetProducts(ctx context.Context, organizationID str
 		_, err := tx.Exec(ctx, `
 			INSERT INTO products (
 				organization_id, sku, name, category, suggested_price, cost, stock,
-				image_url, is_active, bazar_enabled, sheet_row, sheet_synced_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10, NOW())
+				image_url, is_active, bazar_enabled, sheet_row, sheet_synced_at,
+				bazar_source, stock_sync_policy
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10, NOW(), 'sheets', 'sheets')
 			ON CONFLICT (organization_id, sku) DO UPDATE SET
-				name = EXCLUDED.name,
-				category = EXCLUDED.category,
-				suggested_price = EXCLUDED.suggested_price,
-				cost = EXCLUDED.cost,
+				name = CASE WHEN products.bazar_source = 'manual' THEN products.name ELSE EXCLUDED.name END,
+				category = CASE WHEN products.bazar_source = 'manual' THEN products.category ELSE EXCLUDED.category END,
+				suggested_price = CASE WHEN products.bazar_source = 'manual' THEN products.suggested_price ELSE EXCLUDED.suggested_price END,
+				cost = CASE WHEN products.bazar_source = 'manual' THEN products.cost ELSE EXCLUDED.cost END,
 				stock = CASE
 					WHEN EXISTS (
 						SELECT 1
@@ -238,13 +273,16 @@ func (r *Repository) UpsertSheetProducts(ctx context.Context, organizationID str
 						  AND pending_sale.organization_id = products.organization_id
 						  AND pending_sale.sync_status <> 'synced'
 					) THEN products.stock
+					WHEN products.stock_sync_policy = 'manual' AND $11 = 'keep_manual' THEN products.stock
 					ELSE EXCLUDED.stock
 				END,
-				image_url = EXCLUDED.image_url,
-				is_active = EXCLUDED.is_active,
+				image_url = CASE WHEN products.bazar_source = 'manual' THEN products.image_url ELSE EXCLUDED.image_url END,
+				is_active = CASE WHEN products.bazar_source = 'manual' THEN products.is_active ELSE EXCLUDED.is_active END,
 				bazar_enabled = TRUE,
 				sheet_row = EXCLUDED.sheet_row,
 				sheet_synced_at = NOW(),
+				bazar_source = CASE WHEN products.bazar_source = 'manual' THEN 'manual' ELSE 'sheets' END,
+				stock_sync_policy = CASE WHEN products.stock_sync_policy = 'manual' AND $11 = 'keep_manual' THEN 'manual' ELSE 'sheets' END,
 				updated_at = NOW()
 		`,
 			organizationID,
@@ -257,6 +295,7 @@ func (r *Repository) UpsertSheetProducts(ctx context.Context, organizationID str
 			product.ImageURL,
 			product.Active,
 			product.SheetRow,
+			conflictStrategy,
 		)
 		if err != nil {
 			return err
