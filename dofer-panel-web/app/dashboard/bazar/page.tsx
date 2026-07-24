@@ -15,6 +15,7 @@ import {
   MapPin,
   Minus,
   PackageCheck,
+  PackagePlus,
   PackageX,
   Plus,
   ReceiptText,
@@ -182,6 +183,8 @@ export default function BazarSalesPage() {
   const [confirmation, setConfirmation] = useState<Sale | null>(null)
   const [showNewBazar, setShowNewBazar] = useState(false)
   const [creatingBazar, setCreatingBazar] = useState(false)
+  const [showNewProduct, setShowNewProduct] = useState(false)
+  const [creatingProduct, setCreatingProduct] = useState(false)
   const confirmationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const activeBazar = useMemo(
@@ -429,6 +432,35 @@ export default function BazarSalesPage() {
     }
   }
 
+  const createProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setCreatingProduct(true)
+    setError(null)
+    try {
+      const created = await apiClient.post<BazarProduct>('/bazar/products', {
+        sku: String(form.get('sku') || ''),
+        name: String(form.get('name') || ''),
+        category: String(form.get('category') || ''),
+        price: Number(form.get('price')),
+        stock: Number(form.get('stock')),
+        image_url: String(form.get('image_url') || ''),
+      })
+      setProducts((current) => [
+        created,
+        ...current.filter((product) => product.id !== created.id),
+      ])
+      setQuery('')
+      setCategory('Todos')
+      setStockFilter('all')
+      setShowNewProduct(false)
+    } catch (createError) {
+      setError(getErrorMessage(createError, 'No se pudo guardar el producto.'))
+    } finally {
+      setCreatingProduct(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -601,13 +633,25 @@ export default function BazarSalesPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Catálogo</h2>
-            <span className="text-sm text-muted-foreground">
-              {showReferenceProduct
-                ? 'Vista previa'
-                : `${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">
+                {showReferenceProduct
+                  ? 'Vista previa'
+                  : `${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`}
+              </span>
+              {canSell && (
+                <button
+                  type="button"
+                  onClick={() => setShowNewProduct(true)}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+                >
+                  <PackagePlus className="h-4 w-4" />
+                  Agregar producto
+                </button>
+              )}
+            </div>
           </div>
 
           {visibleProducts.length === 0 ? (
@@ -684,6 +728,14 @@ export default function BazarSalesPage() {
         />
       )}
 
+      {showNewProduct && canSell && (
+        <NewProductDialog
+          creating={creatingProduct}
+          onClose={() => setShowNewProduct(false)}
+          onSubmit={createProduct}
+        />
+      )}
+
       {confirmation && (
         <SaleConfirmation
           sale={confirmation}
@@ -737,7 +789,7 @@ function SyncNotice({
         {notConfigured ? <CloudOff className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
         <span>
           {notConfigured
-            ? `Google Sheets no está configurado. ${status.configuration_message || ''}`
+            ? 'Modo manual activo. Las ventas se guardarán en el sistema.'
             : status.last_error || `${status.pending_sales + status.failed_sales} ventas requieren sincronización.`}
         </span>
       </span>
@@ -1107,6 +1159,142 @@ function NewBazarDialog({
   )
 }
 
+function NewProductDialog({
+  creating,
+  onClose,
+  onSubmit,
+}: {
+  creating: boolean
+  onClose: () => void
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <form
+        onSubmit={onSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-product-title"
+        className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-lg border border-border bg-card text-card-foreground shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-lg"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Catálogo manual</p>
+            <h2 id="new-product-title" className="mt-1 text-xl font-semibold">Agregar producto</h2>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-accent" title="Cerrar" aria-label="Cerrar">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Nombre del producto</span>
+            <input
+              name="name"
+              required
+              autoFocus
+              maxLength={160}
+              placeholder="Ej. Capibara café"
+              className="h-11 w-full rounded-md border border-input bg-background px-3"
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">Código / SKU (opcional)</span>
+              <input
+                name="sku"
+                maxLength={80}
+                placeholder="Ej. CAP-01"
+                className="h-11 w-full rounded-md border border-input bg-background px-3"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">Categoría</span>
+              <input
+                name="category"
+                maxLength={100}
+                placeholder="Ej. Doflins"
+                className="h-11 w-full rounded-md border border-input bg-background px-3"
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">Precio</span>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <input
+                  name="price"
+                  type="number"
+                  required
+                  min="0"
+                  max="999999999"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  className="h-11 w-full rounded-md border border-input bg-background pl-7 pr-3"
+                />
+              </div>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">Stock inicial</span>
+              <input
+                name="stock"
+                type="number"
+                required
+                min="0"
+                max="999999"
+                step="1"
+                inputMode="numeric"
+                placeholder="0"
+                className="h-11 w-full rounded-md border border-input bg-background px-3"
+              />
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">URL de imagen (opcional)</span>
+            <input
+              name="image_url"
+              type="url"
+              placeholder="https://..."
+              className="h-11 w-full rounded-md border border-input bg-background px-3"
+            />
+          </label>
+        </div>
+
+        <div className="border-t border-border bg-muted/45 px-5 py-4">
+          <button type="submit" disabled={creating} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50">
+            {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />}
+            Guardar producto
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 function EmptyCatalog({
   hasProducts,
   configured,
@@ -1127,7 +1315,7 @@ function EmptyCatalog({
           ? 'Cambia la búsqueda o los filtros.'
           : configured
             ? 'Sincroniza el inventario para cargar los productos.'
-            : 'Configura la conexión con Google Sheets en el backend.'}
+            : 'Agrega el primer producto para comenzar a operar.'}
       </p>
       {!hasProducts && configured && canSync && (
         <button type="button" onClick={onSync} className="mt-4 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">

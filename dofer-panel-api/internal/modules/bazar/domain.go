@@ -100,6 +100,16 @@ type CreateBazarRequest struct {
 	DefaultPaymentMethod string  `json:"default_payment_method,omitempty"`
 }
 
+type CreateProductRequest struct {
+	SKU      string   `json:"sku,omitempty"`
+	Name     string   `json:"name"`
+	Category string   `json:"category,omitempty"`
+	Price    float64  `json:"price"`
+	Cost     *float64 `json:"cost,omitempty"`
+	Stock    int      `json:"stock"`
+	ImageURL *string  `json:"image_url,omitempty"`
+}
+
 type CreateSaleItemRequest struct {
 	ProductID string `json:"product_id"`
 	Quantity  int    `json:"quantity"`
@@ -148,6 +158,16 @@ type createSaleCommand struct {
 type createSaleItemCommand struct {
 	ProductID uuid.UUID
 	Quantity  int
+}
+
+type createProductCommand struct {
+	SKU      string
+	Name     string
+	Category string
+	Price    float64
+	Cost     *float64
+	Stock    int
+	ImageURL *string
 }
 
 type sheetProduct struct {

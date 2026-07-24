@@ -37,6 +37,7 @@ func RegisterRoutes(r chi.Router, handler *Handler) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireRole("admin", "operator"))
 			r.Post("/bazaars", handler.CreateBazar)
+			r.Post("/products", handler.CreateProduct)
 			r.Post("/sales", handler.CreateSale)
 			r.Post("/sales/{id}/cancel", handler.CancelSale)
 			r.Post("/sales/{id}/undo", handler.CancelSale)
@@ -104,6 +105,21 @@ func (h *Handler) GetProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, product)
+}
+
+func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	var req CreateProductRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	product, err := h.service.CreateProduct(r.Context(), organizationID(r), req)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, product)
 }
 
 func (h *Handler) CreateSale(w http.ResponseWriter, r *http.Request) {

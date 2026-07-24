@@ -3,6 +3,7 @@ package bazar
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -177,6 +179,36 @@ func scanProduct(row pgx.Row) (*Product, error) {
 		product.SheetSyncedAt = &sheetSyncedAt.Time
 	}
 	return &product, nil
+}
+
+func (r *Repository) CreateManualProduct(
+	ctx context.Context,
+	organizationID string,
+	product createProductCommand,
+) (*Product, error) {
+	row := r.db.QueryRow(ctx, `
+		INSERT INTO products (
+			organization_id, sku, name, category, suggested_price, cost, stock,
+			image_url, is_active, bazar_enabled
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE)
+		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
+		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at
+	`,
+		organizationID,
+		product.SKU,
+		product.Name,
+		product.Category,
+		product.Price,
+		product.Cost,
+		product.Stock,
+		product.ImageURL,
+	)
+
+	created, err := scanProduct(row)
+	if isUniqueViolation(err) {
+		return nil, &serviceError{Status: http.StatusConflict, Message: "Ya existe un producto con ese código SKU."}
+	}
+	return created, err
 }
 
 func (r *Repository) UpsertSheetProducts(ctx context.Context, organizationID string, products []sheetProduct) error {
@@ -929,4 +961,9 @@ func sanitizeString(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

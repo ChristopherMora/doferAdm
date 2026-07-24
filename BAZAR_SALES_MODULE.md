@@ -45,3 +45,13 @@ Encabezados de la hoja `Ventas`:
 Cada venta se confirma primero en PostgreSQL y se sincroniza en segundo plano.
 Si Google Sheets no responde, la venta queda visible como pendiente o con error y
 puede reintentarse sin duplicar el registro.
+
+## Operación sin Google Sheets
+
+El catálogo también acepta productos manuales desde `/dashboard/bazar`.
+
+- `POST /api/v1/bazar/products` crea un producto con nombre, precio y stock.
+- El SKU es opcional; si se omite, la API genera uno con prefijo `MAN-`.
+- Las ventas y cancelaciones descuentan o restauran el inventario en PostgreSQL.
+- Sin Google Sheets configurado, las ventas permanecen pendientes y no bloquean la operación.
+- Al preparar el inventario en Sheets, usar el mismo SKU permite relacionar el producto.

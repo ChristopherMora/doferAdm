@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -48,6 +49,18 @@ func (s *Service) syncProducts(ctx context.Context, organizationID string) (int,
 		return 0, err
 	}
 	return len(products), nil
+}
+
+func (s *Service) CreateProduct(
+	ctx context.Context,
+	organizationID string,
+	req CreateProductRequest,
+) (*Product, error) {
+	command, err := prepareCreateProduct(req)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.CreateManualProduct(ctx, organizationID, command)
 }
 
 func (s *Service) CreateSale(
@@ -183,6 +196,9 @@ func (s *Service) syncSaleAsync(organizationID string, sale *Sale) {
 	if sale == nil {
 		return
 	}
+	if configured, _ := s.sheets.Configured(); !configured {
+		return
+	}
 	saleCopy := *sale
 	saleCopy.Items = append([]SaleItem(nil), sale.Items...)
 	go func() {
@@ -218,4 +234,58 @@ func (s *Service) DailyStats(ctx context.Context, organizationID string, bazarID
 	now := time.Now().In(s.location)
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.location)
 	return s.repo.GetDailyStats(ctx, organizationID, bazarID, start, start.AddDate(0, 0, 1))
+}
+
+func prepareCreateProduct(req CreateProductRequest) (createProductCommand, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El nombre del producto es obligatorio."}
+	}
+	if len(name) > 160 {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El nombre del producto no puede superar 160 caracteres."}
+	}
+
+	sku := strings.TrimSpace(req.SKU)
+	if sku == "" {
+		sku = "MAN-" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:8])
+	}
+	if len(sku) > 80 {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El código SKU no puede superar 80 caracteres."}
+	}
+
+	category := strings.TrimSpace(req.Category)
+	if len(category) > 100 {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "La categoría no puede superar 100 caracteres."}
+	}
+	if req.Price < 0 || req.Price > 999999999 {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El precio debe estar entre 0 y 999,999,999."}
+	}
+	if req.Cost != nil && (*req.Cost < 0 || *req.Cost > 999999999) {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El costo debe estar entre 0 y 999,999,999."}
+	}
+	if req.Stock < 0 || req.Stock > 999999 {
+		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El stock debe estar entre 0 y 999,999."}
+	}
+
+	var imageURL *string
+	if req.ImageURL != nil {
+		value := strings.TrimSpace(*req.ImageURL)
+		if value != "" {
+			parsed, err := url.ParseRequestURI(value)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+				return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "La URL de imagen debe comenzar con http:// o https://."}
+			}
+			imageURL = &value
+		}
+	}
+
+	return createProductCommand{
+		SKU:      sku,
+		Name:     name,
+		Category: category,
+		Price:    req.Price,
+		Cost:     req.Cost,
+		Stock:    req.Stock,
+		ImageURL: imageURL,
+	}, nil
 }
