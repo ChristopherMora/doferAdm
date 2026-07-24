@@ -679,7 +679,6 @@ export default function BazarSalesPage() {
       {showNewBazar && canSell && (
         <NewBazarDialog
           creating={creatingBazar}
-          canClose
           onClose={() => setShowNewBazar(false)}
           onSubmit={createBazar}
         />
@@ -1034,31 +1033,48 @@ function SaleConfirmation({
 
 function NewBazarDialog({
   creating,
-  canClose,
   onClose,
   onSubmit,
 }: {
   creating: boolean
-  canClose: boolean
   onClose: () => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
 }) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+    >
       <form
         onSubmit={onSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-bazar-title"
         className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-t-lg border border-border bg-card text-card-foreground shadow-2xl sm:rounded-lg"
       >
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
             <p className="text-sm text-muted-foreground">Jornada de ventas</p>
-            <h2 className="mt-1 text-xl font-semibold">Iniciar bazar</h2>
+            <h2 id="new-bazar-title" className="mt-1 text-xl font-semibold">Iniciar bazar</h2>
           </div>
-          {canClose && (
-            <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-md hover:bg-accent" title="Cerrar" aria-label="Cerrar">
-              <X className="h-5 w-5" />
-            </button>
-          )}
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-accent" title="Cerrar" aria-label="Cerrar">
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="space-y-4 px-5 py-5">
