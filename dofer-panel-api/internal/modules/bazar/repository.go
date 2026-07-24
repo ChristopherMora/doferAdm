@@ -119,7 +119,8 @@ func (r *Repository) ListProducts(ctx context.Context, organizationID, query, ca
 	sqlQuery := `
 		SELECT id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		       bazar_source, stock_sync_policy, track_stock
+		       bazar_source, stock_sync_policy, track_stock,
+		       COALESCE(variant_group_id::text, ''), COALESCE(color, ''), variant_color
 		FROM products
 		WHERE organization_id = $1 AND bazar_enabled = TRUE
 	`
@@ -128,8 +129,8 @@ func (r *Repository) ListProducts(ctx context.Context, organizationID, query, ca
 	if query = strings.TrimSpace(query); query != "" {
 		args = append(args, "%"+query+"%")
 		sqlQuery += fmt.Sprintf(
-			" AND (name ILIKE $%d OR sku ILIKE $%d OR COALESCE(category, '') ILIKE $%d)",
-			len(args), len(args), len(args),
+			" AND (name ILIKE $%d OR sku ILIKE $%d OR COALESCE(category, '') ILIKE $%d OR COALESCE(color, '') ILIKE $%d)",
+			len(args), len(args), len(args), len(args),
 		)
 	}
 	if category = strings.TrimSpace(category); category != "" {
@@ -159,7 +160,8 @@ func (r *Repository) GetProduct(ctx context.Context, organizationID string, prod
 	row := r.db.QueryRow(ctx, `
 		SELECT id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		       cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		       bazar_source, stock_sync_policy, track_stock
+		       bazar_source, stock_sync_policy, track_stock,
+		       COALESCE(variant_group_id::text, ''), COALESCE(color, ''), variant_color
 		FROM products
 		WHERE organization_id = $1 AND id = $2 AND bazar_enabled = TRUE
 	`, organizationID, productID)
@@ -176,6 +178,8 @@ func scanProduct(row pgx.Row) (*Product, error) {
 	var imageURL sql.NullString
 	var sheetRow sql.NullInt32
 	var sheetSyncedAt sql.NullTime
+	var variantGroupID string
+	var variantColor sql.NullString
 	if err := row.Scan(
 		&product.ID,
 		&product.ExternalID,
@@ -191,6 +195,9 @@ func scanProduct(row pgx.Row) (*Product, error) {
 		&product.Source,
 		&product.SyncPolicy,
 		&product.TrackStock,
+		&variantGroupID,
+		&product.VariantName,
+		&variantColor,
 	); err != nil {
 		return nil, err
 	}
@@ -207,6 +214,16 @@ func scanProduct(row pgx.Row) (*Product, error) {
 	if sheetSyncedAt.Valid {
 		product.SheetSyncedAt = &sheetSyncedAt.Time
 	}
+	if variantGroupID != "" {
+		parsedGroupID, err := uuid.Parse(variantGroupID)
+		if err != nil {
+			return nil, err
+		}
+		product.VariantGroupID = &parsedGroupID
+	}
+	if variantColor.Valid {
+		product.VariantColor = &variantColor.String
+	}
 	return &product, nil
 }
 
@@ -218,12 +235,14 @@ func (r *Repository) CreateManualProduct(
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
 			id, organization_id, sku, name, category, suggested_price, cost, stock,
-			image_url, is_active, bazar_enabled, bazar_source, stock_sync_policy, track_stock
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, TRUE, 'manual', 'manual', $10)
+			image_url, is_active, bazar_enabled, bazar_source, stock_sync_policy, track_stock,
+			variant_group_id, color, variant_color
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, TRUE, 'manual', 'manual', $10, $11, $12, $13)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		          bazar_source, stock_sync_policy, track_stock
+		          bazar_source, stock_sync_policy, track_stock,
+		          COALESCE(variant_group_id::text, ''), COALESCE(color, ''), variant_color
 	`,
 		product.ID,
 		organizationID,
@@ -235,6 +254,9 @@ func (r *Repository) CreateManualProduct(
 		product.Stock,
 		product.ImageURL,
 		product.TrackStock,
+		product.VariantGroupID,
+		product.VariantName,
+		product.VariantColor,
 	)
 
 	created, err := scanProduct(row)
@@ -378,7 +400,12 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		var product lockedProduct
 		var active, bazarEnabled bool
 		err := tx.QueryRow(ctx, `
-			SELECT id, sku, name, COALESCE(suggested_price, 0), stock, track_stock,
+			SELECT id, sku,
+			       CASE
+			           WHEN NULLIF(TRIM(color), '') IS NULL THEN name
+			           ELSE name || ' · ' || TRIM(color)
+			       END,
+			       COALESCE(suggested_price, 0), stock, track_stock,
 			       is_active, bazar_enabled
 			FROM products
 			WHERE id = $1 AND organization_id = $2

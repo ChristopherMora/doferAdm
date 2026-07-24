@@ -29,12 +29,16 @@ func (r *Repository) UpdateProduct(
 		    image_url = $6,
 		    is_active = $7,
 		    stock_sync_policy = $8,
+		    variant_group_id = $9,
+		    color = $10,
+		    variant_color = $11,
 		    bazar_source = 'manual',
 		    updated_at = NOW()
-		WHERE id = $9 AND organization_id = $10 AND bazar_enabled = TRUE
+		WHERE id = $12 AND organization_id = $13 AND bazar_enabled = TRUE
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
-		          bazar_source, stock_sync_policy, track_stock
+		          bazar_source, stock_sync_policy, track_stock,
+		          COALESCE(variant_group_id::text, ''), COALESCE(color, ''), variant_color
 	`,
 		product.SKU,
 		product.Name,
@@ -44,6 +48,9 @@ func (r *Repository) UpdateProduct(
 		product.ImageURL,
 		product.Active,
 		product.SyncPolicy,
+		product.VariantGroupID,
+		product.VariantName,
+		product.VariantColor,
 		productID,
 		organizationID,
 	)

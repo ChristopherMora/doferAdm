@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Clock3,
   CloudOff,
+  CopyPlus,
   FileDown,
   FileText,
   ImageOff,
@@ -56,12 +57,14 @@ import {
   readFavoriteProducts,
   readHeldSales,
   readLastPaymentMethod,
+  readLastVariants,
   readOfflineProducts,
   requestPersistentStorage,
   writeCombos,
   writeFavoriteProducts,
   writeHeldSales,
   writeLastPaymentMethod,
+  writeLastVariant,
   writeOfflineProducts,
 } from './pos-storage'
 
@@ -77,6 +80,16 @@ interface BazarProduct {
   active: boolean
   source?: 'manual' | 'sheets' | 'catalog'
   stock_sync_policy?: 'manual' | 'sheets'
+  variant_group_id?: string
+  variant_name?: string
+  variant_color?: string
+}
+
+interface ProductGroup {
+  id: string
+  name: string
+  category: string
+  variants: BazarProduct[]
 }
 
 interface Bazar {
@@ -252,6 +265,9 @@ interface OfflineProductEntry {
     image_url?: string
     active?: boolean
     stock_sync_policy?: string
+    variant_group_id?: string
+    variant_name?: string
+    variant_color?: string
   }
   product: BazarProduct
   operation?: 'create' | 'update'
@@ -348,6 +364,48 @@ function productTracksStock(product: BazarProduct) {
 
 function productSaleLimit(product: BazarProduct) {
   return productTracksStock(product) ? product.stock : MAX_SALE_QUANTITY
+}
+
+function productGroupID(product: BazarProduct) {
+  return product.variant_group_id || product.id
+}
+
+function variantLabel(product: BazarProduct) {
+  return product.variant_name?.trim() || 'Única'
+}
+
+function productDisplayName(product: BazarProduct) {
+  return product.variant_name?.trim()
+    ? `${product.name} · ${product.variant_name.trim()}`
+    : product.name
+}
+
+function groupCatalogProducts(products: BazarProduct[]) {
+  const groups = new Map<string, ProductGroup>()
+  for (const product of products) {
+    const id = productGroupID(product)
+    const current = groups.get(id)
+    if (current) {
+      current.variants.push(product)
+    } else {
+      groups.set(id, {
+        id,
+        name: product.name,
+        category: product.category,
+        variants: [product],
+      })
+    }
+  }
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    variants: group.variants.sort((first, second) => {
+      const availability =
+        Number(second.active && productSaleLimit(second) > 0) -
+        Number(first.active && productSaleLimit(first) > 0)
+      if (availability !== 0) return availability
+      return variantLabel(first).localeCompare(variantLabel(second), 'es')
+    }),
+  }))
 }
 
 function normalizeProductLookup(value: string) {
@@ -718,12 +776,14 @@ export default function BazarSalesPage() {
   const [showNewBazar, setShowNewBazar] = useState(false)
   const [creatingBazar, setCreatingBazar] = useState(false)
   const [showNewProduct, setShowNewProduct] = useState(false)
+  const [variantSeed, setVariantSeed] = useState<BazarProduct | null>(null)
   const [creatingProduct, setCreatingProduct] = useState(false)
   const [showQuickSale, setShowQuickSale] = useState(false)
   const [quickSaleBusy, setQuickSaleBusy] = useState(false)
   const [posInitialItems, setPosInitialItems] = useState<Record<string, number>>({})
   const [posSessionKey, setPosSessionKey] = useState(0)
   const [favoriteProducts, setFavoriteProducts] = useState<Set<string>>(new Set())
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({})
   const [combos, setCombos] = useState<StoredCombo[]>([])
   const [heldSales, setHeldSales] = useState<StoredHeldSale[]>([])
   const [cashMode, setCashMode] = useState(false)
@@ -809,7 +869,8 @@ export default function BazarSalesPage() {
         !normalizedQuery ||
         product.name.toLocaleLowerCase('es').includes(normalizedQuery) ||
         product.external_id.toLocaleLowerCase('es').includes(normalizedQuery) ||
-        product.category.toLocaleLowerCase('es').includes(normalizedQuery)
+        product.category.toLocaleLowerCase('es').includes(normalizedQuery) ||
+        (product.variant_name || '').toLocaleLowerCase('es').includes(normalizedQuery)
       const matchesCategory = category === 'Todos' || product.category === category
       const matchesStock =
         stockFilter === 'all' ||
@@ -821,6 +882,14 @@ export default function BazarSalesPage() {
       return matchesStatus && matchesQuery && matchesCategory && matchesStock
     })
   }, [products, category, query, stockFilter])
+  const visibleProductGroups = useMemo(
+    () => groupCatalogProducts(visibleProducts),
+    [visibleProducts],
+  )
+  const visibleVariantCount = useMemo(
+    () => visibleProducts.filter((product) => product.variant_group_id).length,
+    [visibleProducts],
+  )
 
   const loadProducts = useCallback(async () => {
     const response = await apiClient.get<{ products: BazarProduct[] }>('/bazar/products')
@@ -875,6 +944,7 @@ export default function BazarSalesPage() {
 
   useEffect(() => {
     setFavoriteProducts(new Set(readFavoriteProducts()))
+    setSelectedVariants(readLastVariants())
     setCombos(readCombos())
     setHeldSales(readHeldSales())
     const savedPaymentMethod = readLastPaymentMethod() as PaymentMethod
@@ -1088,7 +1158,7 @@ export default function BazarSalesPage() {
         return null
       }
       if (productTracksStock(item.product) && item.quantity > item.product.stock) {
-        setError(`Solo hay ${item.product.stock} unidades disponibles de ${item.product.name}.`)
+        setError(`Solo hay ${item.product.stock} unidades disponibles de ${productDisplayName(item.product)}.`)
         return null
       }
     }
@@ -1132,7 +1202,7 @@ export default function BazarSalesPage() {
         items: requestedItems.map((item) => ({
           product_id: item.product.id,
           product_external_id: item.product.external_id,
-          product_name: item.product.name,
+          product_name: productDisplayName(item.product),
           quantity: item.quantity,
           unit_price: item.product.price,
           total: item.product.price * item.quantity,
@@ -1386,6 +1456,11 @@ export default function BazarSalesPage() {
       writeFavoriteProducts([...next])
       return next
     })
+  }
+
+  const selectVariant = (groupID: string, productID: string) => {
+    setSelectedVariants((current) => ({ ...current, [groupID]: productID }))
+    writeLastVariant(groupID, productID)
   }
 
   const saveCombo = (name: string, items: Record<string, number>) => {
@@ -1681,6 +1756,160 @@ export default function BazarSalesPage() {
     try {
       const file = form.get('image_file')
       const uploadedImage = await imageFileToDataURL(file instanceof File ? file : null)
+      const productMode = String(form.get('product_mode') || 'single')
+
+      if (productMode === 'variants') {
+        const variantIDs = String(form.get('variant_ids') || '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+        if (variantIDs.length === 0) {
+          throw new Error('Agrega al menos una variante.')
+        }
+
+        const groupID = variantSeed?.variant_group_id || crypto.randomUUID()
+        const name = String(form.get('name') || variantSeed?.name || '').trim()
+        const category = String(
+          form.get('category') || variantSeed?.category || '',
+        ).trim()
+        const commonPrice = Number(form.get('price'))
+        const commonImage =
+          uploadedImage || String(form.get('image_url') || '')
+        const localVariants = variantIDs.map((variantID, variantIndex) => {
+          const id = crypto.randomUUID()
+          const rawSKU = String(form.get(`variant_sku_${variantID}`) || '').trim()
+          const rawPrice = String(form.get(`variant_price_${variantID}`) || '').trim()
+          const price = rawPrice === '' ? commonPrice : Number(rawPrice)
+          const payload = {
+            id,
+            sku: rawSKU || `MAN-${id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
+            name,
+            category,
+            price,
+            stock: Number(form.get(`variant_stock_${variantID}`) || 0),
+            track_stock: true,
+            image_url:
+              variantSeed || variantIndex === 0 ? commonImage : '',
+            variant_group_id: groupID,
+            variant_name: String(
+              form.get(`variant_name_${variantID}`) || '',
+            ).trim(),
+            variant_color: String(
+              form.get(`variant_color_${variantID}`) || '',
+            ).toUpperCase(),
+          }
+          if (!payload.variant_name) {
+            throw new Error('Escribe el nombre de cada variante.')
+          }
+          const product: BazarProduct = {
+            id,
+            external_id: payload.sku,
+            name: payload.name,
+            category: payload.category,
+            price: payload.price,
+            stock: payload.stock,
+            track_stock: true,
+            image_url: payload.image_url,
+            active: true,
+            source: 'manual',
+            stock_sync_policy: 'manual',
+            variant_group_id: groupID,
+            variant_name: payload.variant_name,
+            variant_color: payload.variant_color,
+          }
+          return { payload, product }
+        })
+
+        const currentQueue = getOfflineProductQueue()
+        const queuedIDs = new Set(localVariants.map((entry) => entry.product.id))
+        const nextEntries: OfflineProductEntry[] = localVariants.map((entry) => ({
+          ...entry,
+          operation: 'create',
+          attempts: 0,
+        }))
+        let convertedSeed: BazarProduct | null = null
+
+        if (variantSeed && !variantSeed.variant_group_id) {
+          const seedUpdates = {
+            sku: variantSeed.external_id,
+            name,
+            category,
+            price: variantSeed.price,
+            image_url: variantSeed.image_url || '',
+            active: variantSeed.active,
+            stock_sync_policy: variantSeed.stock_sync_policy || 'manual',
+            variant_group_id: groupID,
+            variant_name: String(form.get('current_variant_name') || '').trim(),
+            variant_color: String(
+              form.get('current_variant_color') || '',
+            ).toUpperCase(),
+          }
+          if (!seedUpdates.variant_name) {
+            throw new Error('Escribe la variante del producto actual.')
+          }
+          convertedSeed = {
+            ...variantSeed,
+            name,
+            category,
+            variant_group_id: groupID,
+            variant_name: seedUpdates.variant_name,
+            variant_color: seedUpdates.variant_color,
+          }
+          const existingEntry = currentQueue.find(
+            (entry) => entry.product.id === variantSeed.id,
+          )
+          nextEntries.push(
+            existingEntry
+              ? {
+                  ...existingEntry,
+                  payload: { ...existingEntry.payload, ...seedUpdates },
+                  product: convertedSeed,
+                  attempts: 0,
+                  last_error: undefined,
+                }
+              : {
+                  payload: seedUpdates,
+                  product: convertedSeed,
+                  operation: 'update',
+                  attempts: 0,
+                },
+          )
+          queuedIDs.add(variantSeed.id)
+        }
+
+        const nextQueue = [
+          ...nextEntries,
+          ...currentQueue.filter((entry) => !queuedIDs.has(entry.product.id)),
+        ]
+        if (!writeOfflineProducts(nextQueue)) {
+          throw new Error('No hay espacio disponible para guardar las variantes.')
+        }
+        setProducts((current) => [
+          ...localVariants.map((entry) => entry.product),
+          ...current.map((product) =>
+            convertedSeed && product.id === convertedSeed.id
+              ? convertedSeed
+              : product,
+          ),
+        ])
+        setSelectedVariants((current) => ({
+          ...current,
+          [groupID]: convertedSeed?.id || localVariants[0].product.id,
+        }))
+        writeLastVariant(groupID, convertedSeed?.id || localVariants[0].product.id)
+        setOfflineProductCount(nextQueue.length)
+        setOfflineErrorCount(countOfflineErrors())
+        setQuery('')
+        setCategory('Todos')
+        setStockFilter('all')
+        setShowNewProduct(false)
+        setVariantSeed(null)
+        if (navigator.onLine) {
+          window.setTimeout(() => void flushOfflineSales(), 0)
+        }
+        return
+      }
+
       const id = crypto.randomUUID()
       const rawSKU = String(form.get('sku') || '').trim()
       const payload = {
@@ -1749,6 +1978,7 @@ export default function BazarSalesPage() {
       setCategory('Todos')
       setStockFilter('all')
       setShowNewProduct(false)
+      setVariantSeed(null)
     } catch (createError) {
       setError(getErrorMessage(createError, 'No se pudo guardar el producto.'))
     } finally {
@@ -1766,6 +1996,17 @@ export default function BazarSalesPage() {
       const file = form.get('image_file')
       const uploadedImage = await imageFileToDataURL(file instanceof File ? file : null)
       const removeImage = form.get('remove_image') === 'on'
+      const variantUpdates = editingProduct.variant_group_id
+        ? {
+            variant_group_id: editingProduct.variant_group_id,
+            variant_name: String(
+              form.get('variant_name') || editingProduct.variant_name || '',
+            ).trim(),
+            variant_color: String(
+              form.get('variant_color') || editingProduct.variant_color || '',
+            ).toUpperCase(),
+          }
+        : {}
       const updates = {
         sku: String(form.get('sku') || '').trim(),
         name: String(form.get('name') || '').trim(),
@@ -1776,6 +2017,7 @@ export default function BazarSalesPage() {
           : uploadedImage || String(form.get('image_url') || '') || editingProduct.image_url || '',
         active: form.get('active') === 'on',
         stock_sync_policy: String(form.get('stock_sync_policy') || 'manual'),
+        ...variantUpdates,
       }
       const offlineProducts = getOfflineProductQueue()
       const offlineEntry = offlineProducts.find(
@@ -1790,6 +2032,7 @@ export default function BazarSalesPage() {
         image_url: updates.image_url,
         active: updates.active,
         stock_sync_policy: updates.stock_sync_policy as 'manual' | 'sheets',
+        ...variantUpdates,
       }
       const queueUpdate = (message?: string) => {
         const nextEntry: OfflineProductEntry = offlineEntry
@@ -2074,7 +2317,7 @@ export default function BazarSalesPage() {
       }
     >
       <section className="border-b border-border pb-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
@@ -2092,7 +2335,7 @@ export default function BazarSalesPage() {
             </h1>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
+          <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:justify-end">
             <label className="relative min-w-0 sm:min-w-64">
               <span className="sr-only">Bazar activo</span>
               <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -2354,12 +2597,21 @@ export default function BazarSalesPage() {
             <h2 className="text-lg font-semibold">Catálogo</h2>
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {`${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`}
+                {visibleProductGroups.length === visibleProducts.length
+                  ? `${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`
+                  : `${visibleProductGroups.length} ${
+                      visibleProductGroups.length === 1 ? 'modelo' : 'modelos'
+                    } · ${
+                      visibleVariantCount
+                    } ${visibleVariantCount === 1 ? 'variante' : 'variantes'}`}
               </span>
               {canSell && (
                 <button
                   type="button"
-                  onClick={() => setShowNewProduct(true)}
+                  onClick={() => {
+                    setVariantSeed(null)
+                    setShowNewProduct(true)
+                  }}
                   className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
                 >
                   <PackagePlus className="h-4 w-4" />
@@ -2377,26 +2629,47 @@ export default function BazarSalesPage() {
               canSync={canSell}
             />
           ) : (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-              {visibleProducts.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  busy={sellingProducts.has(product.id)}
-                  disabled={!canSell || !activeBazar || !product.active}
-                  canEdit={canSell}
-                  favorite={favoriteProducts.has(product.id)}
-                  onSell={() => void registerSale(product, 1)}
-                  onMultiple={() => {
-                    setQuantityProduct(product)
-                    setQuantity(Math.min(2, productSaleLimit(product)))
-                  }}
-                  onCart={() => addToCart(product)}
-                  onEdit={() => leaveCashModeForProduct(product, 'edit')}
-                  onAdjust={() => leaveCashModeForProduct(product, 'stock')}
-                  onFavorite={() => toggleFavoriteProduct(product.id)}
-                />
-              ))}
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+              {visibleProductGroups.map((group) => {
+                const selectedProduct =
+                  group.variants.find(
+                    (product) => product.id === selectedVariants[group.id],
+                  ) ||
+                  group.variants.find((product) => favoriteProducts.has(product.id)) ||
+                  group.variants[0]
+                return (
+                  <ProductCard
+                    key={group.id}
+                    group={group}
+                    product={selectedProduct}
+                    busy={group.variants.some((product) => sellingProducts.has(product.id))}
+                    disabled={!canSell || !activeBazar || !selectedProduct.active}
+                    canEdit={canSell}
+                    favorite={favoriteProducts.has(selectedProduct.id)}
+                    onSelect={(product) => selectVariant(group.id, product.id)}
+                    onSell={() => {
+                      selectVariant(group.id, selectedProduct.id)
+                      void registerSale(selectedProduct, 1)
+                    }}
+                    onMultiple={() => {
+                      selectVariant(group.id, selectedProduct.id)
+                      setQuantityProduct(selectedProduct)
+                      setQuantity(Math.min(2, productSaleLimit(selectedProduct)))
+                    }}
+                    onCart={() => {
+                      selectVariant(group.id, selectedProduct.id)
+                      addToCart(selectedProduct)
+                    }}
+                    onEdit={() => leaveCashModeForProduct(selectedProduct, 'edit')}
+                    onAdjust={() => leaveCashModeForProduct(selectedProduct, 'stock')}
+                    onAddVariant={() => {
+                      setVariantSeed(selectedProduct)
+                      setShowNewProduct(true)
+                    }}
+                    onFavorite={() => toggleFavoriteProduct(selectedProduct.id)}
+                  />
+                )
+              })}
             </div>
           )}
         </section>
@@ -2488,8 +2761,12 @@ export default function BazarSalesPage() {
 
       {showNewProduct && canSell && (
         <ProductDialog
+          variantSeed={variantSeed}
           creating={creatingProduct}
-          onClose={() => setShowNewProduct(false)}
+          onClose={() => {
+            setShowNewProduct(false)
+            setVariantSeed(null)
+          }}
           onSubmit={createProduct}
         />
       )}
@@ -2684,43 +2961,65 @@ function SyncNotice({
 }
 
 function ProductCard({
+  group,
   product,
   busy,
   disabled,
   canEdit,
   favorite,
+  onSelect,
   onSell,
   onMultiple,
   onCart,
   onEdit,
   onAdjust,
+  onAddVariant,
   onFavorite,
 }: {
+  group: ProductGroup
   product: BazarProduct
   busy: boolean
   disabled: boolean
   canEdit: boolean
   favorite: boolean
+  onSelect: (product: BazarProduct) => void
   onSell: () => void
   onMultiple: () => void
   onCart: () => void
   onEdit: () => void
   onAdjust: () => void
+  onAddVariant: () => void
   onFavorite: () => void
 }) {
   const soldOut = productTracksStock(product) && product.stock === 0
   const lowStock = productTracksStock(product) && product.stock > 0 && product.stock <= 2
   const unavailable = disabled || soldOut || busy
+  const hasVariants = group.variants.length > 1 || Boolean(product.variant_group_id)
+  const activeVariants = group.variants.filter((variant) => variant.active)
+  const trackedVariants = activeVariants.filter(productTracksStock)
+  const totalStock = trackedVariants.reduce((total, variant) => total + variant.stock, 0)
+  const groupSoldOut =
+    activeVariants.length === 0 ||
+    activeVariants.every(
+      (variant) => productTracksStock(variant) && variant.stock === 0,
+    )
+  const displayedVariants = [
+    product,
+    ...group.variants.filter((variant) => variant.id !== product.id),
+  ]
+  const displayImage =
+    product.image_url ||
+    group.variants.find((variant) => variant.image_url)?.image_url
 
   return (
     <article className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
       <div className="relative aspect-square overflow-hidden bg-muted">
-        {product.image_url ? (
+        {displayImage ? (
           // Las URL vienen del inventario y pueden usar proveedores distintos.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={product.image_url}
-            alt={product.name}
+            src={displayImage}
+            alt={productDisplayName(product)}
             className="h-full w-full object-cover"
             loading="lazy"
           />
@@ -2730,18 +3029,22 @@ function ProductCard({
           </div>
         )}
         <span className={`absolute left-2 top-2 rounded-sm px-2 py-1 text-xs font-semibold ${
-          !product.active
+          activeVariants.length === 0
             ? 'bg-zinc-700 text-white'
-            : soldOut
+            : groupSoldOut
             ? 'bg-red-600 text-white'
-            : lowStock
+            : !hasVariants && lowStock
               ? 'bg-amber-400 text-amber-950'
               : 'bg-emerald-600 text-white'
         }`}>
-          {!product.active
+          {activeVariants.length === 0
             ? 'Inactivo'
-            : soldOut
+            : groupSoldOut
             ? 'Agotado'
+            : hasVariants
+              ? trackedVariants.length > 0
+                ? `${group.variants.length} variantes · ${totalStock} uds`
+                : `${group.variants.length} variantes`
             : !productTracksStock(product)
               ? 'Venta libre'
             : lowStock
@@ -2753,7 +3056,7 @@ function ProductCard({
           onClick={onFavorite}
           className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/95 shadow-sm hover:bg-background"
           title={favorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-          aria-label={favorite ? `Quitar ${product.name} de favoritos` : `Agregar ${product.name} a favoritos`}
+          aria-label={favorite ? `Quitar ${productDisplayName(product)} de favoritos` : `Agregar ${productDisplayName(product)} a favoritos`}
         >
           <Star className={`h-4 w-4 ${favorite ? 'fill-current text-amber-500' : ''}`} />
         </button>
@@ -2761,12 +3064,54 @@ function ProductCard({
 
       <div className="space-y-3 p-3">
         <div className="min-w-0">
-          <p className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">{product.name}</p>
+          <p className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">{group.name}</p>
           <div className="mt-1 flex items-center justify-between gap-2">
             <span className="truncate text-xs text-muted-foreground">{product.category || 'Sin categoría'}</span>
             <span className="shrink-0 font-semibold text-primary">{moneyFormatter.format(product.price)}</span>
           </div>
         </div>
+
+        {hasVariants && (
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+            {displayedVariants.map((variant) => {
+              const variantSoldOut =
+                productTracksStock(variant) && variant.stock === 0
+              const selected = variant.id === product.id
+              return (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => onSelect(variant)}
+                  aria-pressed={selected}
+                  className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium ${
+                    selected
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-input bg-background hover:bg-accent'
+                  } ${!variant.active || variantSoldOut ? 'opacity-50' : ''}`}
+                  title={`${variantLabel(variant)} · ${
+                    !variant.active
+                      ? 'Inactivo'
+                      : !productTracksStock(variant)
+                        ? 'Venta libre'
+                        : `${variant.stock} disponibles`
+                  }`}
+                >
+                  {variant.variant_color && (
+                    <span
+                      className="h-3.5 w-3.5 shrink-0 rounded-sm border border-black/15"
+                      style={{ backgroundColor: variant.variant_color }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="max-w-20 truncate">{variantLabel(variant)}</span>
+                  {productTracksStock(variant) && (
+                    <span className="text-muted-foreground">{variant.stock}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         <div className="space-y-2">
           <button
@@ -2776,16 +3121,24 @@ function ProductCard({
             className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-1.5 rounded-md bg-primary px-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            <span className="truncate">{!product.active ? 'Inactivo' : soldOut ? 'Agotado' : '+1 vendido'}</span>
+            <span className="truncate">
+              {!product.active
+                ? 'Inactivo'
+                : soldOut
+                  ? 'Agotado'
+                  : hasVariants
+                    ? `+1 ${variantLabel(product)}`
+                    : '+1 vendido'}
+            </span>
           </button>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-5 gap-1.5">
             <button
               type="button"
               onClick={onCart}
               disabled={unavailable}
               className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               title="Agregar al carrito"
-              aria-label={`Agregar ${product.name} al carrito`}
+              aria-label={`Agregar ${productDisplayName(product)} al carrito`}
             >
               <ShoppingCart className="h-4 w-4" />
             </button>
@@ -2795,7 +3148,7 @@ function ProductCard({
               disabled={unavailable}
               className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               title="Vender varias unidades"
-              aria-label={`Vender varias unidades de ${product.name}`}
+              aria-label={`Vender varias unidades de ${productDisplayName(product)}`}
             >
               <Layers3 className="h-4 w-4" />
             </button>
@@ -2805,7 +3158,7 @@ function ProductCard({
               disabled={!canEdit}
               className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50"
               title="Ajustar inventario"
-              aria-label={`Ajustar inventario de ${product.name}`}
+              aria-label={`Ajustar inventario de ${productDisplayName(product)}`}
             >
               <PackagePlus className="h-4 w-4" />
             </button>
@@ -2815,9 +3168,19 @@ function ProductCard({
               disabled={!canEdit}
               className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50"
               title="Editar producto"
-              aria-label={`Editar ${product.name}`}
+              aria-label={`Editar ${productDisplayName(product)}`}
             >
               <Pencil className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onAddVariant}
+              disabled={!canEdit}
+              className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50"
+              title="Agregar otra variante"
+              aria-label={`Agregar otra variante de ${group.name}`}
+            >
+              <CopyPlus className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -2960,18 +3323,28 @@ function QuickSaleDialog({
   const [showInlineScanner, setShowInlineScanner] = useState(false)
   const [addingProduct, setAddingProduct] = useState(false)
   const [saleRegistered, setSaleRegistered] = useState(false)
+  const [lastVariants, setLastVariants] = useState<Record<string, string>>({})
 
   const normalizedSearch = normalizeProductLookup(search)
   const selectedProduct =
     products.find((product) => product.id === selectedProductID) || null
-  const exactProduct =
+  const exactCodeProduct =
     !selectedProduct && normalizedSearch
       ? products.find(
           (product) =>
-            normalizeProductLookup(product.name) === normalizedSearch ||
             normalizeProductLookup(product.external_id) === normalizedSearch,
         ) || null
       : null
+  const exactNameProducts =
+    !selectedProduct && !exactCodeProduct && normalizedSearch
+      ? products.filter(
+          (product) => normalizeProductLookup(product.name) === normalizedSearch,
+        )
+      : []
+  const exactProduct =
+    selectedProduct ||
+    exactCodeProduct ||
+    (exactNameProducts.length === 1 ? exactNameProducts[0] : null)
   const resolvedProduct = selectedProduct || exactProduct
 
   const matchingProducts = useMemo(() => {
@@ -2981,7 +3354,8 @@ function QuickSaleDialog({
       return (
         normalizeProductLookup(product.name).includes(normalizedSearch) ||
         normalizeProductLookup(product.external_id).includes(normalizedSearch) ||
-        normalizeProductLookup(product.category).includes(normalizedSearch)
+        normalizeProductLookup(product.category).includes(normalizedSearch) ||
+        normalizeProductLookup(product.variant_name || '').includes(normalizedSearch)
       )
     })
     return candidates
@@ -2996,14 +3370,37 @@ function QuickSaleDialog({
         }
         return rank(first) - rank(second)
       })
-      .slice(0, 6)
   }, [normalizedSearch, products])
+  const matchingGroups = useMemo(
+    () =>
+      groupCatalogProducts(matchingProducts)
+        .map((group) => ({
+          ...group,
+          variants: [...group.variants].sort((first, second) => {
+            const firstRank =
+              first.id === lastVariants[group.id]
+                ? 0
+                : favoriteProducts.has(first.id)
+                  ? 1
+                  : 2
+            const secondRank =
+              second.id === lastVariants[group.id]
+                ? 0
+                : favoriteProducts.has(second.id)
+                  ? 1
+                  : 2
+            return firstRank - secondRank
+          }),
+        }))
+        .slice(0, 6),
+    [favoriteProducts, lastVariants, matchingProducts],
+  )
 
   const newProductName = search.trim()
   const isNewProduct =
     !resolvedProduct &&
     newProductName.length > 0 &&
-    (createNew || matchingProducts.length === 0)
+    (createNew || matchingGroups.length === 0)
   const quantityLimit = resolvedProduct
     ? productSaleLimit(resolvedProduct)
     : MAX_SALE_QUANTITY
@@ -3059,6 +3456,9 @@ function QuickSaleDialog({
 
   const addToDraft = (product: BazarProduct, amount: number) => {
     if (!product.active || (productTracksStock(product) && product.stock === 0)) return
+    const groupID = productGroupID(product)
+    setLastVariants((current) => ({ ...current, [groupID]: product.id }))
+    writeLastVariant(groupID, product.id)
     setDraftCart((current) => ({
       ...current,
       [product.id]: Math.min(
@@ -3133,6 +3533,10 @@ function QuickSaleDialog({
   }
 
   useEffect(() => {
+    setLastVariants(readLastVariants())
+  }, [])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.altKey && event.key === '1') {
         event.preventDefault()
@@ -3202,7 +3606,8 @@ function QuickSaleDialog({
                   placeholder="Nombre o código"
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' || isNewProduct) return
-                    const product = resolvedProduct || matchingProducts[0]
+                    const product =
+                      resolvedProduct || matchingGroups[0]?.variants[0]
                     if (!product) return
                     event.preventDefault()
                     addToDraft(product, 1)
@@ -3239,39 +3644,73 @@ function QuickSaleDialog({
                 <p className="py-2 text-xs font-medium uppercase text-muted-foreground">
                   {normalizedSearch ? 'Coincidencias' : 'Selección rápida'}
                 </p>
-                {matchingProducts.map((product) => {
-                  const soldOut = productTracksStock(product) && product.stock === 0
+                {matchingGroups.map((group) => {
+                  const hasVariants =
+                    group.variants.length > 1 ||
+                    Boolean(group.variants[0]?.variant_group_id)
                   return (
-                    <button
-                      key={product.id}
-                      type="button"
-                      onClick={() => addToDraft(product, 1)}
-                      disabled={soldOut}
-                      className="flex min-h-14 w-full items-center gap-3 border-t border-border py-2 text-left hover:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
-                        <PackageCheck className="h-4 w-4 text-muted-foreground" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold">{product.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {product.category || product.external_id}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-right">
-                        <span className="block text-sm font-semibold">{moneyFormatter.format(product.price)}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {!productTracksStock(product)
-                            ? 'Venta libre'
-                            : soldOut
-                              ? 'Agotado'
-                              : `${product.stock} disponibles`}
-                        </span>
-                      </span>
-                    </button>
+                    <div key={group.id} className="border-t border-border py-3">
+                      {hasVariants && (
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold">
+                              {group.name}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {group.category || 'Sin categoría'}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {group.variants.length} variantes
+                          </span>
+                        </div>
+                      )}
+                      <div className={`grid gap-2 ${hasVariants ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {group.variants.map((product) => {
+                          const soldOut =
+                            productTracksStock(product) && product.stock === 0
+                          return (
+                            <button
+                              key={product.id}
+                              type="button"
+                              onClick={() => addToDraft(product, 1)}
+                              disabled={soldOut}
+                              className="flex min-h-14 min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2.5 py-2 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                                {product.variant_color ? (
+                                  <span
+                                    className="h-4 w-4 rounded-sm border border-black/15"
+                                    style={{ backgroundColor: product.variant_color }}
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <PackageCheck className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold">
+                                  {hasVariants ? variantLabel(product) : product.name}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {moneyFormatter.format(product.price)}
+                                  {' · '}
+                                  {!productTracksStock(product)
+                                    ? 'Libre'
+                                    : soldOut
+                                      ? 'Agotado'
+                                      : `${product.stock} disp.`}
+                                </span>
+                              </span>
+                              <Plus className="h-4 w-4 shrink-0 text-primary" />
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
                   )
                 })}
-                {matchingProducts.length === 0 && !normalizedSearch && (
+                {matchingGroups.length === 0 && !normalizedSearch && (
                   <p className="border-t border-border py-4 text-sm text-muted-foreground">
                     Sin productos guardados.
                   </p>
@@ -3297,7 +3736,9 @@ function QuickSaleDialog({
                   <PackageCheck className="h-5 w-5 text-muted-foreground" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{resolvedProduct.name}</span>
+                  <span className="block truncate font-semibold">
+                    {productDisplayName(resolvedProduct)}
+                  </span>
                   <span className="block text-sm text-muted-foreground">
                     {moneyFormatter.format(resolvedProduct.price)}
                     {' · '}
@@ -3454,7 +3895,9 @@ function QuickSaleDialog({
                 {cartItems.map(({ product, quantity: itemQuantity }) => (
                   <div key={product.id} className="flex items-center gap-3 border-t border-border py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{product.name}</p>
+                      <p className="truncate text-sm font-semibold">
+                        {productDisplayName(product)}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {moneyFormatter.format(product.price * itemQuantity)}
                       </p>
@@ -3464,7 +3907,7 @@ function QuickSaleDialog({
                         type="button"
                         onClick={() => updateDraftQuantity(product, itemQuantity - 1)}
                         className="inline-flex items-center justify-center hover:bg-accent"
-                        aria-label={`Restar ${product.name}`}
+                        aria-label={`Restar ${productDisplayName(product)}`}
                       >
                         <Minus className="h-3.5 w-3.5" />
                       </button>
@@ -3476,7 +3919,7 @@ function QuickSaleDialog({
                         onClick={() => updateDraftQuantity(product, itemQuantity + 1)}
                         disabled={itemQuantity >= productSaleLimit(product)}
                         className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
-                        aria-label={`Agregar ${product.name}`}
+                        aria-label={`Agregar ${productDisplayName(product)}`}
                       >
                         <Plus className="h-3.5 w-3.5" />
                       </button>
@@ -3486,7 +3929,7 @@ function QuickSaleDialog({
                       onClick={() => updateDraftQuantity(product, 0)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
                       title="Quitar producto"
-                      aria-label={`Quitar ${product.name}`}
+                      aria-label={`Quitar ${productDisplayName(product)}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -3705,11 +4148,15 @@ function QuickSaleDialog({
             onClose={() => setShowInlineScanner(false)}
             onDetected={(value) => {
               const normalizedValue = normalizeProductLookup(value)
-              const product = products.find(
-                (candidate) =>
-                  normalizeProductLookup(candidate.external_id) === normalizedValue ||
-                  normalizeProductLookup(candidate.name) === normalizedValue,
-              )
+              const product =
+                products.find(
+                  (candidate) =>
+                    normalizeProductLookup(candidate.external_id) === normalizedValue,
+                ) ||
+                products.find(
+                  (candidate) =>
+                    normalizeProductLookup(candidate.name) === normalizedValue,
+                )
               if (product) addToDraft(product, 1)
               else setSearch(value)
               setShowInlineScanner(false)
@@ -3852,7 +4299,9 @@ function QuantityDialog({
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
             <p className="text-sm text-muted-foreground">Venta de varias unidades</p>
-            <h2 id="quantity-title" className="mt-1 text-xl font-semibold">{product.name}</h2>
+            <h2 id="quantity-title" className="mt-1 text-xl font-semibold">
+              {productDisplayName(product)}
+            </h2>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-md hover:bg-accent" title="Cerrar" aria-label="Cerrar">
             <X className="h-5 w-5" />
@@ -4128,17 +4577,42 @@ function NewBazarDialog({
   )
 }
 
+const VARIANT_COLORS = [
+  '#8B5E3C',
+  '#E88AAE',
+  '#5B8DEF',
+  '#4AAE78',
+  '#E4B740',
+  '#7B61A8',
+]
+
 function ProductDialog({
   product,
+  variantSeed,
   creating,
   onClose,
   onSubmit,
 }: {
   product?: BazarProduct
+  variantSeed?: BazarProduct | null
   creating: boolean
   onClose: () => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
 }) {
+  const [mode, setMode] = useState<'single' | 'variants'>(
+    variantSeed ? 'variants' : 'single',
+  )
+  const [variantRows, setVariantRows] = useState(() =>
+    variantSeed
+      ? [{ id: 'variant-1', color: VARIANT_COLORS[1] }]
+      : [
+          { id: 'variant-1', color: VARIANT_COLORS[0] },
+          { id: 'variant-2', color: VARIANT_COLORS[1] },
+        ],
+  )
+  const buildingVariants = !product && mode === 'variants'
+  const groupedSeed = Boolean(variantSeed?.variant_group_id)
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -4164,13 +4638,35 @@ function ProductDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-dialog-title"
-        className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-lg border border-border bg-card text-card-foreground shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-lg"
+        className="max-h-[calc(100dvh-1rem)] w-full max-w-xl overflow-y-auto rounded-t-lg border border-border bg-card text-card-foreground shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:rounded-lg"
       >
+        <input
+          type="hidden"
+          name="product_mode"
+          value={buildingVariants ? 'variants' : 'single'}
+        />
+        {buildingVariants && (
+          <input
+            type="hidden"
+            name="variant_ids"
+            value={variantRows.map((row) => row.id).join(',')}
+          />
+        )}
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
-            <p className="text-sm text-muted-foreground">{product ? product.external_id : 'Catálogo manual'}</p>
+            <p className="text-sm text-muted-foreground">
+              {product
+                ? product.external_id
+                : variantSeed
+                  ? productDisplayName(variantSeed)
+                  : 'Catálogo manual'}
+            </p>
             <h2 id="product-dialog-title" className="mt-1 text-xl font-semibold">
-              {product ? 'Editar producto' : 'Agregar producto'}
+              {product
+                ? 'Editar producto'
+                : variantSeed
+                  ? 'Agregar variante'
+                  : 'Agregar producto'}
             </h2>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-accent" title="Cerrar" aria-label="Cerrar">
@@ -4179,45 +4675,106 @@ function ProductDialog({
         </div>
 
         <div className="space-y-4 px-5 py-5">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">Nombre del producto</span>
-            <input
-              name="name"
-              required
-              autoFocus
-              maxLength={160}
-              defaultValue={product?.name}
-              placeholder="Ej. Capibara café"
-              className="h-11 w-full rounded-md border border-input bg-background px-3"
-            />
-          </label>
+          {!product && !variantSeed && (
+            <div className="grid grid-cols-2 rounded-md border border-input p-1">
+              <button
+                type="button"
+                onClick={() => setMode('single')}
+                className={`h-9 rounded-sm text-sm font-medium ${
+                  mode === 'single'
+                    ? 'bg-foreground text-background'
+                    : 'hover:bg-accent'
+                }`}
+              >
+                Producto único
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('variants')}
+                className={`h-9 rounded-sm text-sm font-medium ${
+                  mode === 'variants'
+                    ? 'bg-foreground text-background'
+                    : 'hover:bg-accent'
+                }`}
+              >
+                Varios colores
+              </button>
+            </div>
+          )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">Código / SKU (opcional)</span>
+          {groupedSeed ? (
+            <div className="border-y border-border py-3">
+              <input type="hidden" name="name" value={variantSeed?.name || ''} />
               <input
-                name="sku"
-                maxLength={80}
-                defaultValue={product?.external_id}
-                placeholder="Ej. CAP-01"
-                className="h-11 w-full rounded-md border border-input bg-background px-3"
+                type="hidden"
+                name="category"
+                value={variantSeed?.category || ''}
+              />
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                Modelo
+              </p>
+              <p className="mt-1 font-semibold">{variantSeed?.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {variantSeed?.category || 'Sin categoría'}
+              </p>
+            </div>
+          ) : (
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">
+                {buildingVariants || product?.variant_group_id
+                  ? 'Nombre del modelo'
+                  : 'Nombre del producto'}
+              </span>
+              <input
+                name="name"
+                required
+                autoFocus
+                maxLength={160}
+                readOnly={Boolean(product?.variant_group_id)}
+                defaultValue={product?.name || variantSeed?.name}
+                placeholder={buildingVariants ? 'Ej. Capibara' : 'Ej. Capibara café'}
+                className="h-11 w-full rounded-md border border-input bg-background px-3 read-only:bg-muted"
               />
             </label>
+          )}
+
+          {(!buildingVariants || !groupedSeed) && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {!buildingVariants && (
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium">
+                  Código / SKU (opcional)
+                </span>
+                <input
+                  name="sku"
+                  maxLength={80}
+                  defaultValue={product?.external_id}
+                  placeholder="Ej. CAP-01"
+                  className="h-11 w-full rounded-md border border-input bg-background px-3"
+                />
+              </label>
+            )}
+            {!groupedSeed && (
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium">Categoría</span>
               <input
                 name="category"
                 maxLength={100}
-                defaultValue={product?.category}
+                readOnly={Boolean(product?.variant_group_id)}
+                defaultValue={product?.category || variantSeed?.category}
                 placeholder="Ej. Doflins"
-                className="h-11 w-full rounded-md border border-input bg-background px-3"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 read-only:bg-muted"
               />
             </label>
+            )}
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">Precio</span>
+              <span className="mb-1.5 block text-sm font-medium">
+                {buildingVariants ? 'Precio base' : 'Precio'}
+              </span>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                 <input
@@ -4228,13 +4785,13 @@ function ProductDialog({
                   max="999999999"
                   step="0.01"
                   inputMode="decimal"
-                  defaultValue={product?.price}
+                  defaultValue={product?.price ?? variantSeed?.price}
                   placeholder="0.00"
                   className="h-11 w-full rounded-md border border-input bg-background pl-7 pr-3"
                 />
               </div>
             </label>
-            {!product ? (
+            {!product && !buildingVariants ? (
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium">Stock inicial</span>
                 <input
@@ -4249,7 +4806,7 @@ function ProductDialog({
                   className="h-11 w-full rounded-md border border-input bg-background px-3"
                 />
               </label>
-            ) : (
+            ) : product ? (
               <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
                 <p className="text-xs text-muted-foreground">
                   {productTracksStock(product) ? 'Existencia actual' : 'Control de stock'}
@@ -4258,15 +4815,216 @@ function ProductDialog({
                   {productTracksStock(product) ? `${product.stock} unidades` : 'Venta libre'}
                 </p>
               </div>
+            ) : (
+              <div className="self-end text-xs text-muted-foreground">
+                Cada variante puede sobrescribir este precio.
+              </div>
             )}
           </div>
 
+          {buildingVariants && variantSeed && !variantSeed.variant_group_id && (
+            <div className="space-y-3 border-y border-border py-4">
+              <div>
+                <p className="text-sm font-semibold">Producto actual</p>
+                <p className="text-xs text-muted-foreground">
+                  Identifica su color para incluirlo en el mismo modelo.
+                </p>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_76px] gap-3">
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium">
+                    Variante actual
+                  </span>
+                  <input
+                    name="current_variant_name"
+                    required
+                    maxLength={80}
+                    defaultValue={variantSeed.variant_name}
+                    placeholder="Ej. Café"
+                    className="h-11 w-full rounded-md border border-input bg-background px-3"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium">Color</span>
+                  <input
+                    name="current_variant_color"
+                    type="color"
+                    defaultValue={variantSeed.variant_color || VARIANT_COLORS[0]}
+                    className="h-11 w-full rounded-md border border-input bg-background p-1"
+                    title="Color de la variante actual"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {product?.variant_group_id && (
+            <div className="grid grid-cols-[minmax(0,1fr)_76px] gap-3">
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium">Variante</span>
+                <input
+                  name="variant_name"
+                  required
+                  maxLength={80}
+                  defaultValue={product.variant_name}
+                  placeholder="Ej. Café"
+                  className="h-11 w-full rounded-md border border-input bg-background px-3"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium">Color</span>
+                <input
+                  name="variant_color"
+                  type="color"
+                  defaultValue={product.variant_color || VARIANT_COLORS[0]}
+                  className="h-11 w-full rounded-md border border-input bg-background p-1"
+                  title="Color de la variante"
+                />
+              </label>
+            </div>
+          )}
+
+          {buildingVariants && (
+            <section className="space-y-3 border-y border-border py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">
+                    {variantSeed ? 'Nueva variante' : 'Variantes'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Stock y código independientes.
+                  </p>
+                </div>
+                {!variantSeed && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVariantRows((current) => [
+                        ...current,
+                        {
+                          id: `variant-${Date.now()}`,
+                          color: VARIANT_COLORS[current.length % VARIANT_COLORS.length],
+                        },
+                      ])
+                    }
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Agregar
+                  </button>
+                )}
+              </div>
+
+              {variantRows.map((row, index) => (
+                <div key={row.id} className="space-y-3 rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium uppercase text-muted-foreground">
+                      Variante {index + 1}
+                    </span>
+                    {!variantSeed && variantRows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setVariantRows((current) =>
+                            current.filter((item) => item.id !== row.id),
+                          )
+                        }
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
+                        title="Quitar variante"
+                        aria-label={`Quitar variante ${index + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_76px] gap-3">
+                    <label className="block">
+                      <span className="mb-1.5 block text-sm font-medium">Nombre</span>
+                      <input
+                        name={`variant_name_${row.id}`}
+                        required
+                        autoFocus={Boolean(variantSeed && index === 0 && groupedSeed)}
+                        maxLength={80}
+                        placeholder="Ej. Rosa"
+                        className="h-11 w-full rounded-md border border-input bg-background px-3"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-sm font-medium">Color</span>
+                      <input
+                        name={`variant_color_${row.id}`}
+                        type="color"
+                        defaultValue={row.color}
+                        className="h-11 w-full rounded-md border border-input bg-background p-1"
+                        title={`Color de la variante ${index + 1}`}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <label className="block min-w-0">
+                      <span className="mb-1.5 block truncate text-sm font-medium">
+                        SKU
+                      </span>
+                      <input
+                        name={`variant_sku_${row.id}`}
+                        maxLength={80}
+                        placeholder="Automático"
+                        className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3"
+                      />
+                    </label>
+                    <label className="block min-w-0">
+                      <span className="mb-1.5 block truncate text-sm font-medium">
+                        Stock
+                      </span>
+                      <input
+                        name={`variant_stock_${row.id}`}
+                        type="number"
+                        required
+                        min="0"
+                        max="999999"
+                        step="1"
+                        inputMode="numeric"
+                        defaultValue="0"
+                        className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3"
+                      />
+                    </label>
+                    <label className="block min-w-0">
+                      <span className="mb-1.5 block truncate text-sm font-medium">
+                        Precio
+                      </span>
+                      <input
+                        name={`variant_price_${row.id}`}
+                        type="number"
+                        min="0"
+                        max="999999999"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="Mismo"
+                        className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3"
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">URL de imagen (opcional)</span>
+            <span className="mb-1.5 block text-sm font-medium">
+              {buildingVariants
+                ? variantSeed
+                  ? 'URL de imagen para esta variante (opcional)'
+                  : 'URL de imagen del modelo (opcional)'
+                : 'URL de imagen (opcional)'}
+            </span>
             <input
               name="image_url"
               type="text"
-              defaultValue={product?.image_url?.startsWith('http') ? product.image_url : ''}
+              defaultValue={
+                product?.image_url?.startsWith('http')
+                  ? product.image_url
+                  : ''
+              }
               placeholder="https://..."
               className="h-11 w-full rounded-md border border-input bg-background px-3"
             />
@@ -4274,7 +5032,11 @@ function ProductDialog({
           <label className="block rounded-md border border-dashed border-input p-3">
             <span className="mb-2 flex items-center gap-2 text-sm font-medium">
               <Upload className="h-4 w-4" />
-              Subir imagen
+              {buildingVariants
+                ? variantSeed
+                  ? 'Subir imagen de esta variante'
+                  : 'Subir imagen del modelo'
+                : 'Subir imagen'}
             </span>
             <input name="image_file" type="file" accept="image/*" className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:font-medium" />
           </label>
@@ -4305,10 +5067,16 @@ function ProductDialog({
           )}
         </div>
 
-        <div className="border-t border-border bg-muted/45 px-5 py-4">
+        <div className="sticky bottom-0 z-10 border-t border-border bg-muted/95 px-5 py-4 backdrop-blur">
           <button type="submit" disabled={creating} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50">
             {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : product ? <Check className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
-            {product ? 'Guardar cambios' : 'Guardar producto'}
+            {product
+              ? 'Guardar cambios'
+              : variantSeed
+                ? 'Guardar variante'
+                : buildingVariants
+                  ? 'Guardar variantes'
+                  : 'Guardar producto'}
           </button>
         </div>
       </form>
@@ -4394,7 +5162,7 @@ function StockAdjustmentDialog({
         className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
       >
         <DialogHeader
-          eyebrow={`${product.name} · ${productTracksStock(product) ? `${product.stock} disponibles` : 'Venta libre'}`}
+          eyebrow={`${productDisplayName(product)} · ${productTracksStock(product) ? `${product.stock} disponibles` : 'Venta libre'}`}
           title="Ajustar inventario"
           onClose={onClose}
         />
@@ -4481,7 +5249,9 @@ function CartDialog({
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{product.name}</p>
+                <p className="truncate text-sm font-semibold">
+                  {productDisplayName(product)}
+                </p>
                 <p className="text-sm text-muted-foreground">{moneyFormatter.format(product.price * quantity)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -4815,7 +5585,9 @@ function OfflineQueueDialog({
               <div key={entry.product.id} className="flex items-start gap-3 py-3">
                 <PackagePlus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{entry.product.name}</p>
+                  <p className="truncate text-sm font-semibold">
+                    {productDisplayName(entry.product)}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {entry.operation === 'update' ? 'Edición de producto' : 'Producto nuevo'}
                     {' · '}

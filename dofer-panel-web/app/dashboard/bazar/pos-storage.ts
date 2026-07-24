@@ -22,6 +22,7 @@ const FAVORITES_KEY = 'dofer-bazar-favorite-products'
 const COMBOS_KEY = 'dofer-bazar-combos'
 const HELD_SALES_KEY = 'dofer-bazar-held-sales'
 const LAST_PAYMENT_KEY = 'dofer-bazar-last-payment-method'
+const LAST_VARIANTS_KEY = 'dofer-bazar-last-variants'
 export const OFFLINE_PRODUCTS_KEY = 'dofer-bazar-offline-products'
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -83,6 +84,24 @@ export function writeLastPaymentMethod(method: string) {
   } catch {
     // La venta no debe fallar si el navegador bloquea preferencias locales.
   }
+}
+
+export function readLastVariants() {
+  const values = readJSON<unknown>(LAST_VARIANTS_KEY, {})
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return {}
+  return Object.fromEntries(
+    Object.entries(values).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === 'string' && typeof entry[1] === 'string',
+    ),
+  )
+}
+
+export function writeLastVariant(groupID: string, productID: string) {
+  return writeJSON(LAST_VARIANTS_KEY, {
+    ...readLastVariants(),
+    [groupID]: productID,
+  })
 }
 
 export function readOfflineProducts<T>() {

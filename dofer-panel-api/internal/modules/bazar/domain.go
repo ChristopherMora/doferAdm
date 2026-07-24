@@ -16,20 +16,23 @@ const (
 )
 
 type Product struct {
-	ID            uuid.UUID  `json:"id"`
-	ExternalID    string     `json:"external_id"`
-	Name          string     `json:"name"`
-	Category      string     `json:"category"`
-	Price         float64    `json:"price"`
-	Cost          *float64   `json:"cost,omitempty"`
-	Stock         int        `json:"stock"`
-	TrackStock    bool       `json:"track_stock"`
-	ImageURL      *string    `json:"image_url,omitempty"`
-	Active        bool       `json:"active"`
-	SheetRow      *int       `json:"sheet_row,omitempty"`
-	SheetSyncedAt *time.Time `json:"sheet_synced_at,omitempty"`
-	Source        string     `json:"source"`
-	SyncPolicy    string     `json:"stock_sync_policy"`
+	ID             uuid.UUID  `json:"id"`
+	ExternalID     string     `json:"external_id"`
+	Name           string     `json:"name"`
+	Category       string     `json:"category"`
+	Price          float64    `json:"price"`
+	Cost           *float64   `json:"cost,omitempty"`
+	Stock          int        `json:"stock"`
+	TrackStock     bool       `json:"track_stock"`
+	ImageURL       *string    `json:"image_url,omitempty"`
+	Active         bool       `json:"active"`
+	SheetRow       *int       `json:"sheet_row,omitempty"`
+	SheetSyncedAt  *time.Time `json:"sheet_synced_at,omitempty"`
+	Source         string     `json:"source"`
+	SyncPolicy     string     `json:"stock_sync_policy"`
+	VariantGroupID *uuid.UUID `json:"variant_group_id,omitempty"`
+	VariantName    string     `json:"variant_name,omitempty"`
+	VariantColor   *string    `json:"variant_color,omitempty"`
 }
 
 type Bazar struct {
@@ -113,26 +116,32 @@ type CreateBazarRequest struct {
 }
 
 type CreateProductRequest struct {
-	ID         string   `json:"id,omitempty"`
-	SKU        string   `json:"sku,omitempty"`
-	Name       string   `json:"name"`
-	Category   string   `json:"category,omitempty"`
-	Price      float64  `json:"price"`
-	Cost       *float64 `json:"cost,omitempty"`
-	Stock      int      `json:"stock"`
-	TrackStock *bool    `json:"track_stock,omitempty"`
-	ImageURL   *string  `json:"image_url,omitempty"`
+	ID             string   `json:"id,omitempty"`
+	SKU            string   `json:"sku,omitempty"`
+	Name           string   `json:"name"`
+	Category       string   `json:"category,omitempty"`
+	Price          float64  `json:"price"`
+	Cost           *float64 `json:"cost,omitempty"`
+	Stock          int      `json:"stock"`
+	TrackStock     *bool    `json:"track_stock,omitempty"`
+	ImageURL       *string  `json:"image_url,omitempty"`
+	VariantGroupID string   `json:"variant_group_id,omitempty"`
+	VariantName    string   `json:"variant_name,omitempty"`
+	VariantColor   *string  `json:"variant_color,omitempty"`
 }
 
 type UpdateProductRequest struct {
-	SKU        *string  `json:"sku,omitempty"`
-	Name       *string  `json:"name,omitempty"`
-	Category   *string  `json:"category,omitempty"`
-	Price      *float64 `json:"price,omitempty"`
-	Cost       *float64 `json:"cost,omitempty"`
-	ImageURL   *string  `json:"image_url,omitempty"`
-	Active     *bool    `json:"active,omitempty"`
-	SyncPolicy *string  `json:"stock_sync_policy,omitempty"`
+	SKU            *string  `json:"sku,omitempty"`
+	Name           *string  `json:"name,omitempty"`
+	Category       *string  `json:"category,omitempty"`
+	Price          *float64 `json:"price,omitempty"`
+	Cost           *float64 `json:"cost,omitempty"`
+	ImageURL       *string  `json:"image_url,omitempty"`
+	Active         *bool    `json:"active,omitempty"`
+	SyncPolicy     *string  `json:"stock_sync_policy,omitempty"`
+	VariantGroupID *string  `json:"variant_group_id,omitempty"`
+	VariantName    *string  `json:"variant_name,omitempty"`
+	VariantColor   *string  `json:"variant_color,omitempty"`
 }
 
 type AdjustStockRequest struct {
@@ -303,26 +312,32 @@ type createSaleItemCommand struct {
 }
 
 type createProductCommand struct {
-	ID         uuid.UUID
-	SKU        string
-	Name       string
-	Category   string
-	Price      float64
-	Cost       *float64
-	Stock      int
-	TrackStock bool
-	ImageURL   *string
+	ID             uuid.UUID
+	SKU            string
+	Name           string
+	Category       string
+	Price          float64
+	Cost           *float64
+	Stock          int
+	TrackStock     bool
+	ImageURL       *string
+	VariantGroupID *uuid.UUID
+	VariantName    string
+	VariantColor   *string
 }
 
 type updateProductCommand struct {
-	SKU        string
-	Name       string
-	Category   string
-	Price      float64
-	Cost       *float64
-	ImageURL   *string
-	Active     bool
-	SyncPolicy string
+	SKU            string
+	Name           string
+	Category       string
+	Price          float64
+	Cost           *float64
+	ImageURL       *string
+	Active         bool
+	SyncPolicy     string
+	VariantGroupID *uuid.UUID
+	VariantName    string
+	VariantColor   *string
 }
 
 type adjustStockCommand struct {

@@ -67,6 +67,92 @@ func TestPrepareCreateProductPreservesOfflineID(t *testing.T) {
 	}
 }
 
+func TestPrepareCreateProductVariant(t *testing.T) {
+	groupID := uuid.New()
+	color := " #a05a2c "
+	command, err := prepareCreateProduct(CreateProductRequest{
+		Name:           "Capibara",
+		Price:          40,
+		Stock:          8,
+		VariantGroupID: groupID.String(),
+		VariantName:    " Café ",
+		VariantColor:   &color,
+	})
+	if err != nil {
+		t.Fatalf("prepareCreateProduct returned an error: %v", err)
+	}
+	if command.VariantGroupID == nil || *command.VariantGroupID != groupID {
+		t.Fatalf("unexpected variant group: %#v", command.VariantGroupID)
+	}
+	if command.VariantName != "Café" {
+		t.Fatalf("unexpected variant name: %q", command.VariantName)
+	}
+	if command.VariantColor == nil || *command.VariantColor != "#A05A2C" {
+		t.Fatalf("unexpected variant color: %#v", command.VariantColor)
+	}
+}
+
+func TestPrepareCreateProductVariantValidation(t *testing.T) {
+	groupID := uuid.New().String()
+	invalidColor := "cafe"
+	tests := []CreateProductRequest{
+		{Name: "Capibara", VariantName: "Café"},
+		{Name: "Capibara", VariantGroupID: groupID},
+		{Name: "Capibara", VariantGroupID: "invalid", VariantName: "Café"},
+		{
+			Name:           "Capibara",
+			VariantGroupID: groupID,
+			VariantName:    "Café",
+			VariantColor:   &invalidColor,
+		},
+	}
+	for index, request := range tests {
+		request.Price = 40
+		if _, err := prepareCreateProduct(request); err == nil {
+			t.Fatalf("case %d: expected validation error", index)
+		}
+	}
+}
+
+func TestPrepareUpdateProductAddsVariant(t *testing.T) {
+	groupID := uuid.New()
+	variantName := "Rosa"
+	variantColor := "#e88aae"
+	command, err := prepareUpdateProduct(
+		Product{
+			ExternalID: "CAP-ROS",
+			Name:       "Capibara",
+			Category:   "Doflins",
+			Price:      40,
+			Stock:      8,
+			TrackStock: true,
+			Active:     true,
+			SyncPolicy: "manual",
+		},
+		UpdateProductRequest{
+			VariantGroupID: stringPointer(groupID.String()),
+			VariantName:    &variantName,
+			VariantColor:   &variantColor,
+		},
+	)
+	if err != nil {
+		t.Fatalf("prepareUpdateProduct returned an error: %v", err)
+	}
+	if command.VariantGroupID == nil || *command.VariantGroupID != groupID {
+		t.Fatalf("unexpected variant group: %#v", command.VariantGroupID)
+	}
+	if command.VariantName != variantName {
+		t.Fatalf("unexpected variant name: %q", command.VariantName)
+	}
+	if command.VariantColor == nil || *command.VariantColor != "#E88AAE" {
+		t.Fatalf("unexpected variant color: %#v", command.VariantColor)
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
 func TestValidateProductImageDataURL(t *testing.T) {
 	image := "data:image/webp;base64," + base64.StdEncoding.EncodeToString([]byte("webp image"))
 	validated, err := validateProductImage(&image)

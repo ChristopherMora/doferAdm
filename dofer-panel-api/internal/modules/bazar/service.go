@@ -586,30 +586,48 @@ func prepareCreateProduct(req CreateProductRequest) (createProductCommand, error
 	if req.TrackStock != nil {
 		trackStock = *req.TrackStock
 	}
+	variantGroupID, variantName, variantColor, err := prepareProductVariant(
+		req.VariantGroupID,
+		req.VariantName,
+		req.VariantColor,
+	)
+	if err != nil {
+		return createProductCommand{}, err
+	}
 
 	return createProductCommand{
-		ID:         productID,
-		SKU:        sku,
-		Name:       name,
-		Category:   category,
-		Price:      req.Price,
-		Cost:       req.Cost,
-		Stock:      req.Stock,
-		TrackStock: trackStock,
-		ImageURL:   imageURL,
+		ID:             productID,
+		SKU:            sku,
+		Name:           name,
+		Category:       category,
+		Price:          req.Price,
+		Cost:           req.Cost,
+		Stock:          req.Stock,
+		TrackStock:     trackStock,
+		ImageURL:       imageURL,
+		VariantGroupID: variantGroupID,
+		VariantName:    variantName,
+		VariantColor:   variantColor,
 	}, nil
 }
 
 func prepareUpdateProduct(current Product, req UpdateProductRequest) (updateProductCommand, error) {
+	variantGroupID := ""
+	if current.VariantGroupID != nil {
+		variantGroupID = current.VariantGroupID.String()
+	}
 	createRequest := CreateProductRequest{
-		SKU:        current.ExternalID,
-		Name:       current.Name,
-		Category:   current.Category,
-		Price:      current.Price,
-		Cost:       current.Cost,
-		Stock:      current.Stock,
-		TrackStock: &current.TrackStock,
-		ImageURL:   current.ImageURL,
+		SKU:            current.ExternalID,
+		Name:           current.Name,
+		Category:       current.Category,
+		Price:          current.Price,
+		Cost:           current.Cost,
+		Stock:          current.Stock,
+		TrackStock:     &current.TrackStock,
+		ImageURL:       current.ImageURL,
+		VariantGroupID: variantGroupID,
+		VariantName:    current.VariantName,
+		VariantColor:   current.VariantColor,
 	}
 	if req.SKU != nil {
 		createRequest.SKU = *req.SKU
@@ -629,6 +647,15 @@ func prepareUpdateProduct(current Product, req UpdateProductRequest) (updateProd
 	if req.ImageURL != nil {
 		createRequest.ImageURL = req.ImageURL
 	}
+	if req.VariantGroupID != nil {
+		createRequest.VariantGroupID = *req.VariantGroupID
+	}
+	if req.VariantName != nil {
+		createRequest.VariantName = *req.VariantName
+	}
+	if req.VariantColor != nil {
+		createRequest.VariantColor = req.VariantColor
+	}
 	prepared, err := prepareCreateProduct(createRequest)
 	if err != nil {
 		return updateProductCommand{}, err
@@ -645,15 +672,83 @@ func prepareUpdateProduct(current Product, req UpdateProductRequest) (updateProd
 		return updateProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "La política de sincronización no es válida."}
 	}
 	return updateProductCommand{
-		SKU:        prepared.SKU,
-		Name:       prepared.Name,
-		Category:   prepared.Category,
-		Price:      prepared.Price,
-		Cost:       prepared.Cost,
-		ImageURL:   prepared.ImageURL,
-		Active:     active,
-		SyncPolicy: syncPolicy,
+		SKU:            prepared.SKU,
+		Name:           prepared.Name,
+		Category:       prepared.Category,
+		Price:          prepared.Price,
+		Cost:           prepared.Cost,
+		ImageURL:       prepared.ImageURL,
+		Active:         active,
+		SyncPolicy:     syncPolicy,
+		VariantGroupID: prepared.VariantGroupID,
+		VariantName:    prepared.VariantName,
+		VariantColor:   prepared.VariantColor,
 	}, nil
+}
+
+func prepareProductVariant(
+	rawGroupID, rawName string,
+	rawColor *string,
+) (*uuid.UUID, string, *string, error) {
+	groupID := strings.TrimSpace(rawGroupID)
+	name := strings.TrimSpace(rawName)
+	var color *string
+	if rawColor != nil {
+		normalized := strings.ToUpper(strings.TrimSpace(*rawColor))
+		if normalized != "" {
+			color = &normalized
+		}
+	}
+
+	if groupID == "" && name == "" && color == nil {
+		return nil, "", nil, nil
+	}
+	if groupID == "" {
+		return nil, "", nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: "El grupo de la variante es obligatorio.",
+		}
+	}
+	parsedGroupID, err := uuid.Parse(groupID)
+	if err != nil {
+		return nil, "", nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: "El grupo de variantes no es válido.",
+		}
+	}
+	if name == "" {
+		return nil, "", nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: "El nombre de la variante es obligatorio.",
+		}
+	}
+	if len(name) > 80 {
+		return nil, "", nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: "El nombre de la variante no puede superar 80 caracteres.",
+		}
+	}
+	if color != nil && !isHexColor(*color) {
+		return nil, "", nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: "El color de la variante no es válido.",
+		}
+	}
+	return &parsedGroupID, name, color, nil
+}
+
+func isHexColor(value string) bool {
+	if len(value) != 7 || value[0] != '#' {
+		return false
+	}
+	for _, character := range value[1:] {
+		if !((character >= '0' && character <= '9') ||
+			(character >= 'A' && character <= 'F') ||
+			(character >= 'a' && character <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func prepareStockAdjustment(

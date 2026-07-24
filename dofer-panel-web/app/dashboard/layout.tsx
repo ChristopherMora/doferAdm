@@ -522,7 +522,7 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <div className={`fixed inset-y-0 left-0 w-72 panel-surface border-r border-border/70 transition-all duration-300 z-50 
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
-        md:translate-x-0`}>
+        lg:translate-x-0`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-5 border-b border-border/70">
@@ -642,13 +642,13 @@ export default function DashboardLayout({
       {/* Overlay para cerrar el menú en móvil */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Main content */}
-      <div className="md:ml-72">
+      <div className="lg:ml-72">
         {/* Header con breadcrumbs */}
         <header className="panel-surface border-b border-border/70 transition-colors duration-200 sticky top-0 z-40">
           <div className="px-4 md:px-8 py-4">
@@ -656,7 +656,7 @@ export default function DashboardLayout({
               {/* Botón menú móvil */}
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors"
+                className="lg:hidden p-2 rounded-lg hover:bg-accent transition-colors"
                 aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
                 aria-expanded={isMobileMenuOpen}
               >
