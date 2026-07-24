@@ -833,9 +833,14 @@ function QuantityDialog({
   onConfirm: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="quantity-title" className="w-full max-w-md rounded-t-md bg-background p-5 shadow-xl sm:rounded-md">
-        <div className="flex items-start justify-between gap-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quantity-title"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-t-lg border border-border bg-card text-card-foreground shadow-2xl sm:rounded-lg"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
             <p className="text-sm text-muted-foreground">Venta de varias unidades</p>
             <h2 id="quantity-title" className="mt-1 text-xl font-semibold">{product.name}</h2>
@@ -845,7 +850,7 @@ function QuantityDialog({
           </button>
         </div>
 
-        <div className="my-6 flex items-center justify-center gap-4">
+        <div className="flex items-center justify-center gap-4 px-5 py-6">
           <button
             type="button"
             onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
@@ -877,7 +882,7 @@ function QuantityDialog({
           </button>
         </div>
 
-        <label className="block">
+        <label className="mx-5 block">
           <span className="mb-2 block text-sm font-medium">Método de pago</span>
           <select
             value={paymentMethod}
@@ -890,7 +895,7 @@ function QuantityDialog({
           </select>
         </label>
 
-        <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+        <div className="mt-6 flex items-center justify-between border-t border-border bg-muted/45 px-5 py-4">
           <div>
             <p className="text-sm text-muted-foreground">Total</p>
             <p className="text-2xl font-semibold text-primary">{moneyFormatter.format(product.price * quantity)}</p>
@@ -1009,9 +1014,12 @@ function NewBazarDialog({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
 }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-4">
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-t-md bg-background p-5 shadow-xl sm:rounded-md">
-        <div className="flex items-start justify-between gap-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+      <form
+        onSubmit={onSubmit}
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-t-lg border border-border bg-card text-card-foreground shadow-2xl sm:rounded-lg"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
             <p className="text-sm text-muted-foreground">Jornada de ventas</p>
             <h2 className="mt-1 text-xl font-semibold">Iniciar bazar</h2>
@@ -1023,7 +1031,7 @@ function NewBazarDialog({
           )}
         </div>
 
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4 px-5 py-5">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">Nombre del bazar</span>
             <input name="name" required autoFocus placeholder="Ej. Plaza Comercial" className="h-11 w-full rounded-md border border-input bg-background px-3" />
@@ -1042,10 +1050,12 @@ function NewBazarDialog({
           </label>
         </div>
 
-        <button type="submit" disabled={creating} className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
-          Iniciar bazar
-        </button>
+        <div className="border-t border-border bg-muted/45 px-5 py-4">
+          <button type="submit" disabled={creating} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50">
+            {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
+            Iniciar bazar
+          </button>
+        </div>
       </form>
     </div>
   )
