@@ -17,6 +17,12 @@ type Config struct {
 	JWTValidationMode      string
 	JWTSecret              string
 	CORSAllowedOrigins     []string
+	GoogleSheetsID         string
+	GoogleServiceEmail     string
+	GooglePrivateKey       string
+	GoogleInventorySheet   string
+	GoogleSalesSheet       string
+	BazarTimezone          string
 }
 
 func Load() (*Config, error) {
@@ -50,6 +56,12 @@ func Load() (*Config, error) {
 		JWTValidationMode:      jwtValidationMode,
 		JWTSecret:              strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		CORSAllowedOrigins:     corsOrigins,
+		GoogleSheetsID:         strings.TrimSpace(os.Getenv("GOOGLE_SHEETS_SPREADSHEET_ID")),
+		GoogleServiceEmail:     strings.TrimSpace(os.Getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL")),
+		GooglePrivateKey:       os.Getenv("GOOGLE_PRIVATE_KEY"),
+		GoogleInventorySheet:   getEnv("GOOGLE_INVENTORY_SHEET_NAME", "Inventario"),
+		GoogleSalesSheet:       getEnv("GOOGLE_SALES_SHEET_NAME", "Ventas"),
+		BazarTimezone:          getEnv("BAZAR_TIMEZONE", "America/Mexico_City"),
 	}
 
 	if err := cfg.validate(); err != nil {

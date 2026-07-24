@@ -12,6 +12,7 @@ import (
 	"github.com/dofer/panel-api/internal/modules/auth/app"
 	authInfra "github.com/dofer/panel-api/internal/modules/auth/infra"
 	authTransport "github.com/dofer/panel-api/internal/modules/auth/transport"
+	"github.com/dofer/panel-api/internal/modules/bazar"
 	costsApp "github.com/dofer/panel-api/internal/modules/costs/app"
 	costsInfra "github.com/dofer/panel-api/internal/modules/costs/infra"
 	costsTransport "github.com/dofer/panel-api/internal/modules/costs/transport"
@@ -202,6 +203,19 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 	productRepo := products.NewRepository(db)
 	productHandler := products.NewHandler(productRepo)
 
+	// Setup bazar sales handlers
+	bazarRepo := bazar.NewRepository(db)
+	bazarSheets := bazar.NewGoogleSheetsClient(bazar.SheetsConfig{
+		SpreadsheetID: cfg.GoogleSheetsID,
+		ServiceEmail:  cfg.GoogleServiceEmail,
+		PrivateKey:    cfg.GooglePrivateKey,
+		InventoryName: cfg.GoogleInventorySheet,
+		SalesName:     cfg.GoogleSalesSheet,
+		Timezone:      cfg.BazarTimezone,
+	})
+	bazarService := bazar.NewService(bazarRepo, bazarSheets, cfg.BazarTimezone)
+	bazarHandler := bazar.NewHandler(bazarRepo, bazarService, bazarSheets)
+
 	// Setup affiliates handlers
 	affiliateRepo := affiliatesInfra.NewPostgresAffiliateRepository(db)
 	supabaseAdminClient := affiliatesInfra.NewSupabaseAdminClient(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
@@ -278,6 +292,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) http.Handler {
 				customers.RegisterRoutes(r, customerHandler)
 				printers.RegisterRoutes(r, printerHandler)
 				products.RegisterRoutes(r, productHandler)
+				bazar.RegisterRoutes(r, bazarHandler)
 				affiliatesTransport.RegisterRoutes(r, affiliateHandler)
 			})
 		})

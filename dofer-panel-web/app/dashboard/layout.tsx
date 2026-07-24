@@ -403,6 +403,7 @@ export default function DashboardLayout({
     },
     { name: 'Clientes', href: '/dashboard/customers', icon: '👥', shortcut: '⌘4' },
     { name: 'Estadísticas', href: '/dashboard/stats', icon: '📈', shortcut: '⌘5' },
+    { name: 'Ventas del bazar', href: '/dashboard/bazar', icon: '🛍️' },
     {
       name: 'Afiliados',
       icon: '🤝',
