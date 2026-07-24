@@ -48,7 +48,11 @@ const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
   
   return (
     <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-      <Link href="/dashboard" className="hover:text-foreground transition-colors">
+      <Link
+        href="/dashboard"
+        prefetch={pathname !== '/dashboard/bazar'}
+        className="hover:text-foreground transition-colors"
+      >
         Inicio
       </Link>
       {segments.slice(1).map((segment, index) => {
@@ -62,7 +66,11 @@ const Breadcrumbs = memo(({ pathname }: { pathname: string }) => {
             {isLast ? (
               <span className="text-foreground font-medium">{label}</span>
             ) : (
-              <Link href={href} className="hover:text-foreground transition-colors">
+              <Link
+                href={href}
+                prefetch={pathname !== '/dashboard/bazar'}
+                className="hover:text-foreground transition-colors"
+              >
                 {label}
               </Link>
             )}
@@ -132,7 +140,7 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
                 <Link
                   key={subItem.name}
                   href={subItem.href}
-                  prefetch={true}
+                  prefetch={pathname !== '/dashboard/bazar'}
                   onClick={onClose}
                   className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-sm ${
                     isSubActive
@@ -155,7 +163,7 @@ const NavigationItem = memo(({ item, isActive, isExpanded, onToggle, searchTerm,
   return (
     <Link
       href={item.href!}
-      prefetch={true}
+      prefetch={pathname !== '/dashboard/bazar'}
       onClick={onClose}
       className={`group flex items-center justify-between gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${
         isActive
@@ -680,6 +688,7 @@ export default function DashboardLayout({
                 </button>
                 <Link
                   href="/dashboard/quotes/new"
+                  prefetch={pathname !== '/dashboard/bazar'}
                   className="flex items-center gap-2 px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md text-sm md:text-base"
                   title="Nueva cotización"
                   aria-label="Crear nueva cotización"

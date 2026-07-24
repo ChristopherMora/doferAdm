@@ -1,8 +1,6 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import {
   AlertTriangle,
   Banknote,
@@ -542,7 +540,7 @@ async function imageFileToDataURL(file: File | null): Promise<string | undefined
       image.onerror = () => reject(new Error('No se pudo leer la imagen.'))
       image.src = objectURL
     })
-    const maxSide = 720
+    const maxSide = 480
     const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
@@ -550,7 +548,7 @@ async function imageFileToDataURL(file: File | null): Promise<string | undefined
     const context = canvas.getContext('2d')
     if (!context) throw new Error('No se pudo preparar la imagen.')
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
-    const result = canvas.toDataURL('image/webp', 0.78)
+    const result = canvas.toDataURL('image/webp', 0.72)
     if (result.length > 900_000) {
       throw new Error('La imagen sigue siendo demasiado grande.')
     }
@@ -609,7 +607,11 @@ function downloadDailyReportCSV(report: BazarReport) {
   URL.revokeObjectURL(url)
 }
 
-function downloadDailyReportPDF(report: BazarReport) {
+async function downloadDailyReportPDF(report: BazarReport) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ])
   const document = new jsPDF()
   document.setFontSize(18)
   document.text('Reporte diario de bazar', 14, 18)
@@ -628,7 +630,9 @@ function downloadDailyReportPDF(report: BazarReport) {
     ]),
     styles: { fontSize: 8 },
   })
-  const finalY = (document as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 60
+  const finalY =
+    (document as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable
+      ?.finalY || 60
   autoTable(document, {
     startY: finalY + 8,
     head: [['Método', 'Operaciones', 'Total']],
@@ -4851,7 +4855,7 @@ function ReportDialog({
               <FileDown className="h-4 w-4" />
               CSV
             </button>
-            <button type="button" onClick={() => downloadDailyReportPDF(report)} className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">
+            <button type="button" onClick={() => void downloadDailyReportPDF(report)} className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">
               <FileText className="h-4 w-4" />
               PDF
             </button>
