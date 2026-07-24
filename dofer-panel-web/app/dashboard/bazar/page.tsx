@@ -55,7 +55,6 @@ interface BazarProduct {
   stock: number
   image_url?: string
   active: boolean
-  preview?: boolean
   source?: 'manual' | 'sheets' | 'catalog'
   stock_sync_policy?: 'manual' | 'sheets'
 }
@@ -249,18 +248,6 @@ const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'mercado_pago', label: 'Mercado Pago' },
   { value: 'other', label: 'Otro' },
 ]
-
-const REFERENCE_PRODUCT: BazarProduct = {
-  id: 'reference-product',
-  external_id: 'DOF-001',
-  name: 'Capibara café',
-  category: 'Doflins',
-  price: 40,
-  stock: 12,
-  image_url: '/bazar-reference-capybara.webp',
-  active: true,
-  preview: true,
-}
 
 const OFFLINE_SALES_KEY = 'dofer-bazar-offline-sales'
 const BAZAR_CACHE_KEY = 'dofer-bazar-cache'
@@ -576,12 +563,6 @@ export default function BazarSalesPage() {
   const canSell = ['admin', 'operator'].includes(
     currentUser?.organization_role || currentUser?.role || '',
   )
-  const showReferenceProduct =
-    products.length === 0 && syncStatus?.status === 'not_configured'
-  const catalogProducts = useMemo(
-    () => (showReferenceProduct ? [REFERENCE_PRODUCT] : products),
-    [products, showReferenceProduct],
-  )
   const cartProducts = useMemo(
     () =>
       products
@@ -600,14 +581,14 @@ export default function BazarSalesPage() {
 
   const categories = useMemo(() => {
     const values = new Set(
-      catalogProducts.map((product) => product.category.trim()).filter(Boolean),
+      products.map((product) => product.category.trim()).filter(Boolean),
     )
     return ['Todos', ...Array.from(values).sort((a, b) => a.localeCompare(b, 'es'))]
-  }, [catalogProducts])
+  }, [products])
 
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('es')
-    return catalogProducts.filter((product) => {
+    return products.filter((product) => {
       const matchesQuery =
         !normalizedQuery ||
         product.name.toLocaleLowerCase('es').includes(normalizedQuery) ||
@@ -623,7 +604,7 @@ export default function BazarSalesPage() {
       const matchesStatus = stockFilter === 'inactive' ? !product.active : product.active
       return matchesStatus && matchesQuery && matchesCategory && matchesStock
     })
-  }, [catalogProducts, category, query, stockFilter])
+  }, [products, category, query, stockFilter])
 
   const loadProducts = useCallback(async () => {
     const response = await apiClient.get<{ products: BazarProduct[] }>('/bazar/products')
@@ -1529,9 +1510,7 @@ export default function BazarSalesPage() {
             <h2 className="text-lg font-semibold">Catálogo</h2>
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {showReferenceProduct
-                  ? 'Vista previa'
-                  : `${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`}
+                {`${visibleProducts.length} ${visibleProducts.length === 1 ? 'producto' : 'productos'}`}
               </span>
               {canSell && (
                 <button
@@ -1560,8 +1539,8 @@ export default function BazarSalesPage() {
                   key={product.id}
                   product={product}
                   busy={sellingProducts.has(product.id)}
-                  disabled={!canSell || !activeBazar || !product.active || product.preview === true}
-                  canEdit={canSell && product.preview !== true}
+                  disabled={!canSell || !activeBazar || !product.active}
+                  canEdit={canSell}
                   onSell={() => void registerSale(product, 1)}
                   onMultiple={() => {
                     setQuantityProduct(product)
@@ -1853,17 +1832,10 @@ function ProductCard({
             ? 'Inactivo'
             : soldOut
             ? 'Agotado'
-            : product.preview
-              ? `Stock ${product.stock}`
-              : lowStock
-                ? `Quedan ${product.stock}`
-                : `${product.stock} disponibles`}
+            : lowStock
+              ? `Quedan ${product.stock}`
+              : `${product.stock} disponibles`}
         </span>
-        {product.preview && (
-          <span className="absolute right-2 top-2 rounded-sm bg-card/95 px-2 py-1 text-xs font-semibold text-card-foreground shadow-sm">
-            Vista previa
-          </span>
-        )}
       </div>
 
       <div className="space-y-3 p-3">
