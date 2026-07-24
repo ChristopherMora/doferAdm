@@ -243,19 +243,37 @@ func (r *Repository) CloseBazar(
 		return nil, &serviceError{Status: http.StatusConflict, Message: "El bazar ya está cerrado."}
 	}
 
-	var cashSales float64
+	var cutCount int
+	var expectedCash, finalClosingCash, difference float64
 	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(SUM(total), 0)
-		FROM bazar_sales
-		WHERE organization_id = $1
-		  AND bazar_id = $2
-		  AND status = 'completed'
-		  AND payment_method = 'cash'
-	`, organizationID, bazarID).Scan(&cashSales); err != nil {
+		SELECT COUNT(*), COALESCE(SUM(expected_cash), 0),
+		       COALESCE(SUM(closing_cash), 0), COALESCE(SUM(cash_difference), 0)
+		FROM bazar_daily_cuts
+		WHERE organization_id = $1 AND bazar_id = $2
+	`, organizationID, bazarID).Scan(
+		&cutCount,
+		&expectedCash,
+		&finalClosingCash,
+		&difference,
+	); err != nil {
 		return nil, err
 	}
-	expectedCash := openingCash + cashSales
-	difference := closingCash - expectedCash
+	if cutCount == 0 {
+		var cashSales float64
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(total), 0)
+			FROM bazar_sales
+			WHERE organization_id = $1
+			  AND bazar_id = $2
+			  AND status = 'completed'
+			  AND payment_method = 'cash'
+		`, organizationID, bazarID).Scan(&cashSales); err != nil {
+			return nil, err
+		}
+		expectedCash = openingCash + cashSales
+		finalClosingCash = closingCash
+		difference = closingCash - expectedCash
+	}
 
 	_, err = tx.Exec(ctx, `
 		UPDATE bazaars
@@ -268,7 +286,7 @@ func (r *Repository) CloseBazar(
 		    closed_by = $5,
 		    updated_at = NOW()
 		WHERE id = $6 AND organization_id = $7
-	`, expectedCash, closingCash, difference, notes, userID, bazarID, organizationID)
+	`, expectedCash, finalClosingCash, difference, notes, userID, bazarID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +310,7 @@ func (r *Repository) GetReport(
 		Products:       make([]ProductSummary, 0),
 		Sellers:        make([]SellerSummary, 0),
 	}
+	useStoredExpectedCash := false
 
 	filter := ""
 	args := []any{organizationID, from, to}
@@ -307,6 +326,10 @@ func (r *Repository) GetReport(
 		}
 		report.Bazar = bazarItem
 		report.ExpectedCash = bazarItem.OpeningCash
+		if bazarItem.ExpectedCash != nil {
+			report.ExpectedCash = *bazarItem.ExpectedCash
+			useStoredExpectedCash = true
+		}
 		report.ClosingCash = bazarItem.ClosingCash
 		report.CashDifference = bazarItem.CashDifference
 	}
@@ -360,7 +383,7 @@ func (r *Repository) GetReport(
 			return nil, err
 		}
 		report.PaymentMethods = append(report.PaymentMethods, item)
-		if item.Method == PaymentCash {
+		if item.Method == PaymentCash && !useStoredExpectedCash {
 			report.ExpectedCash += item.Total
 		}
 	}

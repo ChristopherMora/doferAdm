@@ -217,13 +217,15 @@ func (r *Repository) CreateManualProduct(
 ) (*Product, error) {
 	row := r.db.QueryRow(ctx, `
 		INSERT INTO products (
-			organization_id, sku, name, category, suggested_price, cost, stock,
+			id, organization_id, sku, name, category, suggested_price, cost, stock,
 			image_url, is_active, bazar_enabled, bazar_source, stock_sync_policy, track_stock
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE, 'manual', 'manual', $9)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, TRUE, 'manual', 'manual', $10)
+		ON CONFLICT (id) DO NOTHING
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
 		          bazar_source, stock_sync_policy, track_stock
 	`,
+		product.ID,
 		organizationID,
 		product.SKU,
 		product.Name,
@@ -236,6 +238,16 @@ func (r *Repository) CreateManualProduct(
 	)
 
 	created, err := scanProduct(row)
+	if err == pgx.ErrNoRows {
+		existing, getErr := r.GetProduct(ctx, organizationID, product.ID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if existing == nil {
+			return nil, &serviceError{Status: http.StatusConflict, Message: "El ID del producto ya está en uso."}
+		}
+		return existing, nil
+	}
 	if isUniqueViolation(err) {
 		return nil, &serviceError{Status: http.StatusConflict, Message: "Ya existe un producto con ese código SKU."}
 	}
@@ -407,12 +419,26 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		strings.ToUpper(strings.ReplaceAll(saleID.String(), "-", "")[:8]),
 	)
 	notes := sanitizeString(cmd.Notes)
+	var cashReceived, changeDue *float64
+	if cmd.PaymentMethod == PaymentCash && cmd.CashReceived != nil {
+		if *cmd.CashReceived < total {
+			return nil, &serviceError{
+				Status:  http.StatusBadRequest,
+				Message: fmt.Sprintf("El efectivo recibido debe ser al menos %.2f.", total),
+			}
+		}
+		received := *cmd.CashReceived
+		change := received - total
+		cashReceived = &received
+		changeDue = &change
+	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO bazar_sales (
 			id, organization_id, external_id, client_request_id, bazar_id,
-			seller_id, seller_name, subtotal, total, payment_method, notes
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10)
+			seller_id, seller_name, subtotal, total, payment_method,
+			cash_received, change_due, notes
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12)
 	`,
 		saleID,
 		organizationID,
@@ -423,6 +449,8 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		cmd.SellerName,
 		total,
 		cmd.PaymentMethod,
+		cashReceived,
+		changeDue,
 		notes,
 	)
 	if err != nil {
@@ -503,6 +531,7 @@ func (r *Repository) GetSale(ctx context.Context, organizationID string, saleID 
 	row := r.db.QueryRow(ctx, `
 		SELECT s.id, s.external_id, s.client_request_id, s.bazar_id, b.name,
 		       s.seller_id, s.seller_name, s.subtotal, s.total, s.payment_method,
+		       s.cash_received, s.change_due,
 		       s.status, s.sync_status, s.sync_attempts, s.last_sync_at,
 		       s.sync_error, s.notes, s.created_at, s.cancelled_at
 		FROM bazar_sales s
@@ -534,6 +563,7 @@ func (r *Repository) ListSales(ctx context.Context, organizationID string, bazar
 	query := `
 		SELECT s.id, s.external_id, s.client_request_id, s.bazar_id, b.name,
 		       s.seller_id, s.seller_name, s.subtotal, s.total, s.payment_method,
+		       s.cash_received, s.change_due,
 		       s.status, s.sync_status, s.sync_attempts, s.last_sync_at,
 		       s.sync_error, s.notes, s.created_at, s.cancelled_at
 		FROM bazar_sales s
@@ -581,6 +611,7 @@ func scanSale(row pgx.Row) (*Sale, error) {
 	var sellerID uuid.NullUUID
 	var lastSyncAt, cancelledAt sql.NullTime
 	var syncError, notes sql.NullString
+	var cashReceived, changeDue sql.NullFloat64
 	if err := row.Scan(
 		&sale.ID,
 		&sale.ExternalID,
@@ -592,6 +623,8 @@ func scanSale(row pgx.Row) (*Sale, error) {
 		&sale.Subtotal,
 		&sale.Total,
 		&sale.PaymentMethod,
+		&cashReceived,
+		&changeDue,
 		&sale.Status,
 		&sale.SyncStatus,
 		&sale.SyncAttempts,
@@ -605,6 +638,12 @@ func scanSale(row pgx.Row) (*Sale, error) {
 	}
 	if sellerID.Valid {
 		sale.SellerID = &sellerID.UUID
+	}
+	if cashReceived.Valid {
+		sale.CashReceived = &cashReceived.Float64
+	}
+	if changeDue.Valid {
+		sale.ChangeDue = &changeDue.Float64
 	}
 	if lastSyncAt.Valid {
 		sale.LastSyncAt = &lastSyncAt.Time

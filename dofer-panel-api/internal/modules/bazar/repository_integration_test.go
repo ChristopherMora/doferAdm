@@ -143,12 +143,14 @@ func TestManualProductSaleLifecycleIntegration(t *testing.T) {
 	}
 
 	trackStock := false
+	offlineProductID := uuid.New()
 	freeSaleProduct, err := service.CreateProduct(
 		ctx,
 		organizationID.String(),
 		userID,
 		"Integration Admin",
 		CreateProductRequest{
+			ID:         offlineProductID.String(),
 			SKU:        "TEST-FREE-01",
 			Name:       "Producto de venta libre",
 			Price:      30,
@@ -157,6 +159,22 @@ func TestManualProductSaleLifecycleIntegration(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("create free sale product: %v", err)
+	}
+	retriedProduct, err := service.CreateProduct(
+		ctx,
+		organizationID.String(),
+		userID,
+		"Integration Admin",
+		CreateProductRequest{
+			ID:         offlineProductID.String(),
+			SKU:        "TEST-FREE-01",
+			Name:       "Producto de venta libre",
+			Price:      30,
+			TrackStock: &trackStock,
+		},
+	)
+	if err != nil || retriedProduct.ID != freeSaleProduct.ID {
+		t.Fatalf("retry offline product: %#v, err=%v", retriedProduct, err)
 	}
 	freeSale, err := service.CreateSale(ctx, organizationID.String(), userID, "Integration Admin", CreateSaleRequest{
 		ClientRequestID: uuid.NewString(),
@@ -300,6 +318,7 @@ func TestManualProductSaleLifecycleIntegration(t *testing.T) {
 		t.Fatalf("expected adjusted sheet product conflict, got %#v", conflicts)
 	}
 
+	cashReceived := 200.0
 	cartSale, err := service.CreateSale(ctx, organizationID.String(), userID, "Integration Admin", CreateSaleRequest{
 		ClientRequestID: uuid.NewString(),
 		BazarID:         bazarItem.ID.String(),
@@ -308,12 +327,17 @@ func TestManualProductSaleLifecycleIntegration(t *testing.T) {
 			{ProductID: secondProduct.ID.String(), Quantity: 1},
 		},
 		PaymentMethod: PaymentCash,
+		CashReceived:  &cashReceived,
 	})
 	if err != nil {
 		t.Fatalf("create cart sale: %v", err)
 	}
 	if cartSale.Sale.Total != 115 || len(cartSale.Sale.Items) != 2 {
 		t.Fatalf("unexpected cart sale: %#v", cartSale.Sale)
+	}
+	if cartSale.Sale.CashReceived == nil || *cartSale.Sale.CashReceived != 200 ||
+		cartSale.Sale.ChangeDue == nil || *cartSale.Sale.ChangeDue != 85 {
+		t.Fatalf("unexpected cash received or change: %#v", cartSale.Sale)
 	}
 	conflicts, err = repository.FindSyncConflicts(ctx, organizationID.String(), []sheetProduct{{
 		ExternalID: secondProduct.ExternalID,
@@ -354,6 +378,25 @@ func TestManualProductSaleLifecycleIntegration(t *testing.T) {
 	}
 	if len(movements) < 4 {
 		t.Fatalf("expected sale, cancellation and adjustment movements, got %d", len(movements))
+	}
+
+	cut, err := service.CloseDailyCut(
+		ctx,
+		organizationID.String(),
+		bazarItem.ID,
+		userID,
+		"Integration Admin",
+		CreateDailyCutRequest{OpeningCash: 100, ClosingCash: 210, Notes: "Corte del día"},
+	)
+	if err != nil {
+		t.Fatalf("close daily cut: %v", err)
+	}
+	if cut.ExpectedCash != 215 || cut.CashSales != 115 || cut.CashDifference != -5 {
+		t.Fatalf("unexpected daily cut: %#v", cut)
+	}
+	cuts, err := service.ListDailyCuts(ctx, organizationID.String(), bazarItem.ID)
+	if err != nil || len(cuts) != 1 || cuts[0].ID != cut.ID {
+		t.Fatalf("unexpected daily cuts: %#v, err=%v", cuts, err)
 	}
 
 	closed, err := service.CloseBazar(

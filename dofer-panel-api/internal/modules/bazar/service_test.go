@@ -52,6 +52,21 @@ func TestPrepareCreateProductAllowsFreeSaleProducts(t *testing.T) {
 	}
 }
 
+func TestPrepareCreateProductPreservesOfflineID(t *testing.T) {
+	productID := uuid.New()
+	command, err := prepareCreateProduct(CreateProductRequest{
+		ID:    productID.String(),
+		Name:  "Producto creado sin conexión",
+		Price: 25,
+	})
+	if err != nil {
+		t.Fatalf("prepareCreateProduct returned an error: %v", err)
+	}
+	if command.ID != productID {
+		t.Fatalf("expected product ID %s, got %s", productID, command.ID)
+	}
+}
+
 func TestValidateProductImageDataURL(t *testing.T) {
 	image := "data:image/webp;base64," + base64.StdEncoding.EncodeToString([]byte("webp image"))
 	validated, err := validateProductImage(&image)

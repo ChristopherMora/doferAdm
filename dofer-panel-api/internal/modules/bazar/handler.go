@@ -29,6 +29,7 @@ func RegisterRoutes(r chi.Router, handler *Handler) {
 
 		r.Get("/bazaars", handler.ListBazaars)
 		r.Get("/bazaars/{id}/report", handler.GetBazarReport)
+		r.Get("/bazaars/{id}/daily-cuts", handler.ListDailyCuts)
 		r.Get("/products", handler.ListProducts)
 		r.Get("/products/{id}", handler.GetProduct)
 		r.Get("/sales", handler.ListSales)
@@ -42,6 +43,7 @@ func RegisterRoutes(r chi.Router, handler *Handler) {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireRole("admin", "operator"))
 			r.Post("/bazaars", handler.CreateBazar)
+			r.Post("/bazaars/{id}/daily-cuts", handler.CloseDailyCut)
 			r.Post("/bazaars/{id}/close", handler.CloseBazar)
 			r.Post("/products", handler.CreateProduct)
 			r.Put("/products/{id}", handler.UpdateProduct)
@@ -52,6 +54,56 @@ func RegisterRoutes(r chi.Router, handler *Handler) {
 			r.Post("/sync", handler.Sync)
 		})
 	})
+}
+
+func (h *Handler) ListDailyCuts(w http.ResponseWriter, r *http.Request) {
+	bazarID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, &serviceError{Status: http.StatusBadRequest, Message: "ID de bazar inválido."})
+		return
+	}
+	cuts, err := h.service.ListDailyCuts(r.Context(), organizationID(r), bazarID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"cuts": cuts})
+}
+
+func (h *Handler) CloseDailyCut(w http.ResponseWriter, r *http.Request) {
+	bazarID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, &serviceError{Status: http.StatusBadRequest, Message: "ID de bazar inválido."})
+		return
+	}
+	userID, err := requestUserID(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var req CreateDailyCutRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	cut, err := h.service.CloseDailyCut(
+		r.Context(),
+		organizationID(r),
+		bazarID,
+		userID,
+		requestActorName(r),
+		req,
+	)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	report, err := h.service.Report(r.Context(), organizationID(r), &bazarID, cut.BusinessDate)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"cut": cut, "report": report})
 }
 
 func (h *Handler) ListBazaars(w http.ResponseWriter, r *http.Request) {

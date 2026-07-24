@@ -5,6 +5,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
   AlertTriangle,
+  Banknote,
   CalendarDays,
   Camera,
   Check,
@@ -18,21 +19,26 @@ import {
   Layers3,
   LoaderCircle,
   Mail,
+  Maximize2,
   MapPin,
   MessageCircle,
   Minus,
+  Minimize2,
   PackageCheck,
   PackagePlus,
   PackageX,
   Pencil,
+  Pause,
   Plus,
   Printer,
   ReceiptText,
   RefreshCw,
+  Repeat2,
   ScanLine,
   Search,
   ShoppingCart,
   Store,
+  Star,
   Trash2,
   Undo2,
   Upload,
@@ -45,6 +51,21 @@ import {
 
 import { apiClient } from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import {
+  type StoredCombo,
+  type StoredHeldSale,
+  readCombos,
+  readFavoriteProducts,
+  readHeldSales,
+  readLastPaymentMethod,
+  readOfflineProducts,
+  requestPersistentStorage,
+  writeCombos,
+  writeFavoriteProducts,
+  writeHeldSales,
+  writeLastPaymentMethod,
+  writeOfflineProducts,
+} from './pos-storage'
 
 interface BazarProduct {
   id: string
@@ -95,6 +116,8 @@ interface Sale {
   seller_name: string
   total: number
   payment_method: PaymentMethod
+  cash_received?: number
+  change_due?: number
   status: 'completed' | 'cancelled'
   sync_status: 'pending' | 'synced' | 'error'
   sync_error?: string
@@ -202,20 +225,52 @@ interface SalePayload {
   bazar_id: string
   items: Array<{ product_id: string; quantity: number }>
   payment_method: PaymentMethod
+  cash_received?: number
 }
 
-interface QuickSaleInput {
-  product: BazarProduct | null
-  name: string
-  category: string
-  price: number
-  quantity: number
+interface PosCheckoutInput {
+  items: Array<{ product: BazarProduct; quantity: number }>
   paymentMethod: PaymentMethod
+  cashReceived?: number
+  keepOpen: boolean
 }
 
 interface OfflineSaleEntry {
   payload: SalePayload
   sale: Sale
+  attempts?: number
+  last_error?: string
+}
+
+interface OfflineProductEntry {
+  payload: {
+    id: string
+    sku: string
+    name: string
+    category: string
+    price: number
+    stock: number
+    track_stock: boolean
+    image_url?: string
+  }
+  product: BazarProduct
+  attempts: number
+  last_error?: string
+}
+
+interface DailyCut {
+  id: string
+  bazar_id: string
+  bazar_name: string
+  business_date: string
+  opening_cash: number
+  cash_sales: number
+  expected_cash: number
+  closing_cash: number
+  cash_difference: number
+  notes?: string
+  closed_by_name: string
+  closed_at: string
 }
 
 interface BazarCache {
@@ -223,6 +278,7 @@ interface BazarCache {
   bazaars: Bazar[]
   currentUser: CurrentUser
   syncStatus: SyncStatus | null
+  activity?: Record<string, { sales: Sale[]; stats: DailyStats }>
   savedAt: string
 }
 
@@ -275,6 +331,7 @@ const MOVEMENT_OPTIONS = [
 const AUDIT_LABELS: Record<string, string> = {
   'bazar.created': 'Inició el bazar',
   'bazar.closed': 'Cerró el bazar',
+  'cash.daily_cut': 'Registró un corte diario',
   'product.created': 'Creó un producto',
   'product.updated': 'Editó un producto',
   'inventory.adjusted': 'Ajustó inventario',
@@ -298,6 +355,13 @@ function normalizeProductLookup(value: string) {
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLocaleLowerCase('es')
+}
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const moneyFormatter = new Intl.NumberFormat('es-MX', {
@@ -336,6 +400,63 @@ function writeOfflineSales(entries: OfflineSaleEntry[]) {
   }
 }
 
+function getOfflineProductQueue() {
+  return readOfflineProducts<OfflineProductEntry>()
+}
+
+function mergeOfflineProducts(products: BazarProduct[]) {
+  const queuedProducts = getOfflineProductQueue().map((entry) => entry.product)
+  const queuedIDs = new Set(queuedProducts.map((product) => product.id))
+  return [
+    ...queuedProducts,
+    ...products.filter((product) => !queuedIDs.has(product.id)),
+  ]
+}
+
+function countOfflineErrors() {
+  return (
+    readOfflineSales().filter((entry) => entry.last_error).length +
+    getOfflineProductQueue().filter((entry) => entry.last_error).length
+  )
+}
+
+function mergeActivityWithOffline(
+  baseStats: DailyStats,
+  serverSales: Sale[],
+  bazarID: string,
+) {
+  const queuedSales = readOfflineSales()
+    .filter((entry) => entry.payload.bazar_id === bazarID)
+    .map((entry) => entry.sale)
+  const queuedTotal = queuedSales.reduce((total, sale) => total + sale.total, 0)
+  const queuedUnits = queuedSales.reduce(
+    (total, sale) =>
+      total + sale.items.reduce((sum, item) => sum + item.quantity, 0),
+    0,
+  )
+  const operations = baseStats.operations + queuedSales.length
+  return {
+    stats: {
+      ...baseStats,
+      total: baseStats.total + queuedTotal,
+      products_sold: baseStats.products_sold + queuedUnits,
+      operations,
+      pending_sync: baseStats.pending_sync + queuedSales.length,
+      average_ticket: operations > 0 ? (baseStats.total + queuedTotal) / operations : 0,
+      last_sale_at: queuedSales[0]?.created_at || baseStats.last_sale_at,
+    },
+    sales: [
+      ...queuedSales,
+      ...serverSales.filter(
+        (sale) =>
+          !queuedSales.some(
+            (queued) => queued.client_request_id === sale.client_request_id,
+          ),
+      ),
+    ].slice(0, 12),
+  }
+}
+
 function readBazarCache(): BazarCache | null {
   if (typeof window === 'undefined') return null
   try {
@@ -351,6 +472,28 @@ function writeBazarCache(cache: BazarCache) {
   } catch {
     // La cola de ventas tiene prioridad sobre la caché del catálogo.
   }
+}
+
+function updateCachedProducts(
+  update: (products: BazarProduct[]) => BazarProduct[],
+) {
+  const cached = readBazarCache()
+  if (!cached) return
+  writeBazarCache({
+    ...cached,
+    products: update(cached.products),
+    savedAt: new Date().toISOString(),
+  })
+}
+
+function updateCachedBazaars(update: (bazaars: Bazar[]) => Bazar[]) {
+  const cached = readBazarCache()
+  if (!cached) return
+  writeBazarCache({
+    ...cached,
+    bazaars: update(cached.bazaars),
+    savedAt: new Date().toISOString(),
+  })
 }
 
 function applyOfflineStock(products: BazarProduct[]) {
@@ -570,6 +713,12 @@ export default function BazarSalesPage() {
   const [creatingProduct, setCreatingProduct] = useState(false)
   const [showQuickSale, setShowQuickSale] = useState(false)
   const [quickSaleBusy, setQuickSaleBusy] = useState(false)
+  const [posInitialItems, setPosInitialItems] = useState<Record<string, number>>({})
+  const [posSessionKey, setPosSessionKey] = useState(0)
+  const [favoriteProducts, setFavoriteProducts] = useState<Set<string>>(new Set())
+  const [combos, setCombos] = useState<StoredCombo[]>([])
+  const [heldSales, setHeldSales] = useState<StoredHeldSale[]>([])
+  const [cashMode, setCashMode] = useState(false)
   const [editingProduct, setEditingProduct] = useState<BazarProduct | null>(null)
   const [adjustingProduct, setAdjustingProduct] = useState<BazarProduct | null>(null)
   const [savingProduct, setSavingProduct] = useState(false)
@@ -577,7 +726,9 @@ export default function BazarSalesPage() {
   const [showCart, setShowCart] = useState(false)
   const [cartBusy, setCartBusy] = useState(false)
   const [showCloseBazar, setShowCloseBazar] = useState(false)
+  const [showFinalizeBazar, setShowFinalizeBazar] = useState(false)
   const [closingBazar, setClosingBazar] = useState(false)
+  const [dailyCuts, setDailyCuts] = useState<DailyCut[]>([])
   const [showReport, setShowReport] = useState(false)
   const [report, setReport] = useState<BazarReport | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
@@ -586,6 +737,9 @@ export default function BazarSalesPage() {
   const [showScanner, setShowScanner] = useState(false)
   const [syncConflicts, setSyncConflicts] = useState<SyncConflict[]>([])
   const [offlineQueueCount, setOfflineQueueCount] = useState(0)
+  const [offlineProductCount, setOfflineProductCount] = useState(0)
+  const [offlineErrorCount, setOfflineErrorCount] = useState(0)
+  const [showOfflineQueue, setShowOfflineQueue] = useState(false)
   const [flushingOffline, setFlushingOffline] = useState(false)
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null)
   const confirmationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -615,12 +769,15 @@ export default function BazarSalesPage() {
       }
     }
     return [...products].sort((first, second) => {
+      const favoriteDifference =
+        Number(favoriteProducts.has(second.id)) - Number(favoriteProducts.has(first.id))
+      if (favoriteDifference !== 0) return favoriteDifference
       const firstPosition = recentPosition.get(first.id) ?? Number.MAX_SAFE_INTEGER
       const secondPosition = recentPosition.get(second.id) ?? Number.MAX_SAFE_INTEGER
       if (firstPosition !== secondPosition) return firstPosition - secondPosition
       return first.name.localeCompare(second.name, 'es')
     })
-  }, [products, sales])
+  }, [favoriteProducts, products, sales])
   const cartUnits = useMemo(
     () => cartProducts.reduce((total, item) => total + item.quantity, 0),
     [cartProducts],
@@ -660,8 +817,16 @@ export default function BazarSalesPage() {
   const loadProducts = useCallback(async () => {
     const response = await apiClient.get<{ products: BazarProduct[] }>('/bazar/products')
     const serverProducts = response.products || []
-    const nextProducts = applyOfflineStock(serverProducts)
+    const nextProducts = applyOfflineStock(mergeOfflineProducts(serverProducts))
     setProducts(nextProducts)
+    const cached = readBazarCache()
+    if (cached) {
+      writeBazarCache({
+        ...cached,
+        products: serverProducts,
+        savedAt: new Date().toISOString(),
+      })
+    }
     return serverProducts
   }, [])
 
@@ -677,34 +842,21 @@ export default function BazarSalesPage() {
         params: { bazar_id: bazarID, limit: 12 },
       }),
     ])
-    const queuedSales = readOfflineSales()
-      .filter((entry) => entry.payload.bazar_id === bazarID)
-      .map((entry) => entry.sale)
-    const queuedTotal = queuedSales.reduce((total, sale) => total + sale.total, 0)
-    const queuedUnits = queuedSales.reduce(
-      (total, sale) => total + sale.items.reduce((sum, item) => sum + item.quantity, 0),
-      0,
-    )
-    const queuedOperations = queuedSales.length
-    const nextStats = {
-      ...statsResponse,
-      total: statsResponse.total + queuedTotal,
-      products_sold: statsResponse.products_sold + queuedUnits,
-      operations: statsResponse.operations + queuedOperations,
-      pending_sync: statsResponse.pending_sync + queuedOperations,
-      average_ticket:
-        statsResponse.operations + queuedOperations > 0
-          ? (statsResponse.total + queuedTotal) / (statsResponse.operations + queuedOperations)
-          : 0,
-      last_sale_at: queuedSales[0]?.created_at || statsResponse.last_sale_at,
+    const serverSales = salesResponse.sales || []
+    const cached = readBazarCache()
+    if (cached) {
+      writeBazarCache({
+        ...cached,
+        activity: {
+          ...(cached.activity || {}),
+          [bazarID]: { sales: serverSales, stats: statsResponse },
+        },
+        savedAt: new Date().toISOString(),
+      })
     }
-    setStats(nextStats)
-    setSales([
-      ...queuedSales,
-      ...(salesResponse.sales || []).filter(
-        (sale) => !queuedSales.some((queued) => queued.client_request_id === sale.client_request_id),
-      ),
-    ].slice(0, 12))
+    const merged = mergeActivityWithOffline(statsResponse, serverSales, bazarID)
+    setStats(merged.stats)
+    setSales(merged.sales)
   }, [])
 
   const loadSyncStatus = useCallback(async () => {
@@ -712,6 +864,26 @@ export default function BazarSalesPage() {
     setSyncStatus(response)
     return response
   }, [])
+
+  useEffect(() => {
+    setFavoriteProducts(new Set(readFavoriteProducts()))
+    setCombos(readCombos())
+    setHeldSales(readHeldSales())
+    const savedPaymentMethod = readLastPaymentMethod() as PaymentMethod
+    if (PAYMENT_METHODS.some((method) => method.value === savedPaymentMethod)) {
+      setPaymentMethod(savedPaymentMethod)
+    }
+    setOfflineProductCount(getOfflineProductQueue().length)
+    setOfflineErrorCount(countOfflineErrors())
+    void requestPersistentStorage()
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.register('/bazar-sw.js')
+    }
+  }, [])
+
+  useEffect(() => {
+    writeLastPaymentMethod(paymentMethod)
+  }, [paymentMethod])
 
   useEffect(() => {
     let cancelled = false
@@ -739,7 +911,12 @@ export default function BazarSalesPage() {
           availableBazaars.find((item) => item.status === 'active')
         if (selected) {
           setActiveBazarID(selected.id)
-          setPaymentMethod(selected.default_payment_method)
+          const savedPaymentMethod = readLastPaymentMethod() as PaymentMethod
+          setPaymentMethod(
+            PAYMENT_METHODS.some((method) => method.value === savedPaymentMethod)
+              ? savedPaymentMethod
+              : selected.default_payment_method,
+          )
         }
 
         const lastSync = currentSyncStatus.last_product_sync
@@ -770,24 +947,30 @@ export default function BazarSalesPage() {
         const loadedProducts = await loadProducts()
         const refreshedStatus = !cancelled ? await loadSyncStatus() : currentSyncStatus
         if (!cancelled) {
+          const previousCache = readBazarCache()
           writeBazarCache({
             products: loadedProducts,
             bazaars: availableBazaars,
             currentUser: userResponse,
             syncStatus: refreshedStatus,
+            activity: previousCache?.activity,
             savedAt: new Date().toISOString(),
           })
           setOfflineQueueCount(readOfflineSales().length)
+          setOfflineProductCount(getOfflineProductQueue().length)
+          setOfflineErrorCount(countOfflineErrors())
         }
       } catch (loadError) {
         if (!cancelled) {
           const cached = readBazarCache()
           if (cached && isNetworkError(loadError)) {
-            setProducts(applyOfflineStock(cached.products))
+            setProducts(applyOfflineStock(mergeOfflineProducts(cached.products)))
             setBazaars(cached.bazaars)
             setCurrentUser(cached.currentUser)
             setSyncStatus(cached.syncStatus)
             setOfflineQueueCount(readOfflineSales().length)
+            setOfflineProductCount(getOfflineProductQueue().length)
+            setOfflineErrorCount(countOfflineErrors())
             const storedBazarID = localStorage.getItem('dofer-active-bazar-id')
             const selected =
               cached.bazaars.find(
@@ -795,7 +978,12 @@ export default function BazarSalesPage() {
               ) || cached.bazaars.find((item) => item.status === 'active')
             if (selected) {
               setActiveBazarID(selected.id)
-              setPaymentMethod(selected.default_payment_method)
+              const savedPaymentMethod = readLastPaymentMethod() as PaymentMethod
+              setPaymentMethod(
+                PAYMENT_METHODS.some((method) => method.value === savedPaymentMethod)
+                  ? savedPaymentMethod
+                  : selected.default_payment_method,
+              )
             }
           } else {
             setError(getErrorMessage(loadError, 'No se pudo cargar Ventas del bazar.'))
@@ -820,26 +1008,14 @@ export default function BazarSalesPage() {
     const activityTimer = window.setTimeout(() => {
       void loadActivity(activeBazarID).catch((activityError) => {
         if (isNetworkError(activityError)) {
-          const queuedSales = readOfflineSales()
-            .filter((entry) => entry.payload.bazar_id === activeBazarID)
-            .map((entry) => entry.sale)
-          if (queuedSales.length > 0) {
-            const total = queuedSales.reduce((sum, sale) => sum + sale.total, 0)
-            const units = queuedSales.reduce(
-              (sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
-              0,
-            )
-            setSales(queuedSales)
-            setStats({
-              ...EMPTY_STATS,
-              total,
-              products_sold: units,
-              operations: queuedSales.length,
-              average_ticket: total / queuedSales.length,
-              pending_sync: queuedSales.length,
-              last_sale_at: queuedSales[0].created_at,
-            })
-          }
+          const cachedActivity = readBazarCache()?.activity?.[activeBazarID]
+          const merged = mergeActivityWithOffline(
+            cachedActivity?.stats || EMPTY_STATS,
+            cachedActivity?.sales || [],
+            activeBazarID,
+          )
+          setSales(merged.sales)
+          setStats(merged.stats)
           return
         }
         setError(getErrorMessage(activityError, 'No se pudo cargar la actividad del día.'))
@@ -895,6 +1071,7 @@ export default function BazarSalesPage() {
   const submitSale = async (
     requestedItems: Array<{ product: BazarProduct; quantity: number }>,
     method: PaymentMethod,
+    cashReceived?: number,
   ) => {
     if (!activeBazar || !canSell || requestedItems.length === 0) return null
     for (const item of requestedItems) {
@@ -916,14 +1093,104 @@ export default function BazarSalesPage() {
         quantity: item.quantity,
       })),
       payment_method: method,
+      ...(method === 'cash' && cashReceived !== undefined
+        ? { cash_received: cashReceived }
+        : {}),
+    }
+
+    const queueSaleLocally = () => {
+      const createdAt = new Date().toISOString()
+      const total = requestedItems.reduce(
+        (sum, item) => sum + item.product.price * item.quantity,
+        0,
+      )
+      const localSale: Sale = {
+        id: `offline-${payload.client_request_id}`,
+        external_id: `PEND-${payload.client_request_id.slice(0, 8).toUpperCase()}`,
+        client_request_id: payload.client_request_id,
+        bazar_id: activeBazar.id,
+        bazar_name: activeBazar.name,
+        seller_name: currentUser?.full_name || currentUser?.email || 'Vendedor',
+        total,
+        payment_method: method,
+        cash_received: method === 'cash' ? cashReceived : undefined,
+        change_due:
+          method === 'cash' && cashReceived !== undefined
+            ? Math.max(0, cashReceived - total)
+            : undefined,
+        status: 'completed',
+        sync_status: 'pending',
+        created_at: createdAt,
+        items: requestedItems.map((item) => ({
+          product_id: item.product.id,
+          product_external_id: item.product.external_id,
+          product_name: item.product.name,
+          quantity: item.quantity,
+          unit_price: item.product.price,
+          total: item.product.price * item.quantity,
+          stock_before: item.product.stock,
+          stock_after: productTracksStock(item.product)
+            ? item.product.stock - item.quantity
+            : item.product.stock,
+        })),
+      }
+      const queued = [{ payload, sale: localSale, attempts: 0 }, ...readOfflineSales()]
+      if (!writeOfflineSales(queued)) {
+        setError('No hay espacio disponible en el dispositivo para guardar la venta sin conexión.')
+        return null
+      }
+      setOfflineQueueCount(queued.length)
+      setOfflineErrorCount(countOfflineErrors())
+      setProducts((current) =>
+        current.map((product) => {
+          const sold = requestedItems.find((item) => item.product.id === product.id)
+          return sold && productTracksStock(product)
+            ? { ...product, stock: product.stock - sold.quantity }
+            : product
+        }),
+      )
+      setSales((current) => [localSale, ...current].slice(0, 12))
+      setStats((current) => {
+        const units = requestedItems.reduce((sum, item) => sum + item.quantity, 0)
+        const operations = current.operations + 1
+        const nextTotal = current.total + localSale.total
+        return {
+          ...current,
+          total: nextTotal,
+          products_sold: current.products_sold + units,
+          operations,
+          average_ticket: nextTotal / operations,
+          pending_sync: current.pending_sync + 1,
+          last_sale_at: createdAt,
+        }
+      })
+      showSaleConfirmation(localSale)
+      return localSale
     }
 
     setError(null)
+    const pendingProductIDs = new Set(
+      getOfflineProductQueue().map((entry) => entry.product.id),
+    )
+    if (
+      !navigator.onLine ||
+      requestedItems.some((item) => pendingProductIDs.has(item.product.id))
+    ) {
+      return queueSaleLocally()
+    }
+
     try {
       const response = await apiClient.post<SaleResponse>('/bazar/sales', payload)
       const sale = response.sale
       const stockByProduct = new Map(
         sale.items.map((item) => [item.product_id, item.stock_after]),
+      )
+      updateCachedProducts((cachedProducts) =>
+        cachedProducts.map((product) =>
+          stockByProduct.has(product.id)
+            ? { ...product, stock: stockByProduct.get(product.id) ?? product.stock }
+            : product,
+        ),
       )
       setProducts((current) =>
         current.map((product) =>
@@ -945,67 +1212,7 @@ export default function BazarSalesPage() {
         setError(getErrorMessage(saleError, 'No se pudo registrar la venta.'))
         return null
       }
-
-      const createdAt = new Date().toISOString()
-      const localSale: Sale = {
-        id: `offline-${payload.client_request_id}`,
-        external_id: `PEND-${payload.client_request_id.slice(0, 8).toUpperCase()}`,
-        client_request_id: payload.client_request_id,
-        bazar_id: activeBazar.id,
-        bazar_name: activeBazar.name,
-        seller_name: currentUser?.full_name || currentUser?.email || 'Vendedor',
-        total: requestedItems.reduce(
-          (total, item) => total + item.product.price * item.quantity,
-          0,
-        ),
-        payment_method: method,
-        status: 'completed',
-        sync_status: 'pending',
-        created_at: createdAt,
-        items: requestedItems.map((item) => ({
-          product_id: item.product.id,
-          product_external_id: item.product.external_id,
-          product_name: item.product.name,
-          quantity: item.quantity,
-          unit_price: item.product.price,
-          total: item.product.price * item.quantity,
-          stock_before: item.product.stock,
-          stock_after: productTracksStock(item.product)
-            ? item.product.stock - item.quantity
-            : item.product.stock,
-        })),
-      }
-      const queued = [{ payload, sale: localSale }, ...readOfflineSales()]
-      if (!writeOfflineSales(queued)) {
-        setError('No hay espacio disponible en el dispositivo para guardar la venta sin conexión.')
-        return null
-      }
-      setOfflineQueueCount(queued.length)
-      setProducts((current) =>
-        current.map((product) => {
-          const sold = requestedItems.find((item) => item.product.id === product.id)
-          return sold && productTracksStock(product)
-            ? { ...product, stock: product.stock - sold.quantity }
-            : product
-        }),
-      )
-      setSales((current) => [localSale, ...current].slice(0, 12))
-      setStats((current) => {
-        const units = requestedItems.reduce((total, item) => total + item.quantity, 0)
-        const operations = current.operations + 1
-        const total = current.total + localSale.total
-        return {
-          ...current,
-          total,
-          products_sold: current.products_sold + units,
-          operations,
-          average_ticket: total / operations,
-          pending_sync: current.pending_sync + 1,
-          last_sale_at: createdAt,
-        }
-      })
-      showSaleConfirmation(localSale)
-      return localSale
+      return queueSaleLocally()
     }
   }
 
@@ -1053,84 +1260,295 @@ export default function BazarSalesPage() {
     }
   }
 
-  const submitQuickSale = async (input: QuickSaleInput) => {
-    if (quickSaleBusy || !activeBazar) return
-    setQuickSaleBusy(true)
-    setError(null)
-    try {
-      let product = input.product
-      if (!product) {
-        const normalizedName = normalizeProductLookup(input.name)
-        product =
-          products.find(
-            (item) =>
-              normalizeProductLookup(item.name) === normalizedName ||
-              normalizeProductLookup(item.external_id) === normalizedName,
-          ) || null
-      }
-      if (!product) {
-        if (!navigator.onLine) {
-          setError('Conéctate a internet para guardar un producto nuevo. Los productos existentes sí pueden venderse sin conexión.')
-          return
-        }
-        const created = await apiClient.post<BazarProduct>('/bazar/products', {
-          name: input.name,
-          category: input.category,
-          price: input.price,
-          stock: 0,
-          track_stock: false,
-        })
-        product = created
-        setProducts((current) => [
-          created,
-          ...current.filter((item) => item.id !== created.id),
-        ])
-      }
+  const createPosProduct = async (input: {
+    name: string
+    category: string
+    price: number
+  }) => {
+    const normalizedName = normalizeProductLookup(input.name)
+    const existing =
+      products.find(
+        (item) =>
+          normalizeProductLookup(item.name) === normalizedName ||
+          normalizeProductLookup(item.external_id) === normalizedName,
+      ) || null
+    if (existing) return existing
 
-      const sale = await submitSale(
-        [{ product, quantity: input.quantity }],
-        input.paymentMethod,
-      )
-      if (sale) {
-        setPaymentMethod(input.paymentMethod)
-        setShowQuickSale(false)
+    const id = crypto.randomUUID()
+    const sku = `MAN-${id.replaceAll('-', '').slice(0, 8).toUpperCase()}`
+    const payload = {
+      id,
+      sku,
+      name: input.name.trim(),
+      category: input.category.trim(),
+      price: input.price,
+      stock: 0,
+      track_stock: false,
+    }
+    const localProduct: BazarProduct = {
+      id,
+      external_id: sku,
+      name: payload.name,
+      category: payload.category,
+      price: payload.price,
+      stock: 0,
+      track_stock: false,
+      active: true,
+      source: 'manual',
+      stock_sync_policy: 'manual',
+    }
+
+    const queueProduct = (message?: string) => {
+      const queue = getOfflineProductQueue()
+      const next = [
+        {
+          payload,
+          product: localProduct,
+          attempts: 0,
+          last_error: message,
+        },
+        ...queue.filter((entry) => entry.product.id !== id),
+      ]
+      if (!writeOfflineProducts(next)) {
+        setError('No hay espacio disponible para guardar el producto sin conexión.')
+        return null
       }
-    } catch (quickSaleError) {
-      setError(getErrorMessage(quickSaleError, 'No se pudo guardar el producto para esta venta.'))
+      setProducts((current) => [
+        localProduct,
+        ...current.filter((product) => product.id !== localProduct.id),
+      ])
+      setOfflineProductCount(next.length)
+      setOfflineErrorCount(countOfflineErrors())
+      return localProduct
+    }
+
+    setError(null)
+    if (!navigator.onLine) return queueProduct()
+    try {
+      const created = await apiClient.post<BazarProduct>('/bazar/products', payload)
+      updateCachedProducts((cachedProducts) => [
+        created,
+        ...cachedProducts.filter((product) => product.id !== created.id),
+      ])
+      setProducts((current) => [
+        created,
+        ...current.filter((product) => product.id !== created.id),
+      ])
+      return created
+    } catch (productError) {
+      if (isNetworkError(productError)) {
+        return queueProduct(getErrorMessage(productError, 'Conexión interrumpida.'))
+      }
+      setError(getErrorMessage(productError, 'No se pudo guardar el producto.'))
+      return null
+    }
+  }
+
+  const submitPosSale = async (input: PosCheckoutInput) => {
+    if (quickSaleBusy || !activeBazar) return false
+    setQuickSaleBusy(true)
+    try {
+      const sale = await submitSale(
+        input.items,
+        input.paymentMethod,
+        input.cashReceived,
+      )
+      if (!sale) return false
+      setPaymentMethod(input.paymentMethod)
+      writeLastPaymentMethod(input.paymentMethod)
+      if (!input.keepOpen) setShowQuickSale(false)
+      return true
     } finally {
       setQuickSaleBusy(false)
     }
   }
 
+  const openPos = useCallback((items: Record<string, number> = {}) => {
+    setPosInitialItems(items)
+    setPosSessionKey((current) => current + 1)
+    setShowQuickSale(true)
+  }, [])
+
+  const toggleFavoriteProduct = (productID: string) => {
+    setFavoriteProducts((current) => {
+      const next = new Set(current)
+      if (next.has(productID)) next.delete(productID)
+      else next.add(productID)
+      writeFavoriteProducts([...next])
+      return next
+    })
+  }
+
+  const saveCombo = (name: string, items: Record<string, number>) => {
+    const next: StoredCombo[] = [
+      {
+        id: crypto.randomUUID(),
+        name,
+        items: Object.entries(items)
+          .filter(([, itemQuantity]) => itemQuantity > 0)
+          .map(([productID, itemQuantity]) => ({
+            product_id: productID,
+            quantity: itemQuantity,
+          })),
+        created_at: new Date().toISOString(),
+      },
+      ...combos,
+    ]
+    writeCombos(next)
+    setCombos(next)
+  }
+
+  const deleteCombo = (comboID: string) => {
+    const next = combos.filter((combo) => combo.id !== comboID)
+    writeCombos(next)
+    setCombos(next)
+  }
+
+  const holdSale = (items: Record<string, number>, method: PaymentMethod) => {
+    const next: StoredHeldSale[] = [
+      {
+        id: crypto.randomUUID(),
+        name: `Pendiente ${heldSales.length + 1}`,
+        items: Object.entries(items)
+          .filter(([, itemQuantity]) => itemQuantity > 0)
+          .map(([productID, itemQuantity]) => ({
+            product_id: productID,
+            quantity: itemQuantity,
+          })),
+        payment_method: method,
+        created_at: new Date().toISOString(),
+      },
+      ...heldSales,
+    ]
+    writeHeldSales(next)
+    setHeldSales(next)
+  }
+
+  const deleteHeldSale = (saleID: string) => {
+    const next = heldSales.filter((sale) => sale.id !== saleID)
+    writeHeldSales(next)
+    setHeldSales(next)
+  }
+
+  const repeatLastSale = () => {
+    const lastSale = sales.find((sale) => sale.status === 'completed')
+    if (!lastSale) {
+      setError('Todavía no hay una venta para repetir.')
+      return
+    }
+    const items: Record<string, number> = {}
+    for (const item of lastSale.items) {
+      const product = products.find((candidate) => candidate.id === item.product_id)
+      if (!product?.active) continue
+      const availableQuantity = Math.min(item.quantity, productSaleLimit(product))
+      if (availableQuantity > 0) items[product.id] = availableQuantity
+    }
+    if (Object.keys(items).length === 0) {
+      setError('Los productos de la última venta ya no están disponibles.')
+      return
+    }
+    openPos(items)
+  }
+
+  const toggleCashMode = async () => {
+    const next = !cashMode
+    setCashMode(next)
+    try {
+      if (next && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+      } else if (!next && document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+    } catch {
+      // El modo caja visual sigue activo aunque el navegador bloquee pantalla completa.
+    }
+  }
+
+  useEffect(() => {
+    const handleGlobalShortcut = (event: KeyboardEvent) => {
+      if (event.key === 'F2' && activeBazarID && canSell && !showQuickSale) {
+        event.preventDefault()
+        openPos()
+      }
+    }
+    window.addEventListener('keydown', handleGlobalShortcut)
+    return () => window.removeEventListener('keydown', handleGlobalShortcut)
+  }, [activeBazarID, canSell, openPos, showQuickSale])
+
   const flushOfflineSales = useCallback(async () => {
     if (flushingOfflineRef.current || !navigator.onLine) return
-    const queue = readOfflineSales()
-    if (queue.length === 0) {
+    const productQueue = getOfflineProductQueue()
+    const saleQueue = readOfflineSales()
+    if (productQueue.length === 0 && saleQueue.length === 0) {
       setOfflineQueueCount(0)
+      setOfflineProductCount(0)
+      setOfflineErrorCount(0)
       return
     }
 
     flushingOfflineRef.current = true
     setFlushingOffline(true)
-    const pending: OfflineSaleEntry[] = []
+    const pendingProducts: OfflineProductEntry[] = []
+    const syncedProducts: BazarProduct[] = []
+    const pendingSales: OfflineSaleEntry[] = []
     try {
-      for (const entry of [...queue].reverse()) {
+      for (const entry of [...productQueue].reverse()) {
         try {
-          await apiClient.post<SaleResponse>('/bazar/sales', entry.payload)
-        } catch {
-          pending.unshift(entry)
+          const product = await apiClient.post<BazarProduct>('/bazar/products', entry.payload)
+          syncedProducts.push(product)
+        } catch (syncError) {
+          pendingProducts.unshift({
+            ...entry,
+            attempts: entry.attempts + 1,
+            last_error: getErrorMessage(syncError, 'No se pudo sincronizar el producto.'),
+          })
         }
       }
-      if (!writeOfflineSales(pending)) {
-        setOfflineQueueCount(queue.length)
+      if (!writeOfflineProducts(pendingProducts)) {
         setError('No se pudo actualizar la cola local. Libera espacio en el dispositivo e inténtalo de nuevo.')
         return
       }
-      setOfflineQueueCount(pending.length)
-      if (pending.length === 0) {
+
+      if (syncedProducts.length > 0) {
+        setProducts((current) => {
+          const syncedByID = new Map(syncedProducts.map((product) => [product.id, product]))
+          return current.map((product) => syncedByID.get(product.id) || product)
+        })
+      }
+
+      const blockedProductIDs = new Set(
+        pendingProducts.map((entry) => entry.product.id),
+      )
+      for (const entry of [...saleQueue].reverse()) {
+        if (entry.payload.items.some((item) => blockedProductIDs.has(item.product_id))) {
+          pendingSales.unshift({
+            ...entry,
+            last_error: 'Esperando la sincronización de un producto.',
+          })
+          continue
+        }
+        try {
+          await apiClient.post<SaleResponse>('/bazar/sales', entry.payload)
+        } catch (syncError) {
+          pendingSales.unshift({
+            ...entry,
+            attempts: (entry.attempts || 0) + 1,
+            last_error: getErrorMessage(syncError, 'No se pudo sincronizar la venta.'),
+          })
+        }
+      }
+      if (!writeOfflineSales(pendingSales)) {
+        setError('No se pudo actualizar la cola local. Libera espacio en el dispositivo e inténtalo de nuevo.')
+        return
+      }
+
+      setOfflineProductCount(pendingProducts.length)
+      setOfflineQueueCount(pendingSales.length)
+      setOfflineErrorCount(countOfflineErrors())
+      if (pendingProducts.length === 0 && pendingSales.length === 0) {
         await Promise.all([loadProducts(), loadActivity(activeBazarID), loadSyncStatus()])
       } else {
-        setError(`Quedaron ${pending.length} ventas sin enviar. Se volverá a intentar.`)
+        setError(`Quedaron ${pendingProducts.length + pendingSales.length} operaciones sin enviar. Se volverá a intentar.`)
       }
     } finally {
       flushingOfflineRef.current = false
@@ -1142,7 +1560,12 @@ export default function BazarSalesPage() {
     const handleOnline = () => void flushOfflineSales()
     window.addEventListener('online', handleOnline)
     const initialRetry = window.setTimeout(() => {
-      if (navigator.onLine && readOfflineSales().length > 0) void flushOfflineSales()
+      if (
+        navigator.onLine &&
+        (readOfflineSales().length > 0 || getOfflineProductQueue().length > 0)
+      ) {
+        void flushOfflineSales()
+      }
     }, 0)
     return () => {
       window.clearTimeout(initialRetry)
@@ -1161,6 +1584,7 @@ export default function BazarSalesPage() {
         return
       }
       setOfflineQueueCount(next.length)
+      setOfflineErrorCount(countOfflineErrors())
       if (entry) {
         setProducts((current) =>
           current.map((product) => {
@@ -1211,6 +1635,10 @@ export default function BazarSalesPage() {
         default_payment_method: String(form.get('default_payment_method') || 'cash'),
         opening_cash: Number(form.get('opening_cash') || 0),
       })
+      updateCachedBazaars((cachedBazaars) => [
+        created,
+        ...cachedBazaars.filter((bazar) => bazar.id !== created.id),
+      ])
       setBazaars((current) => [created, ...current])
       setActiveBazarID(created.id)
       setPaymentMethod(created.default_payment_method)
@@ -1230,14 +1658,68 @@ export default function BazarSalesPage() {
     try {
       const file = form.get('image_file')
       const uploadedImage = await imageFileToDataURL(file instanceof File ? file : null)
-      const created = await apiClient.post<BazarProduct>('/bazar/products', {
-        sku: String(form.get('sku') || ''),
-        name: String(form.get('name') || ''),
-        category: String(form.get('category') || ''),
+      const id = crypto.randomUUID()
+      const rawSKU = String(form.get('sku') || '').trim()
+      const payload = {
+        id,
+        sku: rawSKU || `MAN-${id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
+        name: String(form.get('name') || '').trim(),
+        category: String(form.get('category') || '').trim(),
         price: Number(form.get('price')),
         stock: Number(form.get('stock')),
+        track_stock: true,
         image_url: uploadedImage || String(form.get('image_url') || ''),
-      })
+      }
+      const localProduct: BazarProduct = {
+        id,
+        external_id: payload.sku,
+        name: payload.name,
+        category: payload.category,
+        price: payload.price,
+        stock: payload.stock,
+        track_stock: true,
+        image_url: payload.image_url,
+        active: true,
+        source: 'manual',
+        stock_sync_policy: 'manual',
+      }
+      let created = localProduct
+      if (navigator.onLine) {
+        try {
+          created = await apiClient.post<BazarProduct>('/bazar/products', payload)
+        } catch (productError) {
+          if (!isNetworkError(productError)) throw productError
+          const queued = [
+            {
+              payload,
+              product: localProduct,
+              attempts: 0,
+              last_error: getErrorMessage(productError, 'Conexión interrumpida.'),
+            },
+            ...getOfflineProductQueue(),
+          ]
+          if (!writeOfflineProducts(queued)) {
+            throw new Error('No hay espacio disponible para guardar el producto sin conexión.')
+          }
+          setOfflineProductCount(queued.length)
+          setOfflineErrorCount(countOfflineErrors())
+        }
+      } else {
+        const queued = [
+          { payload, product: localProduct, attempts: 0 },
+          ...getOfflineProductQueue(),
+        ]
+        if (!writeOfflineProducts(queued)) {
+          throw new Error('No hay espacio disponible para guardar el producto sin conexión.')
+        }
+        setOfflineProductCount(queued.length)
+      }
+      if (!getOfflineProductQueue().some((entry) => entry.product.id === created.id)) {
+        updateCachedProducts((cachedProducts) => [
+          created,
+          ...cachedProducts.filter((product) => product.id !== created.id),
+        ])
+      }
       setProducts((current) => [created, ...current.filter((product) => product.id !== created.id)])
       setQuery('')
       setCategory('Todos')
@@ -1260,17 +1742,68 @@ export default function BazarSalesPage() {
       const file = form.get('image_file')
       const uploadedImage = await imageFileToDataURL(file instanceof File ? file : null)
       const removeImage = form.get('remove_image') === 'on'
-      const edited = await apiClient.put<BazarProduct>(`/bazar/products/${editingProduct.id}`, {
-        sku: String(form.get('sku') || ''),
-        name: String(form.get('name') || ''),
-        category: String(form.get('category') || ''),
+      const updates = {
+        sku: String(form.get('sku') || '').trim(),
+        name: String(form.get('name') || '').trim(),
+        category: String(form.get('category') || '').trim(),
         price: Number(form.get('price')),
         image_url: removeImage
           ? ''
           : uploadedImage || String(form.get('image_url') || '') || editingProduct.image_url || '',
         active: form.get('active') === 'on',
         stock_sync_policy: String(form.get('stock_sync_policy') || 'manual'),
-      })
+      }
+      const offlineProducts = getOfflineProductQueue()
+      const offlineEntry = offlineProducts.find(
+        (entry) => entry.product.id === editingProduct.id,
+      )
+      if (offlineEntry) {
+        const edited: BazarProduct = {
+          ...editingProduct,
+          external_id: updates.sku,
+          name: updates.name,
+          category: updates.category,
+          price: updates.price,
+          image_url: updates.image_url,
+          active: updates.active,
+          stock_sync_policy: updates.stock_sync_policy as 'manual' | 'sheets',
+        }
+        const next = offlineProducts.map((entry) =>
+          entry.product.id === edited.id
+            ? {
+                ...entry,
+                payload: {
+                  ...entry.payload,
+                  sku: updates.sku,
+                  name: updates.name,
+                  category: updates.category,
+                  price: updates.price,
+                  image_url: updates.image_url,
+                },
+                product: edited,
+                attempts: 0,
+                last_error: undefined,
+              }
+            : entry,
+        )
+        if (!writeOfflineProducts(next)) {
+          throw new Error('No se pudo actualizar el producto guardado en este dispositivo.')
+        }
+        setProducts((current) =>
+          current.map((product) => (product.id === edited.id ? edited : product)),
+        )
+        setOfflineErrorCount(countOfflineErrors())
+        setEditingProduct(null)
+        if (navigator.onLine) window.setTimeout(() => void flushOfflineSales(), 0)
+        return
+      }
+      const edited = await apiClient.put<BazarProduct>(
+        `/bazar/products/${editingProduct.id}`,
+        updates,
+      )
+      updateCachedProducts((cachedProducts) =>
+        cachedProducts.map((product) => (product.id === edited.id ? edited : product)),
+      )
       setProducts((current) =>
         current.map((product) => (product.id === edited.id ? edited : product)),
       )
@@ -1301,6 +1834,9 @@ export default function BazarSalesPage() {
           quantity,
           reason: String(form.get('reason') || ''),
         },
+      )
+      updateCachedProducts((cachedProducts) =>
+        cachedProducts.map((product) => (product.id === updated.id ? updated : product)),
       )
       setProducts((current) =>
         current.map((product) => (product.id === updated.id ? updated : product)),
@@ -1339,16 +1875,22 @@ export default function BazarSalesPage() {
     }
   }
 
-  const openCloseBazar = async () => {
+  const openDailyCut = async () => {
     if (!activeBazarID) return
     setShowCloseBazar(true)
     setReportLoading(true)
     setError(null)
     try {
-      const response = await apiClient.get<BazarReport>(
-        `/bazar/bazaars/${activeBazarID}/report`,
-      )
-      setReport(response)
+      const [reportResponse, cutsResponse] = await Promise.all([
+        apiClient.get<BazarReport>('/bazar/reports/daily', {
+          params: { bazar_id: activeBazarID },
+        }),
+        apiClient.get<{ cuts: DailyCut[] }>(
+          `/bazar/bazaars/${activeBazarID}/daily-cuts`,
+        ),
+      ])
+      setReport(reportResponse)
+      setDailyCuts(cutsResponse.cuts || [])
     } catch (reportError) {
       setError(getErrorMessage(reportError, 'No se pudo preparar el corte de caja.'))
       setShowCloseBazar(false)
@@ -1357,11 +1899,76 @@ export default function BazarSalesPage() {
     }
   }
 
-  const closeBazar = async (event: React.FormEvent<HTMLFormElement>) => {
+  const closeDailyCut = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!activeBazar) return
-    if (offlineQueueCount > 0) {
-      setError('Envía las ventas pendientes antes de cerrar el bazar.')
+    if (offlineQueueCount + offlineProductCount > 0) {
+      setError('Envía los productos y ventas pendientes antes de registrar el corte.')
+      return
+    }
+    const form = new FormData(event.currentTarget)
+    setClosingBazar(true)
+    setError(null)
+    try {
+      const response = await apiClient.post<{ cut: DailyCut; report: BazarReport }>(
+        `/bazar/bazaars/${activeBazar.id}/daily-cuts`,
+        {
+          date: String(form.get('date') || localDateKey()),
+          opening_cash: Number(form.get('opening_cash') || 0),
+          closing_cash: Number(form.get('closing_cash') || 0),
+          notes: String(form.get('notes') || ''),
+        },
+      )
+      setReport(response.report)
+      setDailyCuts((current) => [
+        response.cut,
+        ...current.filter((cut) => cut.id !== response.cut.id),
+      ])
+      setShowCloseBazar(false)
+      setShowReport(true)
+    } catch (closeError) {
+      setError(getErrorMessage(closeError, 'No se pudo registrar el corte del día.'))
+    } finally {
+      setClosingBazar(false)
+    }
+  }
+
+  const openFinalizeBazar = async () => {
+    if (!activeBazarID) return
+    setReportLoading(true)
+    setError(null)
+    try {
+      const [reportResponse, cutsResponse] = await Promise.all([
+        apiClient.get<BazarReport>(`/bazar/bazaars/${activeBazarID}/report`),
+        apiClient.get<{ cuts: DailyCut[] }>(
+          `/bazar/bazaars/${activeBazarID}/daily-cuts`,
+        ),
+      ])
+      setReport(reportResponse)
+      setDailyCuts(cutsResponse.cuts || [])
+      setShowFinalizeBazar(true)
+    } catch (reportError) {
+      setError(getErrorMessage(reportError, 'No se pudo preparar el cierre final.'))
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const finalizeBazar = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeBazar) return
+    if (offlineQueueCount + offlineProductCount > 0) {
+      setError('Envía los productos y ventas pendientes antes de finalizar el bazar.')
+      return
+    }
+    const todayCut = dailyCuts.find((cut) => cut.business_date === localDateKey())
+    const closingCut = todayCut || (stats.operations === 0 ? dailyCuts[0] : undefined)
+    if (!closingCut) {
+      setError(
+        stats.operations > 0
+          ? 'Primero registra el corte del día de hoy.'
+          : 'Registra al menos un corte antes de finalizar el bazar.',
+      )
       return
     }
     const form = new FormData(event.currentTarget)
@@ -1371,20 +1978,25 @@ export default function BazarSalesPage() {
       const response = await apiClient.post<{ bazar: Bazar; report: BazarReport }>(
         `/bazar/bazaars/${activeBazar.id}/close`,
         {
-          closing_cash: Number(form.get('closing_cash') || 0),
+          closing_cash: closingCut.closing_cash,
           notes: String(form.get('notes') || ''),
         },
+      )
+      updateCachedBazaars((cachedBazaars) =>
+        cachedBazaars.map((item) =>
+          item.id === response.bazar.id ? response.bazar : item,
+        ),
       )
       setBazaars((current) =>
         current.map((item) => (item.id === response.bazar.id ? response.bazar : item)),
       )
       setReport(response.report)
-      setShowCloseBazar(false)
+      setShowFinalizeBazar(false)
       setActiveBazarID('')
       localStorage.removeItem('dofer-active-bazar-id')
       setShowReport(true)
     } catch (closeError) {
-      setError(getErrorMessage(closeError, 'No se pudo cerrar el bazar.'))
+      setError(getErrorMessage(closeError, 'No se pudo finalizar el bazar.'))
     } finally {
       setClosingBazar(false)
     }
@@ -1402,7 +2014,13 @@ export default function BazarSalesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 pb-24">
+    <div
+      className={
+        cashMode
+          ? 'fixed inset-0 z-[60] space-y-5 overflow-y-auto bg-background px-4 py-4 pb-24 md:px-8'
+          : 'mx-auto max-w-7xl space-y-5 pb-24'
+      }
+    >
       <section className="border-b border-border pb-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -1422,7 +2040,7 @@ export default function BazarSalesPage() {
             </h1>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:items-center">
+          <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
             <label className="relative min-w-0 sm:min-w-64">
               <span className="sr-only">Bazar activo</span>
               <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1431,8 +2049,6 @@ export default function BazarSalesPage() {
                 onChange={(event) => {
                   const bazarID = event.target.value
                   setActiveBazarID(bazarID)
-                  const selected = bazaars.find((item) => item.id === bazarID)
-                  if (selected) setPaymentMethod(selected.default_payment_method)
                 }}
                 className="h-11 w-full appearance-none rounded-md border border-input bg-background pl-10 pr-10 text-sm font-medium"
               >
@@ -1446,51 +2062,93 @@ export default function BazarSalesPage() {
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </label>
 
-            <button
-              type="button"
-              onClick={() => void syncNow()}
-              disabled={!syncStatus?.configured || !canSell || syncing}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-              title="Sincronizar con Google Sheets"
-            >
-              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Sincronizando' : syncLabel(syncStatus)}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void openReport()}
-              disabled={reportLoading}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
-            >
-              {reportLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              Reporte
-            </button>
-
-            {activeBazar && canSell && (
+            {!cashMode && (
               <button
                 type="button"
-                onClick={() => void openCloseBazar()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-red-300 bg-background px-4 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+                onClick={() => void syncNow()}
+                disabled={!syncStatus?.configured || !canSell || syncing}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                title="Sincronizar con Google Sheets"
+              >
+                <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Sincronizando' : syncLabel(syncStatus)}
+              </button>
+            )}
+
+            {!cashMode && (
+              <button
+                type="button"
+                onClick={() => void openReport()}
+                disabled={reportLoading}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                {reportLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Reporte
+              </button>
+            )}
+
+            {!cashMode && activeBazar && canSell && (
+              <button
+                type="button"
+                onClick={() => void openDailyCut()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
               >
                 <WalletCards className="h-4 w-4" />
-                Corte
+                Corte del día
               </button>
             )}
 
             {canSell && (
               <button
                 type="button"
-                onClick={() => setShowQuickSale(true)}
+                onClick={() => openPos()}
                 disabled={!activeBazar}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Nueva venta (F2)"
               >
                 <ReceiptText className="h-4 w-4" />
                 Nueva venta
               </button>
             )}
 
-            {canSell && (
+            {canSell && sales.length > 0 && (
+              <button
+                type="button"
+                onClick={repeatLastSale}
+                disabled={!activeBazar}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                title="Repetir la última venta"
+              >
+                <Repeat2 className="h-4 w-4" />
+                Repetir
+              </button>
+            )}
+
+            {canSell && activeBazar && (
+              <button
+                type="button"
+                onClick={() => void toggleCashMode()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
+                title={cashMode ? 'Salir del modo caja' : 'Usar modo caja'}
+              >
+                {cashMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                {cashMode ? 'Salir de caja' : 'Modo caja'}
+              </button>
+            )}
+
+            {!cashMode && activeBazar && canSell && (
+              <button
+                type="button"
+                onClick={() => void openFinalizeBazar()}
+                disabled={reportLoading}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-red-300 bg-background px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+              >
+                <Store className="h-4 w-4" />
+                Finalizar
+              </button>
+            )}
+
+            {!cashMode && canSell && (
               <button
                 type="button"
                 onClick={() => setShowNewBazar(true)}
@@ -1533,12 +2191,20 @@ export default function BazarSalesPage() {
         <SyncNotice status={syncStatus} onRetry={() => void syncNow()} canRetry={canSell} />
       )}
 
-      {offlineQueueCount > 0 && (
+      {offlineQueueCount + offlineProductCount > 0 && (
         <div className="flex flex-col gap-3 border border-cyan-300 bg-cyan-50 p-3 text-sm text-cyan-950 sm:flex-row sm:items-center sm:justify-between dark:border-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-100">
-          <span className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowOfflineQueue(true)}
+            className="inline-flex items-center gap-2 text-left"
+          >
             <WifiOff className="h-4 w-4 shrink-0" />
-            {offlineQueueCount} {offlineQueueCount === 1 ? 'venta guardada' : 'ventas guardadas'} en este dispositivo.
-          </span>
+            <span>
+              {offlineProductCount > 0 && `${offlineProductCount} ${offlineProductCount === 1 ? 'producto' : 'productos'}, `}
+              {offlineQueueCount} {offlineQueueCount === 1 ? 'venta guardada' : 'ventas guardadas'} en este dispositivo.
+              {offlineErrorCount > 0 && ` ${offlineErrorCount} con error.`}
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => void flushOfflineSales()}
@@ -1662,7 +2328,8 @@ export default function BazarSalesPage() {
                   product={product}
                   busy={sellingProducts.has(product.id)}
                   disabled={!canSell || !activeBazar || !product.active}
-                  canEdit={canSell}
+                  canEdit={canSell && !cashMode}
+                  favorite={favoriteProducts.has(product.id)}
                   onSell={() => void registerSale(product, 1)}
                   onMultiple={() => {
                     setQuantityProduct(product)
@@ -1671,6 +2338,7 @@ export default function BazarSalesPage() {
                   onCart={() => addToCart(product)}
                   onEdit={() => setEditingProduct(product)}
                   onAdjust={() => setAdjustingProduct(product)}
+                  onFavorite={() => toggleFavoriteProduct(product.id)}
                 />
               ))}
             </div>
@@ -1725,12 +2393,23 @@ export default function BazarSalesPage() {
 
       {showQuickSale && activeBazar && canSell && (
         <QuickSaleDialog
+          key={posSessionKey}
           bazarName={activeBazar.name}
           products={quickSaleProducts}
+          initialItems={posInitialItems}
+          favoriteProducts={favoriteProducts}
+          combos={combos}
+          heldSales={heldSales}
           defaultPaymentMethod={paymentMethod}
           busy={quickSaleBusy}
           onClose={() => setShowQuickSale(false)}
-          onSubmit={(input) => void submitQuickSale(input)}
+          onCreateProduct={createPosProduct}
+          onFavorite={toggleFavoriteProduct}
+          onSaveCombo={saveCombo}
+          onDeleteCombo={deleteCombo}
+          onHoldSale={holdSale}
+          onDeleteHeldSale={deleteHeldSale}
+          onSubmit={submitPosSale}
         />
       )}
 
@@ -1788,10 +2467,39 @@ export default function BazarSalesPage() {
           stats={stats}
           report={report}
           reportLoading={reportLoading}
-          offlineQueueCount={offlineQueueCount}
+          offlineQueueCount={offlineQueueCount + offlineProductCount}
+          previousCut={dailyCuts[0] || null}
           closing={closingBazar}
           onClose={() => setShowCloseBazar(false)}
-          onSubmit={closeBazar}
+          onSubmit={closeDailyCut}
+        />
+      )}
+
+      {showFinalizeBazar && activeBazar && (
+        <FinalizeBazarDialog
+          bazar={activeBazar}
+          cuts={dailyCuts}
+          report={report}
+          todayOperations={stats.operations}
+          offlineQueueCount={offlineQueueCount + offlineProductCount}
+          closing={closingBazar}
+          onClose={() => setShowFinalizeBazar(false)}
+          onSubmit={finalizeBazar}
+        />
+      )}
+
+      {showOfflineQueue && (
+        <OfflineQueueDialog
+          products={getOfflineProductQueue()}
+          sales={readOfflineSales()}
+          syncing={flushingOffline}
+          onClose={() => setShowOfflineQueue(false)}
+          onRetry={() => void flushOfflineSales()}
+          onCorrectProduct={(product) => {
+            setShowOfflineQueue(false)
+            setEditingProduct(product)
+          }}
+          onUndoSale={(sale) => void undoSale(sale)}
         />
       )}
 
@@ -1828,7 +2536,7 @@ export default function BazarSalesPage() {
         <ReceiptDialog sale={receiptSale} onClose={() => setReceiptSale(null)} />
       )}
 
-      {confirmation && (
+      {confirmation && !showQuickSale && (
         <SaleConfirmation
           sale={confirmation}
           onClose={() => setConfirmation(null)}
@@ -1915,21 +2623,25 @@ function ProductCard({
   busy,
   disabled,
   canEdit,
+  favorite,
   onSell,
   onMultiple,
   onCart,
   onEdit,
   onAdjust,
+  onFavorite,
 }: {
   product: BazarProduct
   busy: boolean
   disabled: boolean
   canEdit: boolean
+  favorite: boolean
   onSell: () => void
   onMultiple: () => void
   onCart: () => void
   onEdit: () => void
   onAdjust: () => void
+  onFavorite: () => void
 }) {
   const soldOut = productTracksStock(product) && product.stock === 0
   const lowStock = productTracksStock(product) && product.stock > 0 && product.stock <= 2
@@ -1971,6 +2683,15 @@ function ProductCard({
               ? `Quedan ${product.stock}`
               : `${product.stock} disponibles`}
         </span>
+        <button
+          type="button"
+          onClick={onFavorite}
+          className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/95 shadow-sm hover:bg-background"
+          title={favorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          aria-label={favorite ? `Quitar ${product.name} de favoritos` : `Agregar ${product.name} a favoritos`}
+        >
+          <Star className={`h-4 w-4 ${favorite ? 'fill-current text-amber-500' : ''}`} />
+        </button>
       </div>
 
       <div className="space-y-3 p-3">
@@ -2043,18 +2764,39 @@ function ProductCard({
 function QuickSaleDialog({
   bazarName,
   products,
+  initialItems,
+  favoriteProducts,
+  combos,
+  heldSales,
   defaultPaymentMethod,
   busy,
   onClose,
+  onCreateProduct,
+  onFavorite,
+  onSaveCombo,
+  onDeleteCombo,
+  onHoldSale,
+  onDeleteHeldSale,
   onSubmit,
 }: {
   bazarName: string
   products: BazarProduct[]
+  initialItems: Record<string, number>
+  favoriteProducts: Set<string>
+  combos: StoredCombo[]
+  heldSales: StoredHeldSale[]
   defaultPaymentMethod: PaymentMethod
   busy: boolean
   onClose: () => void
-  onSubmit: (input: QuickSaleInput) => void
+  onCreateProduct: (input: { name: string; category: string; price: number }) => Promise<BazarProduct | null>
+  onFavorite: (productID: string) => void
+  onSaveCombo: (name: string, items: Record<string, number>) => void
+  onDeleteCombo: (comboID: string) => void
+  onHoldSale: (items: Record<string, number>, paymentMethod: PaymentMethod) => void
+  onDeleteHeldSale: (saleID: string) => void
+  onSubmit: (input: PosCheckoutInput) => Promise<boolean>
 }) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [search, setSearch] = useState('')
   const [selectedProductID, setSelectedProductID] = useState('')
   const [createNew, setCreateNew] = useState(false)
@@ -2062,6 +2804,13 @@ function QuickSaleDialog({
   const [category, setCategory] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [paymentMethod, setPaymentMethod] = useState(defaultPaymentMethod)
+  const [draftCart, setDraftCart] = useState<Record<string, number>>(initialItems)
+  const [cashReceived, setCashReceived] = useState('')
+  const [tab, setTab] = useState<'sale' | 'combos' | 'held'>('sale')
+  const [comboName, setComboName] = useState('')
+  const [showInlineScanner, setShowInlineScanner] = useState(false)
+  const [addingProduct, setAddingProduct] = useState(false)
+  const [saleRegistered, setSaleRegistered] = useState(false)
 
   const normalizedSearch = normalizeProductLookup(search)
   const selectedProduct =
@@ -2119,19 +2868,35 @@ function QuickSaleDialog({
     price.trim() !== '' &&
     Number.isFinite(Number(price)) &&
     Number(price) >= 0
-  const canSubmit =
-    !busy &&
+  const canAdd =
+    !addingProduct &&
     !unavailable &&
     quantity >= 1 &&
     quantity <= quantityLimit &&
     (resolvedProduct !== null || validNewProduct)
 
-  const selectProduct = (product: BazarProduct) => {
-    setSelectedProductID(product.id)
-    setSearch(product.name)
-    setCreateNew(false)
-    setQuantity(Math.min(quantity, productSaleLimit(product)) || 1)
-  }
+  const cartItems = useMemo(
+    () =>
+      products
+        .filter((product) => (draftCart[product.id] || 0) > 0)
+        .map((product) => ({
+          product,
+          quantity: draftCart[product.id],
+        })),
+    [draftCart, products],
+  )
+  const cartUnits = cartItems.reduce((total, item) => total + item.quantity, 0)
+  const cartTotal = cartItems.reduce(
+    (total, item) => total + item.product.price * item.quantity,
+    0,
+  )
+  const parsedCashReceived = Number(cashReceived)
+  const validCash =
+    paymentMethod !== 'cash' ||
+    (cashReceived !== '' &&
+      Number.isFinite(parsedCashReceived) &&
+      parsedCashReceived >= cartTotal)
+  const canCheckout = !busy && cartItems.length > 0 && validCash
 
   const resetSelection = () => {
     setSelectedProductID('')
@@ -2140,38 +2905,141 @@ function QuickSaleDialog({
     setPrice('')
     setCategory('')
     setQuantity(1)
+    window.setTimeout(() => searchInputRef.current?.focus(), 0)
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!canSubmit) return
-    onSubmit({
-      product: resolvedProduct,
-      name: newProductName,
-      category: category.trim(),
-      price: unitPrice,
-      quantity,
-      paymentMethod,
+  const addToDraft = (product: BazarProduct, amount: number) => {
+    if (!product.active || (productTracksStock(product) && product.stock === 0)) return
+    setDraftCart((current) => ({
+      ...current,
+      [product.id]: Math.min(
+        productSaleLimit(product),
+        (current[product.id] || 0) + amount,
+      ),
+    }))
+    resetSelection()
+  }
+
+  const updateDraftQuantity = (product: BazarProduct, nextQuantity: number) => {
+    setDraftCart((current) => {
+      const next = { ...current }
+      if (nextQuantity <= 0) delete next[product.id]
+      else next[product.id] = Math.min(productSaleLimit(product), nextQuantity)
+      return next
     })
   }
+
+  const handleAddProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canAdd) return
+    let product = resolvedProduct
+    if (!product) {
+      setAddingProduct(true)
+      try {
+        product = await onCreateProduct({
+          name: newProductName,
+          category,
+          price: unitPrice,
+        })
+      } finally {
+        setAddingProduct(false)
+      }
+    }
+    if (product) addToDraft(product, quantity)
+  }
+
+  const checkout = async (keepOpen: boolean) => {
+    if (!canCheckout) return
+    const completed = await onSubmit({
+      items: cartItems,
+      paymentMethod,
+      cashReceived: paymentMethod === 'cash' ? parsedCashReceived : undefined,
+      keepOpen,
+    })
+    if (completed && keepOpen) {
+      setDraftCart({})
+      setCashReceived('')
+      setTab('sale')
+      setSaleRegistered(true)
+      window.setTimeout(() => setSaleRegistered(false), 1800)
+      resetSelection()
+    }
+  }
+
+  const addStoredItems = (items: Array<{ product_id: string; quantity: number }>) => {
+    setDraftCart((current) => {
+      const next = { ...current }
+      for (const item of items) {
+        const product = products.find((candidate) => candidate.id === item.product_id)
+        if (!product || !product.active) continue
+        next[product.id] = Math.min(
+          productSaleLimit(product),
+          (next[product.id] || 0) + item.quantity,
+        )
+      }
+      return next
+    })
+    setTab('sale')
+    window.setTimeout(() => searchInputRef.current?.focus(), 0)
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey && event.key === '1') {
+        event.preventDefault()
+        setPaymentMethod('cash')
+      } else if (event.altKey && event.key === '2') {
+        event.preventDefault()
+        setPaymentMethod('transfer')
+      } else if (event.altKey && event.key === '3') {
+        event.preventDefault()
+        setPaymentMethod('card')
+      } else if (event.ctrlKey && event.key === 'Enter') {
+        event.preventDefault()
+        void checkout(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  })
 
   return (
     <DialogBackdrop onClose={onClose}>
       <form
-        onSubmit={handleSubmit}
+        onSubmit={handleAddProduct}
         role="dialog"
         aria-modal="true"
-        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
       >
         <DialogHeader eyebrow={bazarName} title="Nueva venta" onClose={onClose} />
+        <div className="flex shrink-0 gap-1 border-b border-border px-4 py-2">
+          {([
+            ['sale', `Venta${cartUnits > 0 ? ` (${cartUnits})` : ''}`],
+            ['combos', `Combos${combos.length > 0 ? ` (${combos.length})` : ''}`],
+            ['held', `Pendientes${heldSales.length > 0 ? ` (${heldSales.length})` : ''}`],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTab(value)}
+              className={`h-9 rounded-md px-3 text-sm font-medium ${
+                tab === value ? 'bg-foreground text-background' : 'hover:bg-accent'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {tab === 'sale' && (
           <div className="space-y-4 px-5 py-5">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium">Producto</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  ref={searchInputRef}
                   type="search"
                   value={search}
                   onChange={(event) => {
@@ -2183,6 +3051,13 @@ function QuickSaleDialog({
                   autoFocus
                   autoComplete="off"
                   placeholder="Nombre o código"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' || isNewProduct) return
+                    const product = resolvedProduct || matchingProducts[0]
+                    if (!product) return
+                    event.preventDefault()
+                    addToDraft(product, 1)
+                  }}
                   className="h-12 w-full rounded-md border border-input bg-background pl-11 pr-11 text-base"
                 />
                 {search && (
@@ -2194,6 +3069,17 @@ function QuickSaleDialog({
                     aria-label="Limpiar producto"
                   >
                     <X className="h-4 w-4" />
+                  </button>
+                )}
+                {!search && (
+                  <button
+                    type="button"
+                    onClick={() => setShowInlineScanner(true)}
+                    className="absolute right-1 top-1 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                    title="Escanear código"
+                    aria-label="Escanear código"
+                  >
+                    <ScanLine className="h-5 w-5" />
                   </button>
                 )}
               </div>
@@ -2210,7 +3096,7 @@ function QuickSaleDialog({
                     <button
                       key={product.id}
                       type="button"
-                      onClick={() => selectProduct(product)}
+                      onClick={() => addToDraft(product, 1)}
                       disabled={soldOut}
                       className="flex min-h-14 w-full items-center gap-3 border-t border-border py-2 text-left hover:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -2275,13 +3161,29 @@ function QuickSaleDialog({
                 </span>
                 <button
                   type="button"
-                  onClick={resetSelection}
+                  onClick={() => onFavorite(resolvedProduct.id)}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-accent"
-                  title="Cambiar producto"
-                  aria-label="Cambiar producto"
+                  title={favoriteProducts.has(resolvedProduct.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                  aria-label={favoriteProducts.has(resolvedProduct.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                 >
-                  <X className="h-4 w-4" />
+                  <Star className={`h-4 w-4 ${favoriteProducts.has(resolvedProduct.id) ? 'fill-current text-amber-500' : ''}`} />
                 </button>
+              </div>
+            )}
+
+            {resolvedProduct && !unavailable && (
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 2, 5].map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    onClick={() => addToDraft(resolvedProduct, amount)}
+                    disabled={amount > productSaleLimit(resolvedProduct)}
+                    className="h-10 rounded-md border border-input bg-background text-sm font-semibold hover:bg-accent disabled:opacity-40"
+                  >
+                    +{amount}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -2335,93 +3237,438 @@ function QuickSaleDialog({
               </div>
             )}
 
-            {(resolvedProduct || isNewProduct) && (
-              <>
-                <div className="grid grid-cols-[minmax(0,1fr)_148px] gap-4">
-                  <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium">Método de pago</span>
-                    <select
-                      value={paymentMethod}
-                      onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
-                      className="h-11 w-full rounded-md border border-input bg-background px-3"
+            {isNewProduct && (
+              <div className="flex items-end gap-3">
+                <div className="w-36">
+                  <span className="mb-1.5 block text-sm font-medium">Cantidad</span>
+                  <div className="grid h-11 grid-cols-[36px_1fr_36px] overflow-hidden rounded-md border border-input">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      disabled={quantity <= 1}
+                      className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
+                      aria-label="Restar unidad"
                     >
-                      {PAYMENT_METHODS.map((method) => (
-                        <option key={method.value} value={method.value}>{method.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <div>
-                    <span className="mb-1.5 block text-sm font-medium">Cantidad</span>
-                    <div className="grid h-11 grid-cols-[36px_1fr_36px] overflow-hidden rounded-md border border-input">
-                      <button
-                        type="button"
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        disabled={quantity <= 1}
-                        className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
-                        title="Restar unidad"
-                        aria-label="Restar unidad"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={quantityLimit}
-                        value={quantity}
-                        onChange={(event) =>
-                          setQuantity(
-                            Math.min(
-                              quantityLimit,
-                              Math.max(1, Number(event.target.value) || 1),
-                            ),
-                          )
-                        }
-                        className="min-w-0 border-x border-input bg-background text-center font-semibold"
-                        aria-label="Cantidad"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setQuantity(Math.min(quantityLimit, quantity + 1))}
-                        disabled={quantity >= quantityLimit}
-                        className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
-                        title="Agregar unidad"
-                        aria-label="Agregar unidad"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={quantityLimit}
+                      value={quantity}
+                      onChange={(event) =>
+                        setQuantity(
+                          Math.min(
+                            quantityLimit,
+                            Math.max(1, Number(event.target.value) || 1),
+                          ),
+                        )
+                      }
+                      className="min-w-0 border-x border-input bg-background text-center font-semibold"
+                      aria-label="Cantidad"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(Math.min(quantityLimit, quantity + 1))}
+                      disabled={quantity >= quantityLimit}
+                      className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
+                      aria-label="Agregar unidad"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
+                <button
+                  type="submit"
+                  disabled={!canAdd}
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-md bg-foreground px-4 font-semibold text-background disabled:opacity-50"
+                >
+                  {addingProduct ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  Agregar
+                </button>
+              </div>
+            )}
 
-                {unavailable && (
-                  <p className="flex items-center gap-2 text-sm text-red-600">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    Producto no disponible para venta.
-                  </p>
-                )}
-              </>
+            {unavailable && (
+              <p className="flex items-center gap-2 text-sm text-red-600">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Producto no disponible para venta.
+              </p>
+            )}
+
+            {cartItems.length > 0 && (
+              <section className="border-y border-border">
+                <div className="flex items-center justify-between py-2">
+                  <h3 className="text-sm font-semibold">Productos</h3>
+                  <span className="text-xs text-muted-foreground">{cartUnits} unidades</span>
+                </div>
+                {cartItems.map(({ product, quantity: itemQuantity }) => (
+                  <div key={product.id} className="flex items-center gap-3 border-t border-border py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{product.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {moneyFormatter.format(product.price * itemQuantity)}
+                      </p>
+                    </div>
+                    <div className="grid h-9 w-32 grid-cols-[34px_1fr_34px] overflow-hidden rounded-md border border-input">
+                      <button
+                        type="button"
+                        onClick={() => updateDraftQuantity(product, itemQuantity - 1)}
+                        className="inline-flex items-center justify-center hover:bg-accent"
+                        aria-label={`Restar ${product.name}`}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="inline-flex items-center justify-center border-x border-input text-sm font-semibold">
+                        {itemQuantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateDraftQuantity(product, itemQuantity + 1)}
+                        disabled={itemQuantity >= productSaleLimit(product)}
+                        className="inline-flex items-center justify-center hover:bg-accent disabled:opacity-40"
+                        aria-label={`Agregar ${product.name}`}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateDraftQuantity(product, 0)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
+                      title="Quitar producto"
+                      aria-label={`Quitar ${product.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">Método de pago</span>
+              <select
+                value={paymentMethod}
+                onChange={(event) => {
+                  setPaymentMethod(event.target.value as PaymentMethod)
+                  setCashReceived('')
+                }}
+                className="h-11 w-full rounded-md border border-input bg-background px-3"
+              >
+                {PAYMENT_METHODS.map((method) => (
+                  <option key={method.value} value={method.value}>{method.label}</option>
+                ))}
+              </select>
+            </label>
+
+            {paymentMethod === 'cash' && cartItems.length > 0 && (
+              <section className="space-y-3">
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium">Efectivo recibido</span>
+                  <div className="relative">
+                    <Banknote className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="number"
+                      value={cashReceived}
+                      onChange={(event) => setCashReceived(event.target.value)}
+                      min={cartTotal}
+                      max="999999999"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder={moneyFormatter.format(cartTotal)}
+                      className="h-12 w-full rounded-md border border-input bg-background pl-10 pr-3 text-lg font-semibold"
+                    />
+                  </div>
+                </label>
+                <div className="grid grid-cols-5 gap-2">
+                  {[cartTotal, 50, 100, 200, 500].map((amount, index) => (
+                    <button
+                      key={`${amount}-${index}`}
+                      type="button"
+                      onClick={() => setCashReceived(String(amount))}
+                      disabled={index > 0 && amount < cartTotal}
+                      className="h-9 rounded-md border border-input bg-background text-xs font-semibold hover:bg-accent disabled:opacity-35"
+                    >
+                      {index === 0 ? 'Exacto' : `$${amount}`}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between border-y border-border py-2">
+                  <span className="text-sm text-muted-foreground">Cambio</span>
+                  <strong className="text-lg">
+                    {cashReceived === '' || parsedCashReceived < cartTotal
+                      ? 'Pendiente'
+                      : moneyFormatter.format(parsedCashReceived - cartTotal)}
+                  </strong>
+                </div>
+              </section>
             )}
           </div>
+          )}
+
+          {tab === 'combos' && (
+            <div className="space-y-4 p-5">
+              <div className="divide-y divide-border border-y border-border">
+                {combos.map((combo) => (
+                  <div key={combo.id} className="flex items-center gap-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => addStoredItems(combo.items)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <span className="block truncate font-semibold">{combo.name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {combo.items.reduce((total, item) => total + item.quantity, 0)} unidades
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCombo(combo.id)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
+                      title="Eliminar combo"
+                      aria-label={`Eliminar ${combo.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {combos.length === 0 && (
+                  <p className="py-8 text-center text-sm text-muted-foreground">Sin combos guardados.</p>
+                )}
+              </div>
+              {cartItems.length > 0 && (
+                <div className="flex gap-2">
+                  <input
+                    value={comboName}
+                    onChange={(event) => setComboName(event.target.value)}
+                    maxLength={80}
+                    placeholder="Nombre del combo"
+                    className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const name = comboName.trim()
+                      if (!name) return
+                      onSaveCombo(name, draftCart)
+                      setComboName('')
+                    }}
+                    disabled={!comboName.trim()}
+                    className="h-11 rounded-md bg-foreground px-4 font-semibold text-background disabled:opacity-40"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'held' && (
+            <div className="divide-y divide-border p-5">
+              {heldSales.map((sale) => (
+                <div key={sale.id} className="flex items-center gap-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftCart(Object.fromEntries(sale.items.map((item) => [item.product_id, item.quantity])))
+                      setPaymentMethod(sale.payment_method as PaymentMethod)
+                      onDeleteHeldSale(sale.id)
+                      setTab('sale')
+                    }}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="block truncate font-semibold">{sale.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {sale.items.reduce((total, item) => total + item.quantity, 0)} unidades · {new Date(sale.created_at).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteHeldSale(sale.id)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-600 hover:bg-red-50"
+                    title="Eliminar venta pendiente"
+                    aria-label={`Eliminar ${sale.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              {heldSales.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">Sin ventas pendientes.</p>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-border bg-muted/45 px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase text-muted-foreground">Total</p>
-            <p className="truncate text-2xl font-semibold text-primary">
-              {moneyFormatter.format(unitPrice * quantity)}
+        <div className="shrink-0 space-y-3 border-t border-border bg-muted/45 px-5 py-4">
+          {saleRegistered && (
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" />
+              Venta registrada. Lista para la siguiente.
             </p>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase text-muted-foreground">Total</p>
+              <p className="truncate text-2xl font-semibold text-primary">
+                {moneyFormatter.format(cartTotal)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onHoldSale(draftCart, paymentMethod)
+                setDraftCart({})
+                setCashReceived('')
+              }}
+              disabled={cartItems.length === 0}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium disabled:opacity-40"
+            >
+              <Pause className="h-4 w-4" />
+              Pendiente
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-5 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            {isNewProduct ? 'Guardar y cobrar' : 'Cobrar'}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void checkout(false)}
+              disabled={!canCheckout}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-primary bg-background px-3 font-semibold text-primary disabled:opacity-40"
+            >
+              <Check className="h-4 w-4" />
+              Cobrar
+            </button>
+            <button
+              type="button"
+              onClick={() => void checkout(true)}
+              disabled={!canCheckout}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-40"
+            >
+              {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Repeat2 className="h-4 w-4" />}
+              Cobrar y siguiente
+            </button>
+          </div>
         </div>
+
+        {showInlineScanner && (
+          <InlineScanner
+            onClose={() => setShowInlineScanner(false)}
+            onDetected={(value) => {
+              const normalizedValue = normalizeProductLookup(value)
+              const product = products.find(
+                (candidate) =>
+                  normalizeProductLookup(candidate.external_id) === normalizedValue ||
+                  normalizeProductLookup(candidate.name) === normalizedValue,
+              )
+              if (product) addToDraft(product, 1)
+              else setSearch(value)
+              setShowInlineScanner(false)
+            }}
+          />
+        )}
       </form>
     </DialogBackdrop>
+  )
+}
+
+function InlineScanner({
+  onClose,
+  onDetected,
+}: {
+  onClose: () => void
+  onDetected: (value: string) => void
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [manualCode, setManualCode] = useState('')
+  const [scannerError, setScannerError] = useState('')
+
+  useEffect(() => {
+    let stream: MediaStream | null = null
+    let frame = 0
+    let stopped = false
+    const start = async () => {
+      const Detector = (window as unknown as {
+        BarcodeDetector?: new (options?: { formats?: string[] }) => {
+          detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>
+        }
+      }).BarcodeDetector
+      if (!Detector) {
+        setScannerError('Captura el código con el lector o teclado.')
+        return
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        })
+        if (!videoRef.current || stopped) return
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+        const detector = new Detector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a', 'upc_e'],
+        })
+        const scan = async () => {
+          if (stopped || !videoRef.current) return
+          try {
+            const results = await detector.detect(videoRef.current)
+            if (results[0]?.rawValue) {
+              onDetected(results[0].rawValue)
+              return
+            }
+          } catch {
+            // La cámara puede entregar cuadros incompletos durante el arranque.
+          }
+          frame = requestAnimationFrame(scan)
+        }
+        frame = requestAnimationFrame(scan)
+      } catch {
+        setScannerError('No se pudo abrir la cámara.')
+      }
+    }
+    void start()
+    return () => {
+      stopped = true
+      cancelAnimationFrame(frame)
+      stream?.getTracks().forEach((track) => track.stop())
+    }
+  }, [onDetected])
+
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col bg-card">
+      <DialogHeader eyebrow="Código de barras o QR" title="Escanear producto" onClose={onClose} />
+      <div className="space-y-4 p-5">
+        <div className="relative aspect-video overflow-hidden rounded-md bg-black">
+          <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+          <div className="pointer-events-none absolute inset-x-10 top-1/2 border-t-2 border-cyan-400" />
+          <Camera className="absolute bottom-3 right-3 h-5 w-5 text-white/80" />
+        </div>
+        {scannerError && <p className="text-sm text-amber-700">{scannerError}</p>}
+        <div className="flex gap-2">
+          <input
+            value={manualCode}
+            onChange={(event) => setManualCode(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && manualCode.trim()) {
+                event.preventDefault()
+                onDetected(manualCode.trim())
+              }
+            }}
+            autoFocus={Boolean(scannerError)}
+            placeholder="Código"
+            className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3"
+          />
+          <button
+            type="button"
+            onClick={() => manualCode.trim() && onDetected(manualCode.trim())}
+            disabled={!manualCode.trim()}
+            className="h-11 rounded-md bg-primary px-4 font-semibold text-primary-foreground disabled:opacity-40"
+          >
+            Buscar
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -3132,6 +4379,7 @@ function CloseBazarDialog({
   report,
   reportLoading,
   offlineQueueCount,
+  previousCut,
   closing,
   onClose,
   onSubmit,
@@ -3141,23 +4389,57 @@ function CloseBazarDialog({
   report: BazarReport | null
   reportLoading: boolean
   offlineQueueCount: number
+  previousCut: DailyCut | null
   closing: boolean
   onClose: () => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
 }) {
   const [countedCash, setCountedCash] = useState('')
-  const expectedCash = report?.expected_cash ?? bazar.opening_cash
+  const [openingCash, setOpeningCash] = useState(
+    String(previousCut?.closing_cash ?? bazar.opening_cash),
+  )
+  const cashSales =
+    report?.payment_methods.find((item) => item.method === 'cash')?.total || 0
+  const expectedCash = Number(openingCash || 0) + cashSales
   const difference = countedCash === '' ? null : Number(countedCash) - expectedCash
+  const alreadyClosedToday = previousCut?.business_date === localDateKey()
 
   return (
     <DialogBackdrop onClose={onClose}>
       <form onSubmit={onSubmit} role="dialog" aria-modal="true" className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg">
-        <DialogHeader eyebrow={bazar.name} title="Corte y cierre" onClose={onClose} />
+        <DialogHeader eyebrow={bazar.name} title="Corte del día" onClose={onClose} />
         <div className="grid grid-cols-2 border-b border-border">
-          <Metric label="Fondo inicial" value={moneyFormatter.format(bazar.opening_cash)} />
+          <Metric label="Efectivo de inicio" value={moneyFormatter.format(Number(openingCash || 0))} />
           <Metric label="Ventas totales" value={moneyFormatter.format(stats.total)} />
         </div>
         <div className="space-y-5 px-5 py-5">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Fecha del corte</span>
+            <input
+              name="date"
+              type="date"
+              value={localDateKey()}
+              readOnly
+              className="h-11 w-full rounded-md border border-input bg-muted px-3"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Efectivo al iniciar el día</span>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+              <input
+                name="opening_cash"
+                type="number"
+                required
+                min="0"
+                max="999999999"
+                step="0.01"
+                value={openingCash}
+                onChange={(event) => setOpeningCash(event.target.value)}
+                className="h-11 w-full rounded-md border border-input bg-background pl-7 pr-3"
+              />
+            </div>
+          </label>
           <section>
             <h3 className="mb-2 text-sm font-semibold">Ventas por método</h3>
             {reportLoading ? (
@@ -3183,6 +4465,12 @@ function CloseBazarDialog({
             <div className="flex gap-2 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
               <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
               Envía las ventas pendientes antes del corte.
+            </div>
+          )}
+          {alreadyClosedToday && (
+            <div className="flex gap-2 border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              El corte de hoy ya fue registrado.
             </div>
           )}
           <label className="block">
@@ -3211,17 +4499,239 @@ function CloseBazarDialog({
             />
           </div>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">Notas del cierre</span>
+            <span className="mb-1.5 block text-sm font-medium">Notas del corte</span>
             <textarea name="notes" rows={3} maxLength={500} className="w-full resize-none rounded-md border border-input bg-background p-3" />
           </label>
         </div>
-        <div className="border-t border-border bg-muted/45 px-5 py-4">
-          <button type="submit" disabled={closing || reportLoading || offlineQueueCount > 0} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-red-600 px-4 font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+        <div className="sticky bottom-0 z-10 border-t border-border bg-muted/95 px-5 py-4 backdrop-blur">
+          <button type="submit" disabled={closing || reportLoading || offlineQueueCount > 0 || alreadyClosedToday} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
             {closing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WalletCards className="h-4 w-4" />}
-            Cerrar bazar y generar corte
+            Guardar corte del día
           </button>
         </div>
       </form>
+    </DialogBackdrop>
+  )
+}
+
+function FinalizeBazarDialog({
+  bazar,
+  cuts,
+  report,
+  todayOperations,
+  offlineQueueCount,
+  closing,
+  onClose,
+  onSubmit,
+}: {
+  bazar: Bazar
+  cuts: DailyCut[]
+  report: BazarReport | null
+  todayOperations: number
+  offlineQueueCount: number
+  closing: boolean
+  onClose: () => void
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+}) {
+  const todayCut = cuts.find((cut) => cut.business_date === localDateKey())
+  const needsTodayCut = todayOperations > 0 && !todayCut
+  const canFinalize = cuts.length > 0 && !needsTodayCut
+  const totalExpected = cuts.reduce((total, cut) => total + cut.expected_cash, 0)
+  const totalCounted = cuts.reduce((total, cut) => total + cut.closing_cash, 0)
+  const totalDifference = cuts.reduce((total, cut) => total + cut.cash_difference, 0)
+
+  return (
+    <DialogBackdrop onClose={onClose}>
+      <form
+        onSubmit={onSubmit}
+        role="dialog"
+        aria-modal="true"
+        className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
+      >
+        <DialogHeader eyebrow={bazar.name} title="Finalizar bazar" onClose={onClose} />
+        <div className="grid grid-cols-2 border-b border-border">
+          <Metric label="Días con corte" value={String(cuts.length)} />
+          <Metric label="Ventas del evento" value={moneyFormatter.format(report?.total || 0)} />
+        </div>
+        <div className="space-y-5 px-5 py-5">
+          <div className="divide-y divide-border border-y border-border">
+            {cuts.map((cut) => (
+              <div key={cut.id} className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm">
+                <div>
+                  <p className="font-semibold">
+                    {new Date(`${cut.business_date}T12:00:00`).toLocaleDateString('es-MX', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Esperado {moneyFormatter.format(cut.expected_cash)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold">{moneyFormatter.format(cut.closing_cash)}</p>
+                  <p className={cut.cash_difference === 0 ? 'text-xs text-muted-foreground' : 'text-xs text-amber-700'}>
+                    Diferencia {moneyFormatter.format(cut.cash_difference)}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {cuts.length === 0 && (
+              <p className="py-4 text-sm text-muted-foreground">Aún no hay cortes diarios.</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 border-y border-border">
+            <Metric label="Esperado" value={moneyFormatter.format(totalExpected)} />
+            <Metric label="Contado" value={moneyFormatter.format(totalCounted)} />
+            <Metric label="Diferencia" value={moneyFormatter.format(totalDifference)} />
+          </div>
+
+          {!canFinalize && (
+            <div className="flex gap-2 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />
+              {needsTodayCut
+                ? 'Registra primero el corte del día de hoy.'
+                : 'Registra al menos un corte antes de finalizar.'}
+            </div>
+          )}
+          {offlineQueueCount > 0 && (
+            <div className="flex gap-2 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+              <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+              Envía todas las operaciones pendientes antes de finalizar.
+            </div>
+          )}
+
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">Notas finales</span>
+            <textarea
+              name="notes"
+              rows={3}
+              maxLength={500}
+              className="w-full resize-none rounded-md border border-input bg-background p-3"
+            />
+          </label>
+        </div>
+        <div className="border-t border-border bg-muted/45 px-5 py-4">
+          <button
+            type="submit"
+            disabled={closing || !canFinalize || offlineQueueCount > 0}
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-red-600 px-4 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {closing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
+            Cerrar definitivamente el bazar
+          </button>
+        </div>
+      </form>
+    </DialogBackdrop>
+  )
+}
+
+function OfflineQueueDialog({
+  products,
+  sales,
+  syncing,
+  onClose,
+  onRetry,
+  onCorrectProduct,
+  onUndoSale,
+}: {
+  products: OfflineProductEntry[]
+  sales: OfflineSaleEntry[]
+  syncing: boolean
+  onClose: () => void
+  onRetry: () => void
+  onCorrectProduct: (product: BazarProduct) => void
+  onUndoSale: (sale: Sale) => void
+}) {
+  return (
+    <DialogBackdrop onClose={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-lg border border-border bg-card shadow-2xl sm:rounded-lg"
+      >
+        <DialogHeader
+          eyebrow="Guardado en este dispositivo"
+          title="Operaciones sin conexión"
+          onClose={onClose}
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <p className="mb-4 text-sm text-muted-foreground">
+            Los productos se envían primero y después sus ventas. La cola se conserva al cerrar o recargar la página.
+          </p>
+          <div className="divide-y divide-border border-y border-border">
+            {products.map((entry) => (
+              <div key={entry.product.id} className="flex items-start gap-3 py-3">
+                <PackagePlus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{entry.product.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Producto · {entry.attempts > 0 ? `${entry.attempts} intentos` : 'Pendiente'}
+                  </p>
+                  {entry.last_error && (
+                    <p className="mt-1 text-xs text-red-600">{entry.last_error}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onCorrectProduct(entry.product)}
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Corregir
+                </button>
+              </div>
+            ))}
+            {sales.map((entry) => (
+              <div key={entry.sale.client_request_id} className="flex items-start gap-3 py-3">
+                <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="truncate text-sm font-semibold">
+                      {entry.sale.items.map((item) => item.product_name).join(', ')}
+                    </p>
+                    <span className="shrink-0 text-sm font-semibold">
+                      {moneyFormatter.format(entry.sale.total)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Venta · {(entry.attempts || 0) > 0 ? `${entry.attempts} intentos` : 'Pendiente'}
+                  </p>
+                  {entry.last_error && (
+                    <p className="mt-1 text-xs text-red-600">{entry.last_error}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUndoSale(entry.sale)}
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                  Deshacer
+                </button>
+              </div>
+            ))}
+            {products.length === 0 && sales.length === 0 && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No hay operaciones pendientes.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="border-t border-border bg-muted/45 px-5 py-4">
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={syncing || products.length + sales.length === 0}
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            Reintentar envío
+          </button>
+        </div>
+      </div>
     </DialogBackdrop>
   )
 }

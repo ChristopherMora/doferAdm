@@ -36,7 +36,7 @@ Encabezados de la hoja `Ventas`:
 
 ## Puesta en marcha
 
-1. Aplicar `030_add_bazar_sales_module.sql`.
+1. Aplicar las migraciones del módulo `030` a `033`.
 2. Configurar las variables anteriores en la API.
 3. Compartir el Google Sheet con `GOOGLE_SERVICE_ACCOUNT_EMAIL`.
 4. Reiniciar la API.
@@ -55,3 +55,24 @@ El catálogo también acepta productos manuales desde `/dashboard/bazar`.
 - Las ventas y cancelaciones descuentan o restauran el inventario en PostgreSQL.
 - Sin Google Sheets configurado, las ventas permanecen pendientes y no bloquean la operación.
 - Al preparar el inventario en Sheets, usar el mismo SKU permite relacionar el producto.
+
+## Punto de venta y operación sin conexión
+
+- `F2` abre una venta; `Alt+1`, `Alt+2` y `Alt+3` cambian entre efectivo,
+  transferencia y tarjeta; `Ctrl+Enter` cobra.
+- Los productos y ventas creados sin red se guardan en el dispositivo. Al
+  regresar la conexión, se sincronizan primero los productos y después sus ventas.
+- Los identificadores generados por el navegador son idempotentes, por lo que un
+  reintento no duplica productos ni ventas.
+- La pantalla visitada y sus recursos estáticos se conservan mediante
+  `bazar-sw.js`; las respuestas de la API no se almacenan en caché.
+- Favoritos, combos, ventas pendientes y último método de pago se conservan en
+  el mismo dispositivo.
+
+## Cortes
+
+- `POST /api/v1/bazar/bazaars/{id}/daily-cuts` registra un corte del día sin
+  cerrar el evento.
+- `GET /api/v1/bazar/bazaars/{id}/daily-cuts` devuelve el historial de cortes.
+- `POST /api/v1/bazar/bazaars/{id}/close` finaliza el bazar y bloquea nuevas
+  ventas. Cuando hay cortes diarios, el cierre final consolida sus importes.

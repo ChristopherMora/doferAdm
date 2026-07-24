@@ -70,6 +70,8 @@ type Sale struct {
 	Subtotal        float64    `json:"subtotal"`
 	Total           float64    `json:"total"`
 	PaymentMethod   string     `json:"payment_method"`
+	CashReceived    *float64   `json:"cash_received,omitempty"`
+	ChangeDue       *float64   `json:"change_due,omitempty"`
 	Status          string     `json:"status"`
 	SyncStatus      string     `json:"sync_status"`
 	SyncAttempts    int        `json:"sync_attempts"`
@@ -111,6 +113,7 @@ type CreateBazarRequest struct {
 }
 
 type CreateProductRequest struct {
+	ID         string   `json:"id,omitempty"`
 	SKU        string   `json:"sku,omitempty"`
 	Name       string   `json:"name"`
 	Category   string   `json:"category,omitempty"`
@@ -236,7 +239,30 @@ type CreateSaleRequest struct {
 	Quantity        int                     `json:"quantity,omitempty"`
 	Items           []CreateSaleItemRequest `json:"items,omitempty"`
 	PaymentMethod   string                  `json:"payment_method"`
+	CashReceived    *float64                `json:"cash_received,omitempty"`
 	Notes           *string                 `json:"notes,omitempty"`
+}
+
+type DailyCut struct {
+	ID             uuid.UUID `json:"id"`
+	BazarID        uuid.UUID `json:"bazar_id"`
+	BazarName      string    `json:"bazar_name"`
+	BusinessDate   string    `json:"business_date"`
+	OpeningCash    float64   `json:"opening_cash"`
+	CashSales      float64   `json:"cash_sales"`
+	ExpectedCash   float64   `json:"expected_cash"`
+	ClosingCash    float64   `json:"closing_cash"`
+	CashDifference float64   `json:"cash_difference"`
+	Notes          *string   `json:"notes,omitempty"`
+	ClosedByName   string    `json:"closed_by_name"`
+	ClosedAt       time.Time `json:"closed_at"`
+}
+
+type CreateDailyCutRequest struct {
+	Date        string  `json:"date,omitempty"`
+	OpeningCash float64 `json:"opening_cash"`
+	ClosingCash float64 `json:"closing_cash"`
+	Notes       string  `json:"notes,omitempty"`
 }
 
 type CreateSaleResult struct {
@@ -267,6 +293,7 @@ type createSaleCommand struct {
 	SellerName      string
 	Items           []createSaleItemCommand
 	PaymentMethod   string
+	CashReceived    *float64
 	Notes           *string
 }
 
@@ -276,6 +303,7 @@ type createSaleItemCommand struct {
 }
 
 type createProductCommand struct {
+	ID         uuid.UUID
 	SKU        string
 	Name       string
 	Category   string

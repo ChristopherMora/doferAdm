@@ -215,6 +215,14 @@ func (s *Service) CreateSale(
 	if paymentMethod == "" {
 		return nil, &serviceError{Status: http.StatusBadRequest, Message: "El método de pago no es válido."}
 	}
+	if req.CashReceived != nil {
+		if paymentMethod != PaymentCash {
+			return nil, &serviceError{Status: http.StatusBadRequest, Message: "El efectivo recibido solo aplica a pagos en efectivo."}
+		}
+		if *req.CashReceived < 0 || *req.CashReceived > 999999999 {
+			return nil, &serviceError{Status: http.StatusBadRequest, Message: "El efectivo recibido no es válido."}
+		}
+	}
 	if strings.TrimSpace(sellerName) == "" {
 		sellerName = "Vendedor"
 	}
@@ -226,6 +234,7 @@ func (s *Service) CreateSale(
 		SellerName:      sellerName,
 		Items:           items,
 		PaymentMethod:   paymentMethod,
+		CashReceived:    req.CashReceived,
 		Notes:           req.Notes,
 	})
 	if err != nil {
@@ -386,6 +395,74 @@ func (s *Service) DailyStats(ctx context.Context, organizationID string, bazarID
 	return s.repo.GetDailyStats(ctx, organizationID, bazarID, start, start.AddDate(0, 0, 1))
 }
 
+func (s *Service) CloseDailyCut(
+	ctx context.Context,
+	organizationID string,
+	bazarID, actorID uuid.UUID,
+	actorName string,
+	req CreateDailyCutRequest,
+) (*DailyCut, error) {
+	if req.OpeningCash < 0 || req.OpeningCash > 999999999 ||
+		req.ClosingCash < 0 || req.ClosingCash > 999999999 {
+		return nil, &serviceError{Status: http.StatusBadRequest, Message: "Los importes del corte no son válidos."}
+	}
+
+	now := time.Now().In(s.location)
+	businessDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.location)
+	if rawDate := strings.TrimSpace(req.Date); rawDate != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", rawDate, s.location)
+		if err != nil {
+			return nil, &serviceError{Status: http.StatusBadRequest, Message: "La fecha del corte no es válida."}
+		}
+		if parsed.After(businessDate) {
+			return nil, &serviceError{Status: http.StatusBadRequest, Message: "No puedes registrar un corte futuro."}
+		}
+		businessDate = parsed
+	}
+
+	cut, err := s.repo.CloseDailyCut(
+		ctx,
+		organizationID,
+		bazarID,
+		actorID,
+		actorName,
+		businessDate,
+		businessDate,
+		businessDate.AddDate(0, 0, 1),
+		req.OpeningCash,
+		req.ClosingCash,
+		sanitizeString(&req.Notes),
+	)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.repo.RecordAudit(
+		ctx,
+		organizationID,
+		&bazarID,
+		actorID,
+		actorName,
+		"cash.daily_cut",
+		"daily_cut",
+		&cut.ID,
+		map[string]any{
+			"date":            cut.BusinessDate,
+			"expected_cash":   cut.ExpectedCash,
+			"closing_cash":    cut.ClosingCash,
+			"cash_difference": cut.CashDifference,
+		},
+	)
+	return cut, nil
+}
+
+func (s *Service) ListDailyCuts(
+	ctx context.Context,
+	organizationID string,
+	bazarID uuid.UUID,
+) ([]DailyCut, error) {
+	return s.repo.ListDailyCuts(ctx, organizationID, bazarID, 90)
+}
+
 func (s *Service) CloseBazar(
 	ctx context.Context,
 	organizationID string,
@@ -463,6 +540,14 @@ func (s *Service) FinalBazarReport(
 }
 
 func prepareCreateProduct(req CreateProductRequest) (createProductCommand, error) {
+	productID := uuid.New()
+	if rawID := strings.TrimSpace(req.ID); rawID != "" {
+		parsedID, err := uuid.Parse(rawID)
+		if err != nil {
+			return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El ID del producto no es válido."}
+		}
+		productID = parsedID
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return createProductCommand{}, &serviceError{Status: http.StatusBadRequest, Message: "El nombre del producto es obligatorio."}
@@ -503,6 +588,7 @@ func prepareCreateProduct(req CreateProductRequest) (createProductCommand, error
 	}
 
 	return createProductCommand{
+		ID:         productID,
 		SKU:        sku,
 		Name:       name,
 		Category:   category,
