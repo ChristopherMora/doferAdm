@@ -80,6 +80,7 @@ export function QuickSaleDialog({
   combos,
   heldSales,
   defaultPaymentMethod,
+  defaultSaleDate,
   onClose,
   onCreateProduct,
   onFavorite,
@@ -97,6 +98,7 @@ export function QuickSaleDialog({
   combos: StoredCombo[]
   heldSales: StoredHeldSale[]
   defaultPaymentMethod: PaymentMethod
+  defaultSaleDate: string
   onClose: () => void
   onCreateProduct: (input: { name: string; category: string; price: number }) => Promise<BazarProduct | null>
   onFavorite: (productID: string) => void
@@ -117,7 +119,7 @@ export function QuickSaleDialog({
   const [draftCart, setDraftCart] = useState<Record<string, number>>(initialItems)
   const [cashReceived, setCashReceived] = useState('')
   const [showChangeCalculator, setShowChangeCalculator] = useState(false)
-  const [saleDate, setSaleDate] = useState(() => localDateKey())
+  const [saleDate, setSaleDate] = useState(defaultSaleDate)
   const [tab, setTab] = useState<'sale' | 'combos' | 'held'>('sale')
   const [comboName, setComboName] = useState('')
   const [showInlineScanner, setShowInlineScanner] = useState(false)

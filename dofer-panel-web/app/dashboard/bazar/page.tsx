@@ -176,6 +176,8 @@ export default function BazarSalesPage() {
   const [savingProduct, setSavingProduct] = useState(false)
   const [freeingProducts, setFreeingProducts] = useState<Set<string>>(new Set())
   const [saleCounts, setSaleCounts] = useState<Record<string, number>>({})
+  // Día que se está consultando en pantalla; por defecto hoy.
+  const [viewDate, setViewDate] = useState(() => localDateKey())
   const [cart, setCart] = useState<Record<string, number>>({})
   const [showCart, setShowCart] = useState(false)
   const [showCloseBazar, setShowCloseBazar] = useState(false)
@@ -206,6 +208,7 @@ export default function BazarSalesPage() {
     () => bazaars.find((item) => item.id === activeBazarID),
     [activeBazarID, bazaars],
   )
+  const viewingToday = viewDate === localDateKey()
   const canSell = ['admin', 'operator'].includes(
     currentUser?.organization_role || currentUser?.role || '',
   )
@@ -305,7 +308,7 @@ export default function BazarSalesPage() {
     return serverProducts
   }, [])
 
-  const loadActivity = useCallback(async (bazarID: string) => {
+  const loadActivity = useCallback(async (bazarID: string, date = localDateKey()) => {
     if (!bazarID) {
       setSales([])
       setStats(EMPTY_STATS)
@@ -313,7 +316,7 @@ export default function BazarSalesPage() {
     }
     const response = await apiClient.get<{ stats: DailyStats; sales: Sale[] }>(
       '/bazar/activity',
-      { params: { bazar_id: bazarID, limit: 12 } },
+      { params: { bazar_id: bazarID, date, limit: 12 } },
     )
     const serverStats = response.stats || EMPTY_STATS
     const serverSales = response.sales || []
@@ -323,17 +326,12 @@ export default function BazarSalesPage() {
         ...cached,
         activity: {
           ...(cached.activity || {}),
-          [bazarID]: { date: localDateKey(), sales: serverSales, stats: serverStats },
+          [bazarID]: { date, sales: serverSales, stats: serverStats },
         },
         savedAt: new Date().toISOString(),
       })
     }
-    const merged = mergeActivityWithOffline(
-      serverStats,
-      serverSales,
-      bazarID,
-      localDateKey(),
-    )
+    const merged = mergeActivityWithOffline(serverStats, serverSales, bazarID, date)
     setStats(merged.stats)
     setSales(merged.sales)
   }, [])
@@ -510,16 +508,15 @@ export default function BazarSalesPage() {
     localStorage.setItem('dofer-active-bazar-id', activeBazarID)
 
     const activityTimer = window.setTimeout(() => {
-      void loadActivity(activeBazarID).catch((activityError) => {
+      void loadActivity(activeBazarID, viewDate).catch((activityError) => {
         if (isNetworkError(activityError)) {
-          const today = localDateKey()
           const cachedActivity = readBazarCache()?.activity?.[activeBazarID]
-          const sameDay = cachedActivity?.date === today
+          const sameDay = cachedActivity?.date === viewDate
           const merged = mergeActivityWithOffline(
             sameDay ? cachedActivity.stats : EMPTY_STATS,
             sameDay ? cachedActivity.sales : [],
             activeBazarID,
-            today,
+            viewDate,
           )
           setSales(merged.sales)
           setStats(merged.stats)
@@ -529,7 +526,7 @@ export default function BazarSalesPage() {
       })
     }, 0)
     return () => window.clearTimeout(activityTimer)
-  }, [activeBazarID, loadActivity])
+  }, [activeBazarID, loadActivity, viewDate])
 
   const performSync = async (conflictStrategy?: 'keep_manual' | 'use_sheet') => {
     setSyncing(true)
@@ -539,7 +536,7 @@ export default function BazarSalesPage() {
         conflict_strategy: conflictStrategy || '',
       })
       setSyncConflicts([])
-      await Promise.all([loadProducts(), loadSyncStatus(), loadActivity(activeBazarID)])
+      await Promise.all([loadProducts(), loadSyncStatus(), loadActivity(activeBazarID, viewDate)])
     } catch (syncError) {
       setError(getErrorMessage(syncError, 'No se pudo sincronizar Google Sheets.'))
       await loadSyncStatus().catch(() => undefined)
@@ -582,7 +579,7 @@ export default function BazarSalesPage() {
     if (activityRefreshTimer.current) clearTimeout(activityRefreshTimer.current)
     activityRefreshTimer.current = setTimeout(() => {
       if (inFlightSales.current.size > 0) return
-      void Promise.all([loadActivity(bazarID), loadSyncStatus()]).catch(() => undefined)
+      void Promise.all([loadActivity(bazarID, viewDate), loadSyncStatus()]).catch(() => undefined)
     }, 1200)
   }
 
@@ -618,9 +615,11 @@ export default function BazarSalesPage() {
       ...(saleDate ? { sold_at: saleDate } : {}),
     }
 
-    // Una venta capturada para otro día no pertenece a la jornada en pantalla:
-    // se registra igual, pero sin mover el resumen ni la lista de hoy.
-    const isBackdated = Boolean(saleDate) && saleDate !== localDateKey()
+    // La venta solo mueve el resumen y la lista si pertenece al día que se
+    // está viendo; el ranking de más vendidos solo cuenta lo de hoy.
+    const saleDayKey = saleDate || localDateKey()
+    const showsInView = saleDayKey === viewDate
+    const countsForToday = saleDayKey === localDateKey()
     const createdAt = new Date().toISOString()
     const soldAt = saleDate ? `${saleDate}T12:00:00` : createdAt
     const total = requestedItems.reduce(
@@ -671,7 +670,18 @@ export default function BazarSalesPage() {
             : product
         }),
       )
-      if (isBackdated) {
+      if (countsForToday) {
+        setSaleCounts(
+          recordProductSales(
+            localDateKey(),
+            requestedItems.map((item) => ({
+              product_id: item.product.id,
+              quantity: item.quantity,
+            })),
+          ),
+        )
+      }
+      if (!showsInView) {
         if (pendingSync) {
           setStats((current) => ({
             ...current,
@@ -692,18 +702,9 @@ export default function BazarSalesPage() {
           operations,
           average_ticket: nextTotal / operations,
           pending_sync: current.pending_sync + (pendingSync ? 1 : 0),
-          last_sale_at: createdAt,
+          last_sale_at: soldAt,
         }
       })
-      setSaleCounts(
-        recordProductSales(
-          localDateKey(),
-          requestedItems.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-          })),
-        ),
-      )
       showSaleConfirmation(localSale)
     }
 
@@ -717,7 +718,7 @@ export default function BazarSalesPage() {
         }),
       )
       setConfirmation((current) => (current?.id === localSale.id ? null : current))
-      if (isBackdated) return
+      if (!showsInView) return
       setSales((current) => current.filter((item) => item.id !== localSale.id))
       setStats((current) => {
         const operations = Math.max(0, current.operations - 1)
@@ -779,7 +780,7 @@ export default function BazarSalesPage() {
               : product,
           ),
         )
-        if (!isBackdated) {
+        if (showsInView) {
           setSales((current) =>
             [
               sale,
@@ -1138,7 +1139,7 @@ export default function BazarSalesPage() {
       setOfflineQueueCount(pendingSales.length)
       setOfflineErrorCount(countOfflineErrors())
       if (pendingProducts.length === 0 && pendingSales.length === 0) {
-        await Promise.all([loadProducts(), loadActivity(activeBazarID), loadSyncStatus()])
+        await Promise.all([loadProducts(), loadActivity(activeBazarID, viewDate), loadSyncStatus()])
       } else {
         setError(`Quedaron ${pendingProducts.length + pendingSales.length} operaciones sin enviar. Se volverá a intentar.`)
       }
@@ -1146,7 +1147,7 @@ export default function BazarSalesPage() {
       flushingOfflineRef.current = false
       setFlushingOffline(false)
     }
-  }, [activeBazarID, loadActivity, loadProducts, loadSyncStatus])
+  }, [activeBazarID, loadActivity, loadProducts, loadSyncStatus, viewDate])
 
   useEffect(() => {
     const handleOnline = () => void flushOfflineSales()
@@ -1214,7 +1215,7 @@ export default function BazarSalesPage() {
       await apiClient.post(`/bazar/sales/${target.id}/undo`)
       setConfirmation(null)
       if (confirmationTimer.current) clearTimeout(confirmationTimer.current)
-      await Promise.all([loadProducts(), loadActivity(activeBazarID), loadSyncStatus()])
+      await Promise.all([loadProducts(), loadActivity(activeBazarID, viewDate), loadSyncStatus()])
     } catch (undoError) {
       setError(getErrorMessage(undoError, 'No se pudo deshacer la venta.'))
     }
@@ -1869,10 +1870,34 @@ export default function BazarSalesPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 ${
+                  viewingToday
+                    ? 'border-transparent hover:border-input'
+                    : 'border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-100'
+                }`}
+                title="Elegir el día que quieres ver"
+              >
                 <CalendarDays className="h-4 w-4" />
-                {dateFormatter.format(new Date())}
-              </span>
+                <span>{dateFormatter.format(new Date(`${viewDate}T12:00:00`))}</span>
+                <input
+                  type="date"
+                  value={viewDate}
+                  max={localDateKey()}
+                  onChange={(event) => setViewDate(event.target.value || localDateKey())}
+                  className="w-5 cursor-pointer bg-transparent text-transparent outline-none"
+                  aria-label="Día que se muestra"
+                />
+              </label>
+              {!viewingToday && (
+                <button
+                  type="button"
+                  onClick={() => setViewDate(localDateKey())}
+                  className="rounded-md border border-input px-2 py-1 text-xs font-medium hover:bg-accent"
+                >
+                  Volver a hoy
+                </button>
+              )}
               <span className="text-border">|</span>
               <span className="inline-flex items-center gap-1.5">
                 <UserRound className="h-4 w-4" />
@@ -2072,7 +2097,11 @@ export default function BazarSalesPage() {
       )}
 
       <section className="grid grid-cols-2 border-y border-border md:grid-cols-5">
-        <Metric label="Vendido hoy" value={moneyFormatter.format(stats.total)} emphasized />
+        <Metric
+          label={viewingToday ? 'Vendido hoy' : 'Vendido ese día'}
+          value={moneyFormatter.format(stats.total)}
+          emphasized
+        />
         <Metric label="Productos" value={String(stats.products_sold)} />
         <Metric label="Operaciones" value={String(stats.operations)} />
         <Metric label="Ticket promedio" value={moneyFormatter.format(stats.average_ticket)} />
@@ -2228,7 +2257,11 @@ export default function BazarSalesPage() {
           <div className="flex items-center justify-between border-b border-border pb-3">
             <div>
               <h2 className="text-lg font-semibold">Ventas recientes</h2>
-              <p className="text-sm text-muted-foreground">Actividad de hoy</p>
+              <p className="text-sm text-muted-foreground">
+                {viewingToday
+                  ? 'Actividad de hoy'
+                  : `Actividad del ${dateFormatter.format(new Date(`${viewDate}T12:00:00`))}`}
+              </p>
             </div>
             <ReceiptText className="h-5 w-5 text-muted-foreground" />
           </div>
@@ -2277,6 +2310,7 @@ export default function BazarSalesPage() {
           initialItems={posInitialItems}
           favoriteProducts={favoriteProducts}
           saleCounts={saleCounts}
+          defaultSaleDate={viewDate}
           combos={combos}
           heldSales={heldSales}
           defaultPaymentMethod={paymentMethod}
