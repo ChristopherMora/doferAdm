@@ -62,8 +62,8 @@ func (r *Repository) CloseDailyCut(
 		  AND bazar_id = $2
 		  AND status = 'completed'
 		  AND payment_method = 'cash'
-		  AND created_at >= $3
-		  AND created_at < $4
+		  AND sold_at >= $3
+		  AND sold_at < $4
 	`, organizationID, bazarID, from, to).Scan(&cashSales); err != nil {
 		return nil, err
 	}
@@ -100,6 +100,24 @@ func (r *Repository) CloseDailyCut(
 		return nil, err
 	}
 	return cut, nil
+}
+
+// HasDailyCut indica si el día de ese bazar ya tiene corte de caja cerrado.
+// Sirve para no meter ventas retroactivas en una jornada ya cuadrada.
+func (r *Repository) HasDailyCut(
+	ctx context.Context,
+	organizationID string,
+	bazarID uuid.UUID,
+	businessDate time.Time,
+) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM bazar_daily_cuts
+			WHERE organization_id = $1 AND bazar_id = $2 AND business_date = $3
+		)
+	`, organizationID, bazarID, businessDate).Scan(&exists)
+	return exists, err
 }
 
 func (r *Repository) ListDailyCuts(

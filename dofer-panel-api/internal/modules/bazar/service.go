@@ -153,6 +153,41 @@ func (s *Service) AdjustStock(
 	return updated, nil
 }
 
+// maxSaleBackdateDays limita qué tan atrás se puede capturar una venta: cubre
+// ponerse al corriente con la libreta sin abrir la puerta a fechas absurdas.
+const maxSaleBackdateDays = 90
+
+// resolveSaleDate normaliza la fecha elegida por el vendedor. Sin fecha usa el
+// momento actual; con fecha conserva la hora si viene, y si solo viene el día
+// la coloca al mediodía local para que ningún ajuste de zona horaria la mueva
+// al día anterior o siguiente.
+func (s *Service) resolveSaleDate(requested *time.Time) (*time.Time, error) {
+	if requested == nil {
+		return nil, nil
+	}
+
+	now := time.Now().In(s.location)
+	local := requested.In(s.location)
+	if local.Hour() == 0 && local.Minute() == 0 && local.Second() == 0 {
+		local = time.Date(local.Year(), local.Month(), local.Day(), 12, 0, 0, 0, s.location)
+	}
+
+	if local.After(now.Add(5 * time.Minute)) {
+		return nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: "No se pueden registrar ventas con fecha futura.",
+		}
+	}
+	oldest := now.AddDate(0, 0, -maxSaleBackdateDays)
+	if local.Before(oldest) {
+		return nil, &serviceError{
+			Status:  http.StatusBadRequest,
+			Message: fmt.Sprintf("Solo se pueden capturar ventas de los últimos %d días.", maxSaleBackdateDays),
+		}
+	}
+	return &local, nil
+}
+
 func (s *Service) CreateSale(
 	ctx context.Context,
 	organizationID string,
@@ -227,6 +262,24 @@ func (s *Service) CreateSale(
 		sellerName = "Vendedor"
 	}
 
+	soldAt, err := s.resolveSaleDate(req.SoldAt)
+	if err != nil {
+		return nil, err
+	}
+	if soldAt != nil {
+		businessDate := time.Date(soldAt.Year(), soldAt.Month(), soldAt.Day(), 0, 0, 0, 0, s.location)
+		closed, err := s.repo.HasDailyCut(ctx, organizationID, bazarID, businessDate)
+		if err != nil {
+			return nil, err
+		}
+		if closed {
+			return nil, &serviceError{
+				Status:  http.StatusConflict,
+				Message: "Ese día ya tiene corte de caja cerrado; no se le pueden agregar ventas.",
+			}
+		}
+	}
+
 	result, err := s.repo.CreateSale(ctx, organizationID, createSaleCommand{
 		ClientRequestID: clientRequestID,
 		BazarID:         bazarID,
@@ -236,6 +289,7 @@ func (s *Service) CreateSale(
 		PaymentMethod:   paymentMethod,
 		CashReceived:    req.CashReceived,
 		Notes:           req.Notes,
+		SoldAt:          soldAt,
 	})
 	if err != nil {
 		return nil, err
@@ -679,6 +733,7 @@ func prepareUpdateProduct(current Product, req UpdateProductRequest) (updateProd
 		Cost:           prepared.Cost,
 		ImageURL:       prepared.ImageURL,
 		Active:         active,
+		TrackStock:     prepared.TrackStock,
 		SyncPolicy:     syncPolicy,
 		VariantGroupID: prepared.VariantGroupID,
 		VariantName:    prepared.VariantName,

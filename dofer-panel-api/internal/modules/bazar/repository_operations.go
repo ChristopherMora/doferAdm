@@ -28,13 +28,14 @@ func (r *Repository) UpdateProduct(
 		    cost = $5,
 		    image_url = $6,
 		    is_active = $7,
-		    stock_sync_policy = $8,
-		    variant_group_id = $9,
-		    color = $10,
-		    variant_color = $11,
+		    track_stock = $8,
+		    stock_sync_policy = $9,
+		    variant_group_id = $10,
+		    color = $11,
+		    variant_color = $12,
 		    bazar_source = 'manual',
 		    updated_at = NOW()
-		WHERE id = $12 AND organization_id = $13 AND bazar_enabled = TRUE
+		WHERE id = $13 AND organization_id = $14 AND bazar_enabled = TRUE
 		RETURNING id, sku, name, COALESCE(category, ''), COALESCE(suggested_price, 0),
 		          cost, stock, image_url, is_active, sheet_row, sheet_synced_at,
 		          bazar_source, stock_sync_policy, track_stock,
@@ -47,6 +48,7 @@ func (r *Repository) UpdateProduct(
 		product.Cost,
 		product.ImageURL,
 		product.Active,
+		product.TrackStock,
 		product.SyncPolicy,
 		product.VariantGroupID,
 		product.VariantName,
@@ -347,7 +349,7 @@ func (r *Repository) GetReport(
 			COUNT(*) FILTER (WHERE s.status = 'completed'),
 			COUNT(*) FILTER (WHERE s.status = 'cancelled')
 		FROM bazar_sales s
-		WHERE s.organization_id = $1 AND s.created_at >= $2 AND s.created_at < $3
+		WHERE s.organization_id = $1 AND s.sold_at >= $2 AND s.sold_at < $3
 	` + filter
 	if err := r.db.QueryRow(ctx, summaryQuery, args...).Scan(
 		&report.Total,
@@ -361,7 +363,7 @@ func (r *Repository) GetReport(
 		SELECT COALESCE(SUM(i.quantity), 0)
 		FROM bazar_sale_items i
 		JOIN bazar_sales s ON s.id = i.sale_id
-		WHERE s.organization_id = $1 AND s.created_at >= $2 AND s.created_at < $3
+		WHERE s.organization_id = $1 AND s.sold_at >= $2 AND s.sold_at < $3
 		  AND s.status = 'completed'
 	` + filter
 	if err := r.db.QueryRow(ctx, productQuantityQuery, args...).Scan(&report.ProductsSold); err != nil {
@@ -374,7 +376,7 @@ func (r *Repository) GetReport(
 	paymentRows, err := r.db.Query(ctx, `
 		SELECT s.payment_method, COUNT(*), COALESCE(SUM(s.total), 0)
 		FROM bazar_sales s
-		WHERE s.organization_id = $1 AND s.created_at >= $2 AND s.created_at < $3
+		WHERE s.organization_id = $1 AND s.sold_at >= $2 AND s.sold_at < $3
 		  AND s.status = 'completed'
 	`+filter+`
 		GROUP BY s.payment_method
@@ -405,7 +407,7 @@ func (r *Repository) GetReport(
 		       SUM(i.quantity), COALESCE(SUM(i.total), 0)
 		FROM bazar_sale_items i
 		JOIN bazar_sales s ON s.id = i.sale_id
-		WHERE s.organization_id = $1 AND s.created_at >= $2 AND s.created_at < $3
+		WHERE s.organization_id = $1 AND s.sold_at >= $2 AND s.sold_at < $3
 		  AND s.status = 'completed'
 	`+filter+`
 		GROUP BY i.product_id, i.product_external_id, i.product_name
@@ -439,7 +441,7 @@ func (r *Repository) GetReport(
 		       COALESCE(SUM(i.total), 0)
 		FROM bazar_sales s
 		JOIN bazar_sale_items i ON i.sale_id = s.id
-		WHERE s.organization_id = $1 AND s.created_at >= $2 AND s.created_at < $3
+		WHERE s.organization_id = $1 AND s.sold_at >= $2 AND s.sold_at < $3
 		  AND s.status = 'completed'
 	`+filter+`
 		GROUP BY s.seller_name

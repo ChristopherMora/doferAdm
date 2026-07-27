@@ -81,6 +81,7 @@ type Sale struct {
 	LastSyncAt      *time.Time `json:"last_sync_at,omitempty"`
 	SyncError       *string    `json:"sync_error,omitempty"`
 	Notes           *string    `json:"notes,omitempty"`
+	SoldAt          time.Time  `json:"sold_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	CancelledAt     *time.Time `json:"cancelled_at,omitempty"`
 	Items           []SaleItem `json:"items"`
@@ -250,6 +251,8 @@ type CreateSaleRequest struct {
 	PaymentMethod   string                  `json:"payment_method"`
 	CashReceived    *float64                `json:"cash_received,omitempty"`
 	Notes           *string                 `json:"notes,omitempty"`
+	// SoldAt permite capturar la venta en un día distinto al de hoy.
+	SoldAt *time.Time `json:"sold_at,omitempty"`
 }
 
 type DailyCut struct {
@@ -304,6 +307,7 @@ type createSaleCommand struct {
 	PaymentMethod   string
 	CashReceived    *float64
 	Notes           *string
+	SoldAt          *time.Time
 }
 
 type createSaleItemCommand struct {
@@ -334,6 +338,7 @@ type updateProductCommand struct {
 	Cost           *float64
 	ImageURL       *string
 	Active         bool
+	TrackStock     bool
 	SyncPolicy     string
 	VariantGroupID *uuid.UUID
 	VariantName    string

@@ -34,6 +34,7 @@ func RegisterRoutes(r chi.Router, handler *Handler) {
 		r.Get("/products/{id}", handler.GetProduct)
 		r.Get("/sales", handler.ListSales)
 		r.Get("/stats", handler.GetStats)
+		r.Get("/activity", handler.GetActivity)
 		r.Get("/reports/daily", handler.GetDailyReport)
 		r.Get("/inventory-movements", handler.ListInventoryMovements)
 		r.Get("/audit", handler.ListAudit)
@@ -298,14 +299,10 @@ func (h *Handler) CreateSale(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListSales(w http.ResponseWriter, r *http.Request) {
-	var bazarID *uuid.UUID
-	if rawID := strings.TrimSpace(r.URL.Query().Get("bazar_id")); rawID != "" {
-		parsed, err := uuid.Parse(rawID)
-		if err != nil {
-			writeError(w, &serviceError{Status: http.StatusBadRequest, Message: "ID de bazar inválido."})
-			return
-		}
-		bazarID = &parsed
+	bazarID, err := queryBazarID(r)
+	if err != nil {
+		writeError(w, err)
+		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	sales, err := h.repo.ListSales(r.Context(), organizationID(r), bazarID, limit)
@@ -314,6 +311,42 @@ func (h *Handler) ListSales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sales": sales})
+}
+
+// GetActivity devuelve el resumen del día y las últimas ventas en una sola
+// respuesta: el punto de venta las pinta juntas y pedirlas por separado
+// duplicaba el viaje de red en cada refresco.
+func (h *Handler) GetActivity(w http.ResponseWriter, r *http.Request) {
+	bazarID, err := queryBazarID(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	stats, err := h.service.DailyStats(r.Context(), organizationID(r), bazarID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sales, err := h.repo.ListSales(r.Context(), organizationID(r), bazarID, limit)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stats": stats, "sales": sales})
+}
+
+func queryBazarID(r *http.Request) (*uuid.UUID, error) {
+	rawID := strings.TrimSpace(r.URL.Query().Get("bazar_id"))
+	if rawID == "" {
+		return nil, nil
+	}
+	parsed, err := uuid.Parse(rawID)
+	if err != nil {
+		return nil, &serviceError{Status: http.StatusBadRequest, Message: "ID de bazar inválido."}
+	}
+	return &parsed, nil
 }
 
 func (h *Handler) CancelSale(w http.ResponseWriter, r *http.Request) {
@@ -394,14 +427,10 @@ func (h *Handler) GetBazarReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
-	var bazarID *uuid.UUID
-	if rawID := strings.TrimSpace(r.URL.Query().Get("bazar_id")); rawID != "" {
-		parsed, err := uuid.Parse(rawID)
-		if err != nil {
-			writeError(w, &serviceError{Status: http.StatusBadRequest, Message: "ID de bazar inválido."})
-			return
-		}
-		bazarID = &parsed
+	bazarID, err := queryBazarID(r)
+	if err != nil {
+		writeError(w, err)
+		return
 	}
 	stats, err := h.service.DailyStats(r.Context(), organizationID(r), bazarID)
 	if err != nil {

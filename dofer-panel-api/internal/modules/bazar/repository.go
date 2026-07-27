@@ -464,8 +464,8 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		INSERT INTO bazar_sales (
 			id, organization_id, external_id, client_request_id, bazar_id,
 			seller_id, seller_name, subtotal, total, payment_method,
-			cash_received, change_due, notes
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12)
+			cash_received, change_due, notes, sold_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12, COALESCE($13, NOW()))
 	`,
 		saleID,
 		organizationID,
@@ -479,6 +479,7 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		cashReceived,
 		changeDue,
 		notes,
+		cmd.SoldAt,
 	)
 	if err != nil {
 		return nil, err
@@ -560,7 +561,7 @@ func (r *Repository) GetSale(ctx context.Context, organizationID string, saleID 
 		       s.seller_id, s.seller_name, s.subtotal, s.total, s.payment_method,
 		       s.cash_received, s.change_due,
 		       s.status, s.sync_status, s.sync_attempts, s.last_sync_at,
-		       s.sync_error, s.notes, s.created_at, s.cancelled_at
+		       s.sync_error, s.notes, s.sold_at, s.created_at, s.cancelled_at
 		FROM bazar_sales s
 		JOIN bazaars b ON b.id = s.bazar_id
 		WHERE s.id = $1 AND s.organization_id = $2
@@ -592,7 +593,7 @@ func (r *Repository) ListSales(ctx context.Context, organizationID string, bazar
 		       s.seller_id, s.seller_name, s.subtotal, s.total, s.payment_method,
 		       s.cash_received, s.change_due,
 		       s.status, s.sync_status, s.sync_attempts, s.last_sync_at,
-		       s.sync_error, s.notes, s.created_at, s.cancelled_at
+		       s.sync_error, s.notes, s.sold_at, s.created_at, s.cancelled_at
 		FROM bazar_sales s
 		JOIN bazaars b ON b.id = s.bazar_id
 		WHERE s.organization_id = $1
@@ -603,7 +604,7 @@ func (r *Repository) ListSales(ctx context.Context, organizationID string, bazar
 		query += fmt.Sprintf(" AND s.bazar_id = $%d", len(args))
 	}
 	args = append(args, limit)
-	query += fmt.Sprintf(" ORDER BY s.created_at DESC LIMIT $%d", len(args))
+	query += fmt.Sprintf(" ORDER BY s.sold_at DESC, s.created_at DESC LIMIT $%d", len(args))
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -658,6 +659,7 @@ func scanSale(row pgx.Row) (*Sale, error) {
 		&lastSyncAt,
 		&syncError,
 		&notes,
+		&sale.SoldAt,
 		&sale.CreatedAt,
 		&cancelledAt,
 	); err != nil {
@@ -941,10 +943,10 @@ func (r *Repository) GetDailyStats(
 		SELECT
 			COALESCE(SUM(total) FILTER (WHERE status = 'completed'), 0),
 			COALESCE(COUNT(*) FILTER (WHERE status = 'completed'), 0),
-			MAX(created_at) FILTER (WHERE status = 'completed'),
+			MAX(sold_at) FILTER (WHERE status = 'completed'),
 			COALESCE(COUNT(*) FILTER (WHERE sync_status <> 'synced'), 0)
 		FROM bazar_sales
-		WHERE organization_id = $1 AND created_at >= $2 AND created_at < $3
+		WHERE organization_id = $1 AND sold_at >= $2 AND sold_at < $3
 	`
 	args := []any{organizationID, start, end}
 	if bazarID != nil {
@@ -971,7 +973,7 @@ func (r *Repository) GetDailyStats(
 		FROM bazar_sale_items i
 		JOIN bazar_sales s ON s.id = i.sale_id
 		WHERE s.organization_id = $1
-		  AND s.created_at >= $2 AND s.created_at < $3
+		  AND s.sold_at >= $2 AND s.sold_at < $3
 		  AND s.status = 'completed'
 	`
 	itemArgs := []any{organizationID, start, end}
