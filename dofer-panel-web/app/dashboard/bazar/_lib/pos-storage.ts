@@ -23,6 +23,7 @@ const COMBOS_KEY = 'dofer-bazar-combos'
 const HELD_SALES_KEY = 'dofer-bazar-held-sales'
 const LAST_PAYMENT_KEY = 'dofer-bazar-last-payment-method'
 const LAST_VARIANTS_KEY = 'dofer-bazar-last-variants'
+const SALE_COUNTS_KEY = 'dofer-bazar-sale-counts'
 export const OFFLINE_PRODUCTS_KEY = 'dofer-bazar-offline-products'
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -102,6 +103,37 @@ export function writeLastVariant(groupID: string, productID: string) {
     ...readLastVariants(),
     [groupID]: productID,
   })
+}
+
+interface SaleCountsRecord {
+  date: string
+  counts: Record<string, number>
+}
+
+// Unidades vendidas por producto durante el día en este dispositivo. Sirve
+// para poner arriba del buscador lo que más se está moviendo en el bazar.
+export function readProductSaleCounts(dateKey: string): Record<string, number> {
+  const stored = readJSON<Partial<SaleCountsRecord> | null>(SALE_COUNTS_KEY, null)
+  if (!stored || stored.date !== dateKey || typeof stored.counts !== 'object') {
+    return {}
+  }
+  return Object.fromEntries(
+    Object.entries(stored.counts || {}).filter(
+      (entry): entry is [string, number] => typeof entry[1] === 'number',
+    ),
+  )
+}
+
+export function recordProductSales(
+  dateKey: string,
+  items: Array<{ product_id: string; quantity: number }>,
+) {
+  const counts = readProductSaleCounts(dateKey)
+  for (const item of items) {
+    counts[item.product_id] = (counts[item.product_id] || 0) + item.quantity
+  }
+  writeJSON(SALE_COUNTS_KEY, { date: dateKey, counts })
+  return counts
 }
 
 export function readOfflineProducts<T>() {
