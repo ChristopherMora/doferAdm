@@ -1,6 +1,9 @@
 package bazar
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -32,6 +35,7 @@ func RegisterRoutes(r chi.Router, handler *Handler) {
 		r.Get("/bazaars/{id}/daily-cuts", handler.ListDailyCuts)
 		r.Get("/products", handler.ListProducts)
 		r.Get("/products/{id}", handler.GetProduct)
+		r.Get("/products/{id}/image", handler.GetProductImage)
 		r.Get("/sales", handler.ListSales)
 		r.Get("/stats", handler.GetStats)
 		r.Get("/activity", handler.GetActivity)
@@ -159,7 +163,7 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"products": products})
+	writeJSONCached(w, r, map[string]any{"products": products})
 }
 
 func (h *Handler) GetProduct(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +182,54 @@ func (h *Handler) GetProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, product)
+}
+
+// GetProductImage entrega la foto del producto como archivo propio. Al salir
+// del catalogo puede cachearse por separado y con vida larga: el nombre lleva
+// la version del contenido, asi que cambiar la foto invalida la copia vieja.
+func (h *Handler) GetProductImage(w http.ResponseWriter, r *http.Request) {
+	productID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, &serviceError{Status: http.StatusBadRequest, Message: "Producto inválido."})
+		return
+	}
+
+	raw, err := h.repo.GetProductImage(r.Context(), organizationID(r), productID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if !strings.HasPrefix(raw, "data:") {
+		// Las imagenes por URL externa no pasan por aqui.
+		http.Redirect(w, r, raw, http.StatusFound)
+		return
+	}
+
+	comma := strings.Index(raw, ",")
+	meta := raw[len("data:"):comma]
+	if !strings.HasSuffix(meta, ";base64") {
+		writeError(w, &serviceError{Status: http.StatusUnsupportedMediaType, Message: "Formato de imagen no soportado."})
+		return
+	}
+	content, err := base64.StdEncoding.DecodeString(raw[comma+1:])
+	if err != nil {
+		writeError(w, &serviceError{Status: http.StatusUnprocessableEntity, Message: "La imagen guardada está dañada."})
+		return
+	}
+
+	sum := sha256.Sum256([]byte(raw))
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	if strings.Contains(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("Content-Type", strings.TrimSuffix(meta, ";base64"))
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
@@ -608,4 +660,33 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// writeJSONCached responde con ETag para que el navegador revalide en vez de
+// volver a bajar el cuerpo completo. El catalogo se pide en cada apertura,
+// tras cada sincronizacion y al vaciar la cola offline: si no cambio, esas
+// respuestas se resuelven con un 304 sin cuerpo.
+func writeJSONCached(w http.ResponseWriter, r *http.Request, payload any) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	sum := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+
+	for _, candidate := range strings.Split(r.Header.Get("If-None-Match"), ",") {
+		if strings.TrimSpace(candidate) == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }

@@ -16,15 +16,24 @@ const (
 )
 
 type Product struct {
-	ID             uuid.UUID  `json:"id"`
-	ExternalID     string     `json:"external_id"`
-	Name           string     `json:"name"`
-	Category       string     `json:"category"`
-	Price          float64    `json:"price"`
-	Cost           *float64   `json:"cost,omitempty"`
-	Stock          int        `json:"stock"`
-	TrackStock     bool       `json:"track_stock"`
-	ImageURL       *string    `json:"image_url,omitempty"`
+	ID         uuid.UUID `json:"id"`
+	ExternalID string    `json:"external_id"`
+	Name       string    `json:"name"`
+	Category   string    `json:"category"`
+	Price      float64   `json:"price"`
+	Cost       *float64  `json:"cost,omitempty"`
+	Stock      int       `json:"stock"`
+	TrackStock bool      `json:"track_stock"`
+	ImageURL   *string   `json:"image_url,omitempty"`
+	// Las fotos subidas desde el punto de venta se guardan como data URL en
+	// image_url. Mandarlas dentro del catalogo inflaba la respuesta varios MB,
+	// asi que salen por su propio endpoint y aqui solo viaja la referencia.
+	HasImage     bool   `json:"has_image"`
+	ImageVersion string `json:"image_version,omitempty"`
+	// StoredImage conserva lo que hay en la columna aunque no salga en la
+	// respuesta: sin esto, actualizar un producto reescribia image_url con el
+	// valor recortado y borraba la foto.
+	StoredImage    *string    `json:"-"`
 	Active         bool       `json:"active"`
 	SheetRow       *int       `json:"sheet_row,omitempty"`
 	SheetSyncedAt  *time.Time `json:"sheet_synced_at,omitempty"`

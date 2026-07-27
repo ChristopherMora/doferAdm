@@ -9,6 +9,10 @@ export interface BazarProduct {
   stock: number
   track_stock: boolean
   image_url?: string
+  // Las fotos subidas no viajan dentro del catálogo: el servidor manda solo la
+  // referencia y se piden por /bazar/products/{id}/image.
+  has_image?: boolean
+  image_version?: string
   active: boolean
   source?: 'manual' | 'sheets' | 'catalog'
   stock_sync_policy?: 'manual' | 'sheets'

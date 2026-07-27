@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   Clock3,
   CloudOff,
-  ImageOff,
   LoaderCircle,
   Mail,
   MessageCircle,
@@ -64,6 +63,7 @@ import {
   printReceipt,
   receiptText,
 } from '../_lib/reports'
+import { ProductImage } from './product-image'
 import type {
   BazarProduct,
   PaymentMethod,
@@ -1162,12 +1162,7 @@ export function CartDialog({
           {items.map(({ product, quantity }) => (
             <div key={product.id} className="flex items-center gap-3 py-4">
               <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-muted">
-                {product.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={product.image_url} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <ImageOff className="m-4 h-6 w-6 text-muted-foreground" />
-                )}
+                <ProductImage product={product} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">

@@ -137,6 +137,23 @@ function getBrowserAuthToken(): string | undefined {
   return undefined
 }
 
+// Descarga binaria autenticada: un <img> no puede mandar la cabecera
+// Authorization, asi que las imagenes de producto se piden por fetch. El
+// navegador igual las guarda en su cache HTTP y revalida por ETag.
+export async function apiFetchBlob(endpoint: string): Promise<Blob> {
+  const headers: Record<string, string> = {}
+
+  const token = getBrowserAuthToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const activeOrganizationID = getActiveOrganizationID()
+  if (activeOrganizationID) headers['X-Organization-ID'] = activeOrganizationID
+
+  const response = await fetch(`${API_URL}${endpoint}`, { headers })
+  if (!response.ok) throw new Error(`Error ${response.status}`)
+  return response.blob()
+}
+
 async function apiRequest<T>(
   endpoint: string,
   config: RequestConfig = {}

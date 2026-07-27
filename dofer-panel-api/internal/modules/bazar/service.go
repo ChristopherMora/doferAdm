@@ -724,7 +724,7 @@ func prepareUpdateProduct(current Product, req UpdateProductRequest) (updateProd
 		Cost:           current.Cost,
 		Stock:          current.Stock,
 		TrackStock:     &current.TrackStock,
-		ImageURL:       current.ImageURL,
+		ImageURL:       current.StoredImage,
 		VariantGroupID: variantGroupID,
 		VariantName:    current.VariantName,
 		VariantColor:   current.VariantColor,

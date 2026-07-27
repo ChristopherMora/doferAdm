@@ -153,6 +153,40 @@ func stringPointer(value string) *string {
 	return &value
 }
 
+// La foto subida se guarda como data URL y no viaja dentro del catálogo, así
+// que el producto que se lee trae ImageURL vacío. Al actualizar hay que tomar
+// StoredImage: usar ImageURL dejaba la columna en NULL y borraba la foto.
+func TestPrepareUpdateProductKeepsUploadedImage(t *testing.T) {
+	stored := "data:image/webp;base64,UklGRhYAAABXRUJQ"
+	newName := "Capibara gris"
+	current := Product{
+		ExternalID:  "CAP-01",
+		Name:        "Capibara café",
+		Category:    "Doflins",
+		Price:       40,
+		Stock:       12,
+		TrackStock:  true,
+		SyncPolicy:  "manual",
+		Active:      true,
+		HasImage:    true,
+		StoredImage: &stored,
+	}
+
+	command, err := prepareUpdateProduct(current, UpdateProductRequest{Name: &newName})
+	if err != nil {
+		t.Fatalf("prepareUpdateProduct returned an error: %v", err)
+	}
+	if command.ImageURL == nil {
+		t.Fatal("expected the stored image to survive an update that does not touch it")
+	}
+	if *command.ImageURL != stored {
+		t.Fatalf("expected image %q, got %q", stored, *command.ImageURL)
+	}
+	if command.Name != newName {
+		t.Fatalf("expected name %q, got %q", newName, command.Name)
+	}
+}
+
 func TestValidateProductImageDataURL(t *testing.T) {
 	image := "data:image/webp;base64," + base64.StdEncoding.EncodeToString([]byte("webp image"))
 	validated, err := validateProductImage(&image)

@@ -25,6 +25,7 @@ import {
   productTracksStock,
   variantLabel,
 } from '../_lib/products'
+import { ProductImage } from './product-image'
 import type {
   BazarProduct,
   ProductGroup,
@@ -139,22 +140,16 @@ export function ProductCard({
     product,
     ...group.variants.filter((variant) => variant.id !== product.id),
   ]
-  const displayImage =
-    product.image_url ||
-    group.variants.find((variant) => variant.image_url)?.image_url
+  const imageProduct =
+    product.image_url || product.has_image
+      ? product
+      : group.variants.find((variant) => variant.image_url || variant.has_image)
 
   return (
     <article className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
       <div className="relative aspect-square overflow-hidden bg-muted">
-        {displayImage ? (
-          // Las URL vienen del inventario y pueden usar proveedores distintos.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={displayImage}
-            alt={productDisplayName(product)}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
+        {imageProduct ? (
+          <ProductImage product={imageProduct} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <ImageOff className="h-8 w-8" />

@@ -113,7 +113,16 @@ export function readBazarCache(): BazarCache | null {
 
 export function writeBazarCache(cache: BazarCache) {
   try {
-    localStorage.setItem(BAZAR_CACHE_KEY, JSON.stringify(cache))
+    // Las fotos en data URL no se guardan aquí: llenaban la cuota de
+    // localStorage con unos pocos productos y tumbaban toda la caché, que es
+    // justo lo que permite abrir el punto de venta al instante. Se vuelven a
+    // pedir por su endpoint, donde el navegador sí las conserva.
+    const products = cache.products.map((product) =>
+      product.image_url?.startsWith('data:')
+        ? { ...product, image_url: undefined }
+        : product,
+    )
+    localStorage.setItem(BAZAR_CACHE_KEY, JSON.stringify({ ...cache, products }))
   } catch {
     // La cola de ventas tiene prioridad sobre la caché del catálogo.
   }

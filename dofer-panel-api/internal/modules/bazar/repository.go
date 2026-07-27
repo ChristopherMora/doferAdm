@@ -2,7 +2,9 @@ package bazar
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -205,7 +207,15 @@ func scanProduct(row pgx.Row) (*Product, error) {
 		product.Cost = &cost.Float64
 	}
 	if imageURL.Valid {
+		product.StoredImage = &imageURL.String
 		product.ImageURL = &imageURL.String
+		if strings.HasPrefix(imageURL.String, "data:") {
+			product.HasImage = true
+			sum := sha256.Sum256([]byte(imageURL.String))
+			product.ImageVersion = hex.EncodeToString(sum[:8])
+			// La foto sale por su propio endpoint, no dentro del catálogo.
+			product.ImageURL = nil
+		}
 	}
 	if sheetRow.Valid {
 		value := int(sheetRow.Int32)
@@ -225,6 +235,29 @@ func scanProduct(row pgx.Row) (*Product, error) {
 		product.VariantColor = &variantColor.String
 	}
 	return &product, nil
+}
+
+func (r *Repository) GetProductImage(
+	ctx context.Context,
+	organizationID string,
+	productID uuid.UUID,
+) (string, error) {
+	var imageURL sql.NullString
+	err := r.db.QueryRow(ctx, `
+		SELECT image_url
+		FROM products
+		WHERE id = $1 AND organization_id = $2 AND bazar_enabled = TRUE
+	`, productID, organizationID).Scan(&imageURL)
+	if err == pgx.ErrNoRows {
+		return "", &serviceError{Status: http.StatusNotFound, Message: "Producto no encontrado."}
+	}
+	if err != nil {
+		return "", err
+	}
+	if !imageURL.Valid || imageURL.String == "" {
+		return "", &serviceError{Status: http.StatusNotFound, Message: "El producto no tiene imagen."}
+	}
+	return imageURL.String, nil
 }
 
 func (r *Repository) CreateManualProduct(
@@ -393,24 +426,39 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		Stock      int
 		TrackStock bool
 	}
-	lockedProducts := make([]lockedProduct, 0, len(cmd.Items))
-	total := 0.0
-
+	// Los productos se bloquean en una sola consulta ordenada por id: antes era
+	// un SELECT ... FOR UPDATE por renglon, y una venta de varios articulos
+	// gastaba un viaje a la base por cada uno. El ORDER BY ademas fija el orden
+	// de bloqueo, que es lo que evita interbloqueos entre cajas simultaneas.
+	productIDs := make([]uuid.UUID, 0, len(cmd.Items))
 	for _, item := range cmd.Items {
+		productIDs = append(productIDs, item.ProductID)
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, sku,
+		       CASE
+		           WHEN NULLIF(TRIM(color), '') IS NULL THEN name
+		           ELSE name || ' · ' || TRIM(color)
+		       END,
+		       COALESCE(suggested_price, 0), stock, track_stock,
+		       is_active, bazar_enabled
+		FROM products
+		WHERE id = ANY($1) AND organization_id = $2
+		ORDER BY id
+		FOR UPDATE
+	`, productIDs, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	locked := make(map[uuid.UUID]lockedProduct, len(cmd.Items))
+	enabled := make(map[uuid.UUID]bool, len(cmd.Items))
+	activeByID := make(map[uuid.UUID]bool, len(cmd.Items))
+	for rows.Next() {
 		var product lockedProduct
 		var active, bazarEnabled bool
-		err := tx.QueryRow(ctx, `
-			SELECT id, sku,
-			       CASE
-			           WHEN NULLIF(TRIM(color), '') IS NULL THEN name
-			           ELSE name || ' · ' || TRIM(color)
-			       END,
-			       COALESCE(suggested_price, 0), stock, track_stock,
-			       is_active, bazar_enabled
-			FROM products
-			WHERE id = $1 AND organization_id = $2
-			FOR UPDATE
-		`, item.ProductID, organizationID).Scan(
+		if err := rows.Scan(
 			&product.ID,
 			&product.ExternalID,
 			&product.Name,
@@ -419,14 +467,27 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 			&product.TrackStock,
 			&active,
 			&bazarEnabled,
-		)
-		if err == pgx.ErrNoRows || !bazarEnabled {
-			return nil, &serviceError{Status: http.StatusNotFound, Message: "Producto no encontrado."}
-		}
-		if err != nil {
+		); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if !active {
+		locked[product.ID] = product
+		enabled[product.ID] = bazarEnabled
+		activeByID[product.ID] = active
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	lockedProducts := make([]lockedProduct, 0, len(cmd.Items))
+	total := 0.0
+	for _, item := range cmd.Items {
+		product, found := locked[item.ProductID]
+		if !found || !enabled[item.ProductID] {
+			return nil, &serviceError{Status: http.StatusNotFound, Message: "Producto no encontrado."}
+		}
+		if !activeByID[item.ProductID] {
 			return nil, &serviceError{Status: http.StatusConflict, Message: product.Name + " está inactivo."}
 		}
 		if product.TrackStock && item.Quantity > product.Stock {
@@ -485,6 +546,9 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		return nil, err
 	}
 
+	// Las escrituras de todos los renglones se mandan en un solo lote en vez de
+	// tres viajes por producto.
+	batch := &pgx.Batch{}
 	for index, item := range cmd.Items {
 		product := lockedProducts[index]
 		stockAfter := product.Stock
@@ -494,16 +558,14 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 		lineTotal := product.Price * float64(item.Quantity)
 
 		if product.TrackStock {
-			if _, err := tx.Exec(ctx, `
+			batch.Queue(`
 				UPDATE products
 				SET stock = $1, updated_at = NOW()
 				WHERE id = $2 AND organization_id = $3
-			`, stockAfter, product.ID, organizationID); err != nil {
-				return nil, err
-			}
+			`, stockAfter, product.ID, organizationID)
 		}
 
-		if _, err := tx.Exec(ctx, `
+		batch.Queue(`
 			INSERT INTO bazar_sale_items (
 				organization_id, sale_id, product_id, product_external_id, product_name,
 				quantity, unit_price, total, stock_before, stock_after
@@ -519,12 +581,10 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 			lineTotal,
 			product.Stock,
 			stockAfter,
-		); err != nil {
-			return nil, err
-		}
+		)
 
 		if product.TrackStock {
-			if _, err := tx.Exec(ctx, `
+			batch.Queue(`
 				INSERT INTO bazar_inventory_movements (
 					organization_id, product_id, sale_id, bazar_id, movement_type,
 					quantity, stock_before, stock_after, reason, created_by
@@ -538,10 +598,19 @@ func (r *Repository) CreateSale(ctx context.Context, organizationID string, cmd 
 				product.Stock,
 				stockAfter,
 				cmd.SellerID,
-			); err != nil {
-				return nil, err
-			}
+			)
 		}
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	for index := 0; index < batch.Len(); index++ {
+		if _, err := results.Exec(); err != nil {
+			results.Close()
+			return nil, err
+		}
+	}
+	if err := results.Close(); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
