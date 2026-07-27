@@ -297,6 +297,12 @@ export default function DashboardLayout({
   }, [router, showSearch])
 
   useEffect(() => {
+    if (pathname !== '/dashboard/bazar' && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined)
+    }
+  }, [pathname])
+
+  useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
@@ -527,7 +533,9 @@ export default function DashboardLayout({
           {/* Logo */}
           <div className="p-5 border-b border-border/70">
             <div className="flex items-center gap-3">
-              <Image src="/logo.png" alt="DOFER" width={48} height={48} className="h-12 w-12 object-contain rounded-xl ring-1 ring-border/70" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-background p-1 ring-1 ring-border/70">
+                <Image src="/logo.png" alt="DOFER" width={32} height={48} className="h-full w-full object-contain" />
+              </div>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">DOFER Panel</h1>
                 <p className="text-xs text-muted-foreground mt-0.5 uppercase tracking-wide">Suite Operativa</p>

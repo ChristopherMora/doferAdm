@@ -40,7 +40,9 @@ export default function AffiliateLayout({ children }: { children: React.ReactNod
           }`}
         >
           <div className="flex h-16 items-center gap-3 border-b border-border px-5">
-            <Image src="/logo.png" alt="DOFER" width={32} height={32} className="rounded-lg" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background p-0.5">
+              <Image src="/logo.png" alt="DOFER" width={24} height={36} className="h-full w-full object-contain" />
+            </div>
             <div>
               <p className="text-sm font-bold leading-none">DOFER</p>
               <p className="text-xs text-muted-foreground">Portal de afiliados</p>

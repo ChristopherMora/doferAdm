@@ -99,13 +99,16 @@ export default function LoginPage() {
             <div className="mx-auto w-full max-w-md">
               <div className="mb-8 text-center">
                 <div className="mb-4 flex justify-center">
-                  <Image
-                    src="/logo.png"
-                    alt="DOFER"
-                    width={88}
-                    height={88}
-                    className="h-20 w-20 rounded-2xl bg-white p-1 shadow-md"
-                  />
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white p-2 shadow-md">
+                    <Image
+                      src="/logo.png"
+                      alt="DOFER"
+                      width={64}
+                      height={96}
+                      className="h-full w-full object-contain"
+                      priority
+                    />
+                  </div>
                 </div>
                 <h2 className="text-2xl font-bold text-foreground">Iniciar sesion</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Accede a tu panel administrativo</p>
