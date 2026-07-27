@@ -2142,7 +2142,13 @@ export default function BazarSalesPage() {
         />
       </section>
 
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div
+        className={
+          cashMode
+            ? 'grid items-start gap-8'
+            : 'grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]'
+        }
+      >
         <section className="min-w-0 space-y-4">
           <div className="sticky top-[73px] z-30 -mx-4 space-y-3 border-y border-border bg-background/95 px-4 py-3 backdrop-blur-md md:static md:mx-0 md:border-x md:px-3">
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -2240,7 +2246,7 @@ export default function BazarSalesPage() {
             <div
               className={
                 cashMode
-                  ? 'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+                  ? 'grid grid-cols-3 gap-3 md:grid-cols-4 lg:grid-cols-6'
                   : 'grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]'
               }
             >
@@ -2290,6 +2296,7 @@ export default function BazarSalesPage() {
           )}
         </section>
 
+        {!cashMode && (
         <aside className="space-y-4 lg:sticky lg:top-24">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <div>
@@ -2325,6 +2332,7 @@ export default function BazarSalesPage() {
             </div>
           )}
         </aside>
+        )}
       </div>
 
       {quantityProduct && (

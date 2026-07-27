@@ -149,7 +149,7 @@ export function ProductCard({
 
   return (
     <article className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
-      <div className="relative aspect-square overflow-hidden bg-muted">
+      <div className={`relative overflow-hidden bg-muted ${cashMode ? "aspect-[4/3]" : "aspect-square"}`}>
         {imageProduct ? (
           <ProductImage product={imageProduct} />
         ) : (
@@ -191,12 +191,16 @@ export function ProductCard({
         </button>
       </div>
 
-      <div className="space-y-3 p-3">
+      <div className={cashMode ? "space-y-2 p-2" : "space-y-3 p-3"}>
         <div className="min-w-0">
-          <p className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">{group.name}</p>
+          <p className={`line-clamp-2 font-semibold leading-5 ${cashMode ? "min-h-10 text-sm" : "min-h-10 text-sm"}`}>{group.name}</p>
           <div className="mt-1 flex items-center justify-between gap-2">
-            <span className="truncate text-xs text-muted-foreground">{product.category || 'Sin categoría'}</span>
-            <span className="shrink-0 font-semibold text-primary">{moneyFormatter.format(product.price)}</span>
+            {!cashMode && (
+              <span className="truncate text-xs text-muted-foreground">{product.category || 'Sin categoría'}</span>
+            )}
+            <span className={`shrink-0 font-semibold text-primary ${cashMode ? 'text-lg' : ''}`}>
+              {moneyFormatter.format(product.price)}
+            </span>
           </div>
         </div>
 
@@ -248,7 +252,7 @@ export function ProductCard({
               type="button"
               onClick={onFreeSale}
               disabled={freeing}
-              className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md border border-primary bg-background px-2 font-semibold text-primary hover:bg-accent disabled:opacity-50 ${cashMode ? "h-14 text-base" : "h-11 text-sm"}`}
+              className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md border border-primary bg-background px-2 font-semibold text-primary hover:bg-accent disabled:opacity-50 ${cashMode ? "h-12 text-sm" : "h-11 text-sm"}`}
               title={`Vender ${productDisplayName(product)} sin descontar existencias`}
             >
               {freeing ? (
@@ -263,7 +267,7 @@ export function ProductCard({
               type="button"
               onClick={onSell}
               disabled={unavailable}
-              className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md bg-primary px-2 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 ${cashMode ? "h-14 text-base" : "h-11 text-sm"}`}
+              className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md bg-primary px-2 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 ${cashMode ? "h-12 text-sm" : "h-11 text-sm"}`}
             >
               <Plus className="h-4 w-4" />
               <span className="truncate">
