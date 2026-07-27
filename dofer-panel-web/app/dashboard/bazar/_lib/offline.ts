@@ -57,13 +57,21 @@ export function countOfflineErrors() {
   )
 }
 
+// Suma a la jornada en pantalla las ventas que aun no llegan al servidor.
+// Solo entran las de ese mismo día: una venta capturada para otra fecha se
+// queda fuera del resumen de hoy aunque siga en la cola.
 export function mergeActivityWithOffline(
   baseStats: DailyStats,
   serverSales: Sale[],
   bazarID: string,
+  dateKey: string,
 ) {
   const queuedSales = readOfflineSales()
-    .filter((entry) => entry.payload.bazar_id === bazarID)
+    .filter(
+      (entry) =>
+        entry.payload.bazar_id === bazarID &&
+        entry.sale.sold_at.slice(0, 10) === dateKey,
+    )
     .map((entry) => entry.sale)
   const queuedTotal = queuedSales.reduce((total, sale) => total + sale.total, 0)
   const queuedUnits = queuedSales.reduce(

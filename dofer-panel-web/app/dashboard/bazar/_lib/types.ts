@@ -232,7 +232,9 @@ export interface BazarCache {
   bazaars: Bazar[]
   currentUser: CurrentUser
   syncStatus: SyncStatus | null
-  activity?: Record<string, { sales: Sale[]; stats: DailyStats }>
+  // La actividad se guarda con el día al que pertenece: sin eso, al abrir
+  // el bazar en una fecha nueva se repintaba la jornada anterior.
+  activity?: Record<string, { date: string; sales: Sale[]; stats: DailyStats }>
   savedAt: string
 }
 

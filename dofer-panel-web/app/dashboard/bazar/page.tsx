@@ -323,12 +323,17 @@ export default function BazarSalesPage() {
         ...cached,
         activity: {
           ...(cached.activity || {}),
-          [bazarID]: { sales: serverSales, stats: serverStats },
+          [bazarID]: { date: localDateKey(), sales: serverSales, stats: serverStats },
         },
         savedAt: new Date().toISOString(),
       })
     }
-    const merged = mergeActivityWithOffline(serverStats, serverSales, bazarID)
+    const merged = mergeActivityWithOffline(
+      serverStats,
+      serverSales,
+      bazarID,
+      localDateKey(),
+    )
     setStats(merged.stats)
     setSales(merged.sales)
   }, [])
@@ -507,11 +512,14 @@ export default function BazarSalesPage() {
     const activityTimer = window.setTimeout(() => {
       void loadActivity(activeBazarID).catch((activityError) => {
         if (isNetworkError(activityError)) {
+          const today = localDateKey()
           const cachedActivity = readBazarCache()?.activity?.[activeBazarID]
+          const sameDay = cachedActivity?.date === today
           const merged = mergeActivityWithOffline(
-            cachedActivity?.stats || EMPTY_STATS,
-            cachedActivity?.sales || [],
+            sameDay ? cachedActivity.stats : EMPTY_STATS,
+            sameDay ? cachedActivity.sales : [],
             activeBazarID,
+            today,
           )
           setSales(merged.sales)
           setStats(merged.stats)

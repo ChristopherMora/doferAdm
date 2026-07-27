@@ -583,7 +583,13 @@ func (r *Repository) GetSale(ctx context.Context, organizationID string, saleID 
 	return sale, nil
 }
 
-func (r *Repository) ListSales(ctx context.Context, organizationID string, bazarID *uuid.UUID, limit int) ([]Sale, error) {
+func (r *Repository) ListSales(
+	ctx context.Context,
+	organizationID string,
+	bazarID *uuid.UUID,
+	from, to *time.Time,
+	limit int,
+) ([]Sale, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 30
 	}
@@ -602,6 +608,14 @@ func (r *Repository) ListSales(ctx context.Context, organizationID string, bazar
 	if bazarID != nil {
 		args = append(args, *bazarID)
 		query += fmt.Sprintf(" AND s.bazar_id = $%d", len(args))
+	}
+	if from != nil {
+		args = append(args, *from)
+		query += fmt.Sprintf(" AND s.sold_at >= $%d", len(args))
+	}
+	if to != nil {
+		args = append(args, *to)
+		query += fmt.Sprintf(" AND s.sold_at < $%d", len(args))
 	}
 	args = append(args, limit)
 	query += fmt.Sprintf(" ORDER BY s.sold_at DESC, s.created_at DESC LIMIT $%d", len(args))

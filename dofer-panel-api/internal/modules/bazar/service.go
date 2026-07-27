@@ -443,10 +443,52 @@ func (s *Service) syncSaleUnlocked(ctx context.Context, organizationID string, s
 	return s.repo.MarkSaleSynced(ctx, organizationID, sale.ID)
 }
 
-func (s *Service) DailyStats(ctx context.Context, organizationID string, bazarID *uuid.UUID) (*DailyStats, error) {
+// dayWindow devuelve el inicio y el fin del dia pedido en la zona horaria de
+// la organizacion. Sin fecha usa el dia de hoy.
+func (s *Service) dayWindow(rawDate string) (time.Time, time.Time, error) {
 	now := time.Now().In(s.location)
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.location)
-	return s.repo.GetDailyStats(ctx, organizationID, bazarID, start, start.AddDate(0, 0, 1))
+	if value := strings.TrimSpace(rawDate); value != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", value, s.location)
+		if err != nil {
+			return time.Time{}, time.Time{}, &serviceError{Status: http.StatusBadRequest, Message: "La fecha no es válida."}
+		}
+		start = parsed
+	}
+	return start, start.AddDate(0, 0, 1), nil
+}
+
+func (s *Service) DailyStats(ctx context.Context, organizationID string, bazarID *uuid.UUID) (*DailyStats, error) {
+	start, end, err := s.dayWindow("")
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetDailyStats(ctx, organizationID, bazarID, start, end)
+}
+
+// DailyActivity entrega el resumen y las ventas de un mismo dia. La lista se
+// acota a esa jornada: antes devolvia las ultimas ventas del bazar sin
+// importar la fecha, asi que en la pantalla de hoy aparecian dias anteriores.
+func (s *Service) DailyActivity(
+	ctx context.Context,
+	organizationID string,
+	bazarID *uuid.UUID,
+	rawDate string,
+	limit int,
+) (*DailyStats, []Sale, error) {
+	start, end, err := s.dayWindow(rawDate)
+	if err != nil {
+		return nil, nil, err
+	}
+	stats, err := s.repo.GetDailyStats(ctx, organizationID, bazarID, start, end)
+	if err != nil {
+		return nil, nil, err
+	}
+	sales, err := s.repo.ListSales(ctx, organizationID, bazarID, &start, &end, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	return stats, sales, nil
 }
 
 func (s *Service) CloseDailyCut(
@@ -562,16 +604,11 @@ func (s *Service) Report(
 	bazarID *uuid.UUID,
 	rawDate string,
 ) (*BazarReport, error) {
-	now := time.Now().In(s.location)
-	date := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.location)
-	if value := strings.TrimSpace(rawDate); value != "" {
-		parsed, err := time.ParseInLocation("2006-01-02", value, s.location)
-		if err != nil {
-			return nil, &serviceError{Status: http.StatusBadRequest, Message: "La fecha del reporte no es válida."}
-		}
-		date = parsed
+	date, next, err := s.dayWindow(rawDate)
+	if err != nil {
+		return nil, err
 	}
-	return s.repo.GetReport(ctx, organizationID, bazarID, date, date.AddDate(0, 0, 1))
+	return s.repo.GetReport(ctx, organizationID, bazarID, date, next)
 }
 
 func (s *Service) FinalBazarReport(

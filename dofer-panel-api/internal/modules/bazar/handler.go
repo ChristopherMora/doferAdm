@@ -305,7 +305,7 @@ func (h *Handler) ListSales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	sales, err := h.repo.ListSales(r.Context(), organizationID(r), bazarID, limit)
+	sales, err := h.repo.ListSales(r.Context(), organizationID(r), bazarID, nil, nil, limit)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -324,12 +324,13 @@ func (h *Handler) GetActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	stats, err := h.service.DailyStats(r.Context(), organizationID(r), bazarID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	sales, err := h.repo.ListSales(r.Context(), organizationID(r), bazarID, limit)
+	stats, sales, err := h.service.DailyActivity(
+		r.Context(),
+		organizationID(r),
+		bazarID,
+		r.URL.Query().Get("date"),
+		limit,
+	)
 	if err != nil {
 		writeError(w, err)
 		return
