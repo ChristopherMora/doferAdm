@@ -346,3 +346,28 @@
     }
   }
 }
+
+/* El punto de venta se usa en un iPad de pie: sin esto, el doble toque para
+   cobrar rápido hace zoom en Safari y el arrastre hacia abajo recarga la
+   página a media venta. Los campos de texto conservan su selección. */
+@layer base {
+  button,
+  [role='button'],
+  label,
+  a {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cash-mode {
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .cash-mode input,
+  .cash-mode textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}

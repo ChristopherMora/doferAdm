@@ -21,12 +21,21 @@ const monoSans = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Dofer Admin Panel",
   description: "Sistema de gestión de órdenes y cotizaciones",
+  manifest: "/manifest.webmanifest",
+  // Instalado en el iPad del bazar abre sin barra de Safari.
+  appleWebApp: {
+    capable: true,
+    title: "DOFER",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // El área segura evita que la barra del modo caja quede bajo el notch.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

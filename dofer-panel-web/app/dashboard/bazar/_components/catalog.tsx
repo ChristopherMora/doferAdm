@@ -95,6 +95,7 @@ export function ProductCard({
   canEdit,
   favorite,
   freeing,
+  cashMode = false,
   onSelect,
   onSell,
   onMultiple,
@@ -111,6 +112,7 @@ export function ProductCard({
   canEdit: boolean
   favorite: boolean
   freeing: boolean
+  cashMode?: boolean
   onSelect: (product: BazarProduct) => void
   onSell: () => void
   onMultiple: () => void
@@ -246,7 +248,7 @@ export function ProductCard({
               type="button"
               onClick={onFreeSale}
               disabled={freeing}
-              className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-1.5 rounded-md border border-primary bg-background px-2 text-sm font-semibold text-primary hover:bg-accent disabled:opacity-50"
+              className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md border border-primary bg-background px-2 font-semibold text-primary hover:bg-accent disabled:opacity-50 ${cashMode ? "h-14 text-base" : "h-11 text-sm"}`}
               title={`Vender ${productDisplayName(product)} sin descontar existencias`}
             >
               {freeing ? (
@@ -261,7 +263,7 @@ export function ProductCard({
               type="button"
               onClick={onSell}
               disabled={unavailable}
-              className="inline-flex h-11 w-full min-w-0 items-center justify-center gap-1.5 rounded-md bg-primary px-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-md bg-primary px-2 font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 ${cashMode ? "h-14 text-base" : "h-11 text-sm"}`}
             >
               <Plus className="h-4 w-4" />
               <span className="truncate">
@@ -275,7 +277,7 @@ export function ProductCard({
               </span>
             </button>
           )}
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className={`grid gap-1.5 ${cashMode ? "grid-cols-2" : "grid-cols-5"}`}>
             <button
               type="button"
               onClick={onCart}
@@ -296,6 +298,8 @@ export function ProductCard({
             >
               <Layers3 className="h-4 w-4" />
             </button>
+            {!cashMode && (
+            <>
             <button
               type="button"
               onClick={onAdjust}
@@ -326,6 +330,8 @@ export function ProductCard({
             >
               <CopyPlus className="h-4 w-4" />
             </button>
+            </>
+            )}
           </div>
         </div>
       </div>

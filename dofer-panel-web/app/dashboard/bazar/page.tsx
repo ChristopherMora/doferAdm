@@ -33,10 +33,12 @@ import {
   readFavoriteProducts,
   readHeldSales,
   readLastPaymentMethod,
+  readCashMode,
   readLastVariants,
   readProductSaleCounts,
   recordProductSales,
   requestPersistentStorage,
+  writeCashMode,
   writeCombos,
   writeFavoriteProducts,
   writeHeldSales,
@@ -216,6 +218,7 @@ export default function BazarSalesPage() {
   const updateCashMode = useCallback((enabled: boolean) => {
     cashModeRef.current = enabled
     setCashMode(enabled)
+    writeCashMode(enabled)
   }, [])
   const cartProducts = useMemo(
     () =>
@@ -365,24 +368,48 @@ export default function BazarSalesPage() {
   }, [paymentMethod])
 
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) updateCashMode(false)
-    }
+    setCashMode(readCashMode())
+    cashModeRef.current = readCashMode()
+  }, [])
 
-    const resetCashMode = () => {
-      updateCashMode(false)
-      exitFullscreenIfNeeded()
-    }
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange)
-    window.addEventListener('pagehide', resetCashMode)
-
+  useEffect(() => {
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange)
-      window.removeEventListener('pagehide', resetCashMode)
       if (cashModeRef.current) exitFullscreenIfNeeded()
     }
-  }, [updateCashMode])
+  }, [])
+
+  // Mientras el modo caja está activo la pantalla no se apaga: en un bazar el
+  // equipo queda parado entre cliente y cliente y desbloquearlo cada vez es la
+  // fricción más grande de la jornada. Hay que volver a pedir el permiso cada
+  // vez que la pestaña regresa, porque el sistema lo suelta al ocultarla.
+  useEffect(() => {
+    if (!cashMode || typeof navigator === 'undefined' || !navigator.wakeLock) return
+
+    let sentinel: WakeLockSentinel | null = null
+    let released = false
+
+    const acquire = async () => {
+      if (released || document.visibilityState !== 'visible') return
+      try {
+        sentinel = await navigator.wakeLock.request('screen')
+      } catch {
+        // Sin permiso el modo caja funciona igual, solo se apaga la pantalla.
+      }
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void acquire()
+    }
+
+    void acquire()
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', handleVisibility)
+      void sentinel?.release().catch(() => undefined)
+    }
+  }, [cashMode])
 
   const selectActiveBazar = useCallback((availableBazaars: Bazar[]) => {
     const storedBazarID = localStorage.getItem('dofer-active-bazar-id')
@@ -1028,17 +1055,20 @@ export default function BazarSalesPage() {
     openPos(items)
   }
 
+  // El modo caja no depende de la pantalla completa del navegador: en iPadOS
+  // no siempre está disponible, y ahí Escape la cierra siempre. Se pide como
+  // extra cuando existe, pero salir de ella ya no apaga el modo.
   const toggleCashMode = async () => {
     const next = !cashMode
     updateCashMode(next)
     try {
-      if (next && !document.fullscreenElement) {
+      if (next && document.documentElement.requestFullscreen && !document.fullscreenElement) {
         await document.documentElement.requestFullscreen()
       } else if (!next && document.fullscreenElement) {
         await document.exitFullscreen()
       }
     } catch {
-      // El modo caja visual sigue activo aunque el navegador bloquee pantalla completa.
+      // Sin pantalla completa el modo caja funciona igual.
     }
   }
 
@@ -1862,12 +1892,12 @@ export default function BazarSalesPage() {
     <div
       className={
         cashMode
-          ? 'fixed inset-0 z-[60] space-y-5 overflow-y-auto bg-background px-4 py-4 pb-24 md:px-8'
+          ? 'cash-mode fixed inset-0 z-[60] space-y-5 overflow-y-auto bg-background px-4 pb-24 pt-[env(safe-area-inset-top)] md:px-8'
           : 'mx-auto max-w-7xl space-y-5 pb-24'
       }
     >
       <section className="border-b border-border pb-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <label
@@ -1909,7 +1939,7 @@ export default function BazarSalesPage() {
             </h1>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:justify-end">
+          <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
             <label className="relative min-w-0 sm:min-w-64">
               <span className="sr-only">Bazar activo</span>
               <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -2112,7 +2142,7 @@ export default function BazarSalesPage() {
         />
       </section>
 
-      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0 space-y-4">
           <div className="sticky top-[73px] z-30 -mx-4 space-y-3 border-y border-border bg-background/95 px-4 py-3 backdrop-blur-md md:static md:mx-0 md:border-x md:px-3">
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -2207,7 +2237,13 @@ export default function BazarSalesPage() {
               canSync={canSell}
             />
           ) : (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+            <div
+              className={
+                cashMode
+                  ? 'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+                  : 'grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]'
+              }
+            >
               {visibleProductGroups.map((group) => {
                 const selectedProduct =
                   group.variants.find(
@@ -2224,6 +2260,7 @@ export default function BazarSalesPage() {
                     canEdit={canSell}
                     favorite={favoriteProducts.has(selectedProduct.id)}
                     freeing={freeingProducts.has(selectedProduct.id)}
+                    cashMode={cashMode}
                     onSelect={(product) => selectVariant(group.id, product.id)}
                     onSell={() => {
                       selectVariant(group.id, selectedProduct.id)
@@ -2253,7 +2290,7 @@ export default function BazarSalesPage() {
           )}
         </section>
 
-        <aside className="space-y-4 xl:sticky xl:top-24">
+        <aside className="space-y-4 lg:sticky lg:top-24">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <div>
               <h2 className="text-lg font-semibold">Ventas recientes</h2>

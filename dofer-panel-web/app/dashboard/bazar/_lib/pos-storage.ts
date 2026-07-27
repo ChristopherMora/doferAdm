@@ -24,6 +24,7 @@ const HELD_SALES_KEY = 'dofer-bazar-held-sales'
 const LAST_PAYMENT_KEY = 'dofer-bazar-last-payment-method'
 const LAST_VARIANTS_KEY = 'dofer-bazar-last-variants'
 const SALE_COUNTS_KEY = 'dofer-bazar-sale-counts'
+const CASH_MODE_KEY = 'dofer-bazar-cash-mode'
 export const OFFLINE_PRODUCTS_KEY = 'dofer-bazar-offline-products'
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -134,6 +135,23 @@ export function recordProductSales(
   }
   writeJSON(SALE_COUNTS_KEY, { date: dateKey, counts })
   return counts
+}
+
+// El modo caja sobrevive a recargas: en una jornada el navegador puede
+// refrescar o actualizarse el service worker, y volver a activarlo a mano
+// entre clientes es justo lo que este modo intenta evitar.
+export function readCashMode() {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem(CASH_MODE_KEY) === '1'
+}
+
+export function writeCashMode(enabled: boolean) {
+  try {
+    if (enabled) localStorage.setItem(CASH_MODE_KEY, '1')
+    else localStorage.removeItem(CASH_MODE_KEY)
+  } catch {
+    // Perder la preferencia no debe romper la venta.
+  }
 }
 
 export function readOfflineProducts<T>() {
