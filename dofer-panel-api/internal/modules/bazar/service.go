@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,6 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const defaultTimezone = "America/Mexico_City"
+
 type Service struct {
 	repo     *Repository
 	sheets   SheetsGateway
@@ -22,11 +25,17 @@ type Service struct {
 }
 
 func NewService(repo *Repository, sheets SheetsGateway, timezone string) *Service {
-	location, err := time.LoadLocation(strings.TrimSpace(timezone))
-	if err != nil {
-		location, err = time.LoadLocation("America/Mexico_City")
+	name := strings.TrimSpace(timezone)
+	location, err := time.LoadLocation(name)
+	if err != nil && name != defaultTimezone {
+		slog.Warn("zona horaria inválida para el bazar", "timezone", name, "error", err)
+		name = defaultTimezone
+		location, err = time.LoadLocation(name)
 	}
 	if err != nil {
+		// Con UTC el corte del día se recorre y las ventas de la tarde
+		// anterior aparecen como si fueran de hoy: conviene que se vea.
+		slog.Error("sin base de zonas horarias; el bazar usará UTC", "timezone", name, "error", err)
 		location = time.UTC
 	}
 	return &Service{repo: repo, sheets: sheets, location: location}

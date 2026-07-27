@@ -11,6 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	// La imagen de runtime es alpine sin tzdata, y sin la base de zonas
+	// horarias time.LoadLocation falla y todo el sistema cae a UTC. Embeberla
+	// en el binario hace que las fechas no dependan de la imagen base.
+	_ "time/tzdata"
+
 	"github.com/dofer/panel-api/internal/db"
 	ordersApp "github.com/dofer/panel-api/internal/modules/orders/app"
 	ordersInfra "github.com/dofer/panel-api/internal/modules/orders/infra"
